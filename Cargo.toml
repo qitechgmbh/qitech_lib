@@ -1,0 +1,13 @@
+[package]
+name = "QiTech-Lib"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+# This tells Cargo to look inside the subfolder for another project
+members = ["src/ethercat"]
+
+[dependencies]
+# This is the "bridge" that allows main.rs to see the subcrate
+ethercat = { path = "src/ethercat" }
+tokio = "1.49.0"
