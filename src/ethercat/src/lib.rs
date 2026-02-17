@@ -35,6 +35,8 @@ pub const MAX_FRAMES: usize = 16;
 pub const PDI_LEN: usize = 1024;
 static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
 
+
+#[derive(Debug)]
 pub enum EtherCATState {
     NoInterface = 0,
     Boot = 1,
@@ -54,13 +56,31 @@ enum GroupState {
 pub struct CachePaddedAtomic(AtomicUsize);
 
 
-pub struct SdoRequest {}
+pub struct SdoRequest<T> {
+        device_address: u16,
+        index: u16,
+        sub_index: u16,
+        value: T,
+}
+
+pub struct SdoReadRequest {
+	    device_address: u16,
+        index: u16,
+        sub_index: u16,        
+}
 
 // LEGACY CODE HIDE BEHIND FLAG
 pub struct MachineIdent {}
 
 pub enum ChannelRequest {
-	SdoRequest(SdoRequest),
+	// Sadly need a few variants so compiler doesnt scream here 
+	SdoRequestU8(SdoRequest<u8>),
+	SdoRequestU16(SdoRequest<u16>),
+	SdoRequestU32(SdoRequest<u32>),
+	SdoRequestI16(SdoRequest<i16>),
+	SdoRequestI32(SdoRequest<i32>),
+
+	SdoReadRequest(SdoReadRequest),
 	MachineIdent(MachineIdent),
 	ChangeState(EtherCATState),
 	Shutdown(),
@@ -106,6 +126,11 @@ impl EtherCATController {
 }
 
 impl EtherCATController {
+
+	fn handle_init(){
+		
+	}
+
     pub fn ethercat_state_machine(&mut self) {
         let mut ethercat_tx_rx_handle: Result<JoinHandle<()>, Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>> = None;
@@ -117,11 +142,6 @@ impl EtherCATController {
         let mut maindevice: Option<MainDevice> = None;
 		println!("ECAT Controller Addr: {:p}", self);
         loop {
-            let requested_state = match &self.requested_state {
-                Some(requested_state) => requested_state,
-                None => &EtherCATState::NoInterface,
-            };
-			
             match self.state {
                 EtherCATState::NoInterface => {
                     if self.interface.is_some() {
@@ -133,8 +153,25 @@ impl EtherCATController {
                     // Do Nothing
                 }
                 EtherCATState::Init => {
-                    use ethercrab::std::tx_rx_task_io_uring;
+                	let msg = match self.rx_channel.try_recv() {
+                    	Ok(value) => value,
+                    	Err(_) => continue,
+                	};
 
+                	match msg {
+                    	ChannelRequest::ChangeState(ether_catstate) => match ether_catstate {
+    	                    EtherCATState::NoInterface => {
+    	                    	self.state = ether_catstate;
+    	                    	continue; // end the loop here -> go back to NoInterface state
+    	                    },                                               
+	                        EtherCATState::PreOp => (),    	                    
+	                        _ => continue,
+	                	},
+                    	ChannelRequest::Shutdown() => return, // We CAN safely shutdonw in Init
+                    	_ => (),
+                	}
+
+                    use ethercrab::std::tx_rx_task_io_uring;
                     if self.interface.is_some() {
                         let (tx, rx, pdu) = PDU_STORAGE.try_split().expect("can only split once");
                         let pdu_tx = tx;
@@ -289,7 +326,6 @@ impl EtherCATController {
                     let mut tick = 0;
                     let rt = get_async_runtime();
                     let group_safe_op = loop {                       
-
                         match group_container.take().unwrap() {
                             GroupState::PreOp(group) => {
                                 let device = maindevice.as_ref().unwrap();
@@ -447,11 +483,7 @@ let (tx, rx) = mpsc::channel();
             ],
             output_write_idx: CachePaddedAtomic(AtomicUsize::new(0)),   
     });
-
     let controller_for_thread = Arc::clone(&controller);
-    let ptr = Arc::as_ptr(&controller_for_thread) as *mut EtherCATController;
-
-
     let handle = std::thread::Builder::new()
         .name("EthercatStateMachine".into())
         .spawn(move || {
@@ -463,5 +495,5 @@ let (tx, rx) = mpsc::channel();
         })
         .expect("Failed to spawn thread");
 
-    ((controller, tx), handle)
+    ((controller, tx.into()), handle)
 }
