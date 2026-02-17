@@ -1,11 +1,7 @@
 use ethercrab::{
-    MainDevice, MainDeviceConfig, PduLoop, PduRx, PduStorage, PduTx, RegisterAddress,
-    RetryBehaviour, SubDeviceGroup, Timeouts, TxRxResponse,
-    std::ethercat_now,
-    subdevice_group::{CycleInfo, DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
+    MainDevice, MainDeviceConfig, PduStorage, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts, std::ethercat_now, subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp}
 };
-use std::{cell::UnsafeCell, sync::{Arc, OnceLock, atomic::Ordering}};
-use std::thread::Builder;
+use std::{cell::UnsafeCell, sync::{Arc, OnceLock, atomic::Ordering, mpsc::{Receiver, Sender}}};
 use std::{
     io::Error,
     sync::atomic::AtomicUsize,
@@ -15,8 +11,10 @@ use std::{
 use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::{
     runtime::Runtime,
-    time::{interval, sleep_until},
+    time::{interval},
 };
+
+use std::sync::mpsc;
 
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -52,56 +50,50 @@ enum GroupState {
     SafeOp(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, SafeOp, HasDc>),
 }
 
+#[repr(align(64))]
+pub struct CachePaddedAtomic(AtomicUsize);
+
+
+pub struct SdoRequest {}
+
+// LEGACY CODE HIDE BEHIND FLAG
+pub struct MachineIdent {}
+
+pub enum ChannelRequest {
+	SdoRequest(SdoRequest),
+	MachineIdent(MachineIdent),
+	ChangeState(EtherCATState),
+	Shutdown(),
+}
+
 pub struct EtherCATController {
     pub cycle_time_us: u64,
     pub interface: Option<String>,
     pub state: EtherCATState,
     pub requested_state: Option<EtherCATState>,
+	pub rx_channel : Receiver<ChannelRequest>,
+
     input_buffers: [UnsafeCell<[u8; ETHERCAT_TX_RX_SIZE]>; 2],
-    input_read_idx: AtomicUsize,
+    input_read_idx: CachePaddedAtomic,
 
     output_buffers: [UnsafeCell<[u8; ETHERCAT_TX_RX_SIZE]>; 2],
-    output_write_idx: AtomicUsize, // Which one the "System" is writing to
+    output_write_idx: CachePaddedAtomic, // Which one the "System" is writing to
 }
 
 unsafe impl Sync for EtherCATController {}
 unsafe impl Send for EtherCATController {}
 
-impl Default for EtherCATController {
-    fn default() -> Self {
-        Self {
-            cycle_time_us: Default::default(),
-            interface: Default::default(),
-            state: EtherCATState::NoInterface,
-            requested_state: None,
-            input_buffers: [
-                UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
-                UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
-            ],
-            input_read_idx: AtomicUsize::new(0),
-            output_buffers: [
-                UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
-                UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
-            ],
-            output_write_idx: AtomicUsize::new(0),            
-        }
-    }
-}
-
-
-
 impl EtherCATController {
     /// Read latest input blob (App side)
     pub fn get_inputs(&self) -> [u8; ETHERCAT_TX_RX_SIZE] {
-        let idx = self.input_read_idx.load(Ordering::Relaxed);
-     //   println!("idx: {:?}", self.input_buffers);
+        let idx = self.input_read_idx.0.load(Ordering::Relaxed);
         let ptr = self.input_buffers[idx].get();
         unsafe { *ptr }
     }
 
     /// Write output commands (App side)
     pub fn set_outputs(&self, data: &[u8]) {
-        let idx = self.output_write_idx.load(Ordering::Relaxed);
+        let idx = self.output_write_idx.0.load(Ordering::Relaxed);
         let ptr = self.output_buffers[idx].get();
         unsafe {
             let buf = &mut *ptr;
@@ -109,7 +101,7 @@ impl EtherCATController {
             buf[..len].copy_from_slice(&data[..len]);
         }
         // Switch index to signal the EtherCAT thread
-        self.output_write_idx.store(1 - idx, Ordering::Release);
+        self.output_write_idx.0.store(1 - idx, Ordering::Release);
     }
 }
 
@@ -194,6 +186,9 @@ impl EtherCATController {
                     };
                 }
                 EtherCATState::PreOp => {
+
+
+
                     let mut now = Instant::now();
                     let start = Instant::now();
                     let mut averages = Vec::new();
@@ -387,7 +382,7 @@ impl EtherCATController {
 	        				);
 
         					// 1. Determine which buffer is NOT being read by the app right now
-        					let read_idx = self.input_read_idx.load(Ordering::Acquire);
+        					let read_idx = self.input_read_idx.0.load(Ordering::Acquire);
         					let write_idx = 1 - read_idx;
 	        	
         					// 2. Get a mutable pointer to that buffer and write the data
@@ -411,7 +406,7 @@ impl EtherCATController {
         							}							
         					}
         					// 3. Update the read index so the app sees the fresh buffer
-        					self.input_read_idx.store(write_idx, Ordering::Release);              				
+        					self.input_read_idx.0.store(write_idx, Ordering::Release);              				
 	        				rt.block_on(async {tokio::time::sleep_until(res.1 + res.0.extra.next_cycle_wait).await});
 
 	        				/*
@@ -433,10 +428,24 @@ impl EtherCATController {
     }
 }}
 
-pub fn start_ethercat_thread(interface_name: &str) -> (Arc<EtherCATController>, JoinHandle<()>) {
+pub fn start_ethercat_thread(interface_name: &str) -> ( (Arc<EtherCATController>,Arc<Sender<ChannelRequest>> ), JoinHandle<()>) {
+let (tx, rx) = mpsc::channel();
     let controller = Arc::new(EtherCATController {
         interface: Some(interface_name.to_owned()),
-        ..Default::default()
+        cycle_time_us: 0,
+        state: EtherCATState::NoInterface,
+        requested_state: None,
+        rx_channel: rx ,
+            input_buffers: [
+                UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
+                UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
+            ],
+            input_read_idx: CachePaddedAtomic(AtomicUsize::new(0)),
+            output_buffers: [
+                UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
+                UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
+            ],
+            output_write_idx: CachePaddedAtomic(AtomicUsize::new(0)),   
     });
 
     let controller_for_thread = Arc::clone(&controller);
@@ -454,5 +463,5 @@ pub fn start_ethercat_thread(interface_name: &str) -> (Arc<EtherCATController>, 
         })
         .expect("Failed to spawn thread");
 
-    (controller, handle)
+    ((controller, tx), handle)
 }
