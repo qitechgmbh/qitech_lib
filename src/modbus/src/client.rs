@@ -10,6 +10,8 @@ pub enum Client
     Rtu(ClientRtu),
 }
 
+// TODO: reconsider this api design if TCP and RTU
+// differ too much in api/logic
 impl Client 
 {
     pub fn rtu(config: ClientConfigRtu) -> tokio_serial::Result<Self>

@@ -6,7 +6,7 @@ use modbus::{Client, ClientConfigRtu};
 async fn main() -> modbus::Result<()>
 {
     // create config
-    let config = ClientConfigRtu { 
+    let config = ClientConfigRtu {
         path:         "/dev/ttyUSB0", 
         baud_rate:    9600, 
         data_bits:    DataBits::Eight, 
@@ -20,7 +20,7 @@ async fn main() -> modbus::Result<()>
     // create client
     let mut client = Client::rtu(config).expect("Failed to create client");
 
-    // create device
+    // reference device
     let mut dev = client.device(1);
 
     // write 0
