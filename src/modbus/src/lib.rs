@@ -1,10 +1,14 @@
-use crate::protocol::{ExceptionCode, Header};
+use crate::protocol::ExceptionCode;
 
-pub mod rtu;
 pub mod scan;
 pub mod protocol;
 pub mod requests;
+mod client;
+mod rtu;
 mod encoder;
+
+pub use client::Client;
+pub use client::ClientConfigRtu;
 
 pub(crate) use encoder::Encoder;
 pub use encoder::EncoderError;
@@ -45,17 +49,8 @@ pub enum DataMalformedError
     DataMismatch,
 }
 
-pub trait ModbusClient
-{
-    fn send_recv(
-        &mut self, 
-        header: Header,
-        data:   &[u8]
-    ) -> impl Future<Output = Result<&mut [u8]>>;
-}
-
 #[derive(Debug)]
-pub struct Device<'a, Client: ModbusClient>
+pub struct Device<'a>
 {
     client: &'a mut Client,
     id:     u8, 

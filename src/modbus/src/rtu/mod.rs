@@ -3,17 +3,18 @@ use std::{time::Duration};
 use tokio_serial::{ SerialPortBuilderExt, SerialStream };
 use tokio::io::AsyncWriteExt;
 
-use crate::{Result, Device, Error, ModbusClient};
+use crate::{Result, Error};
 use crate::protocol::Header;
 
 use reader::Reader;
-pub use config::RtuClientConfig;
+pub use config::ClientConfig;
 
 mod helpers;
 mod reader;
 mod config;
 
-pub struct RtuClient
+#[derive(Debug)]
+pub struct Client
 {
     //TODO: implement wrapper for tokio/tokio-serial
     serial:    SerialStream,
@@ -22,9 +23,9 @@ pub struct RtuClient
     buf:       [u8; 252]
 }
 
-impl RtuClient
+impl Client
 {
-    pub fn new(config: RtuClientConfig) -> tokio_serial::Result<Self> 
+    pub fn new(config: ClientConfig) -> tokio_serial::Result<Self> 
     {
         let serial = tokio_serial::new(config.path, config.baud_rate)
             .data_bits(config.data_bits)
@@ -42,12 +43,7 @@ impl RtuClient
         })
     }
 
-    pub fn device<'a>(&'a mut self, slave_id: u8) -> Device<'a, Self> 
-    {
-        Device::new(self, slave_id)
-    }
-
-    async fn send(&mut self, header: &Header, data: &[u8]) -> Result<()> 
+    pub(crate) async fn send(&mut self, header: &Header, data: &[u8]) -> Result<()> 
     {
         use helpers::*;
 
@@ -61,7 +57,7 @@ impl RtuClient
             .map_err(Error::IoError)
     }
 
-    async fn recv(&mut self, rq_header: &Header) -> Result<&mut [u8]> 
+    pub(crate) async fn recv(&mut self, rq_header: &Header) -> Result<&mut [u8]> 
     {
         use helpers::*;
 
@@ -83,14 +79,5 @@ impl RtuClient
         validate_crc(&mut reader).await?;
 
         Ok(data)
-    }
-}
-
-impl ModbusClient for RtuClient
-{
-    async fn send_recv(&mut self, header: Header, data: &[u8]) -> Result<&mut [u8]> 
-    {
-        self.send(&header, data).await?;
-        self.recv(&header).await
     }
 }

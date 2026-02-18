@@ -1,15 +1,9 @@
-use crate::{ 
-    Result,
-    DataMalformedError, 
-    Device, 
-    Encoder, 
-    Error,
-    ModbusClient, 
-    protocol::{ FunctionCode, Header }
-};
+use crate::{ Client, DataMalformedError, Device, Encoder, Error, Result };
+
+use crate::protocol::{ FunctionCode, Header };
 
 // transport protocol indepdendent API functions
-impl<'a, Client: ModbusClient> Device<'a, Client> 
+impl<'a> Device<'a> 
 {
     pub fn new(client: &'a mut Client, id: u8) -> Self
     {

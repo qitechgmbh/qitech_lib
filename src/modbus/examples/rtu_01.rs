@@ -1,11 +1,12 @@
 use std::time::Duration;
 use tokio_serial::{ DataBits, FlowControl, Parity, StopBits };
-use modbus::rtu::{ RtuClient, RtuClientConfig };
+use modbus::{Client, ClientConfigRtu};
 
 #[tokio::main]
 async fn main() -> modbus::Result<()>
 {
-    let config = RtuClientConfig { 
+    // create config
+    let config = ClientConfigRtu { 
         path:         "/dev/ttyUSB0", 
         baud_rate:    9600, 
         data_bits:    DataBits::Eight, 
@@ -16,8 +17,11 @@ async fn main() -> modbus::Result<()>
         timeout: Duration::from_millis(500),
     };
 
-    let mut client = RtuClient::new(config).expect("Failed to create client");
-    let mut dev    = client.device(1);
+    // create client
+    let mut client = Client::rtu(config).expect("Failed to create client");
+
+    // create device
+    let mut dev = client.device(1);
 
     // write 0
     dev.write_single_holding_register(0x2, 0).await?;

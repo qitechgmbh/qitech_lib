@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use tokio_serial::{DataBits, FlowControl, Parity, StopBits};
 
-pub struct RtuClientConfig<'a>
+pub struct ClientConfig<'a>
 {
     pub path:         &'a str,
     pub baud_rate:    u32,
@@ -13,7 +13,7 @@ pub struct RtuClientConfig<'a>
     pub timeout:      Duration,
 }
 
-impl<'a> RtuClientConfig<'a> 
+impl<'a> ClientConfig<'a> 
 {
     pub fn char_time(&self) -> Duration 
     {
