@@ -1,5 +1,6 @@
 use ethercat::{ChannelRequest, ChannelResponse, EtherCATState, start_ethercat_thread};
-use std::time::Duration;
+use ethercat_hal::devices::el3024::EL3024;
+use std::{sync::RwLock, time::Duration};
 
 pub fn main() {
     let (result, _handle) = start_ethercat_thread("enp101s0f4u1u2");
@@ -7,6 +8,8 @@ pub fn main() {
     let ecat = result.0;
     let sender = result.1;
     println!("ECAT Controller Main Addr: {:p}", ecat);
+
+    let el3024 : EL3024 = el3024::EL3024::new();
 
     // When we requested OP go here
     loop {
@@ -27,7 +30,6 @@ pub fn main() {
             println!("sent request");
             // println!("{:?}",res);
             let res = rx.recv();
-            println!("hello {:?}", res);
             std::thread::sleep(Duration::from_millis(1000));
         }
 

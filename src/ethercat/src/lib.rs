@@ -43,6 +43,10 @@ pub const MAX_FRAMES: usize = 16;
 pub const PDI_LEN: usize = 1024;
 static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
 
+// Wrapper to easily refactor later on
+pub struct EtherCATThreadChannel(pub Sender<ChannelRequest>);
+
+
 #[derive(Debug)]
 pub enum EtherCATState {
     NoInterface = 0,
