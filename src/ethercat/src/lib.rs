@@ -72,18 +72,31 @@ pub struct SdoReadRequest {
 // LEGACY CODE HIDE BEHIND FLAG
 pub struct MachineIdent {}
 
-pub enum ChannelRequest {
+#[derive(Debug)]
+pub enum ChannelResponse {
+	// For simplicity every response that is unsigned -> u32
+	SdoResponseU32(Result<u32,ethercrab::error::Error>),
+	// And every signed  is promoted to i32 
+	SdoResponseI32(Result<u32,ethercrab::error::Error>),
+	ChangeState(Result<(),ethercrab::error::Error>),
+}
+
+pub enum ChannelRequests {
 	// Sadly need a few variants so compiler doesnt scream here 
 	SdoRequestU8(SdoRequest<u8>),
 	SdoRequestU16(SdoRequest<u16>),
 	SdoRequestU32(SdoRequest<u32>),
 	SdoRequestI16(SdoRequest<i16>),
 	SdoRequestI32(SdoRequest<i32>),
-
 	SdoReadRequest(SdoReadRequest),
 	MachineIdent(MachineIdent),
 	ChangeState(EtherCATState),
 	Shutdown(),
+}
+
+pub struct ChannelRequest {
+	pub channel_request: ChannelRequests,
+	pub response_channel: Option<Sender<ChannelResponse>>,
 }
 
 pub struct EtherCATController {
@@ -125,12 +138,16 @@ impl EtherCATController {
     }
 }
 
+pub fn send_response(response_channel : Option<Sender<ChannelResponse>>, response : ChannelResponse ){
+	match response_channel {
+    	Some(chan) => {
+    		let _ = chan.send(response);
+    	}
+    	None => (),
+	};
+}
+
 impl EtherCATController {
-
-	fn handle_init(){
-		
-	}
-
     pub fn ethercat_state_machine(&mut self) {
         let mut ethercat_tx_rx_handle: Result<JoinHandle<()>, Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>> = None;
@@ -158,17 +175,13 @@ impl EtherCATController {
                     	Err(_) => continue,
                 	};
 
-                	match msg {
-                    	ChannelRequest::ChangeState(ether_catstate) => match ether_catstate {
-    	                    EtherCATState::NoInterface => {
-    	                    	self.state = ether_catstate;
-    	                    	continue; // end the loop here -> go back to NoInterface state
-    	                    },                                               
+                	match msg.channel_request {
+                    	ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {                                               
 	                        EtherCATState::PreOp => (),    	                    
 	                        _ => continue,
 	                	},
-                    	ChannelRequest::Shutdown() => return, // We CAN safely shutdonw in Init
-                    	_ => (),
+                    	ChannelRequests::Shutdown() => return, // We CAN safely shutdonw in Init
+                    	_ => continue,
                 	}
 
                     use ethercrab::std::tx_rx_task_io_uring;
@@ -216,15 +229,43 @@ impl EtherCATController {
                             Err(err) => {
                                 println!("failed moving to PreOp from Init {:?}", err);
                                 self.state = EtherCATState::Init;
+                               	send_response(msg.response_channel,ChannelResponse::ChangeState(Err(err)));
                                 continue;
                             }
                         });
                         self.state = EtherCATState::PreOp;
+						send_response(msg.response_channel,ChannelResponse::ChangeState(Ok(())));
                     };
                 }
                 EtherCATState::PreOp => {
+                	let msg = match self.rx_channel.try_recv() {
+                    	Ok(value) => value,
+                    	Err(_) => continue,
+                	};
+                	match msg.channel_request {
+                    	ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {
+    	                    EtherCATState::NoInterface => {
+    	                    	self.state = ether_catstate;
+    	                    	match msg.response_channel {
+                            		Some(channel) => {
+                            			let res = channel.send(
+                            				ChannelResponse::ChangeState(Ok(()))
+                            			);
+                            		},
+                            		None => todo!(),
+                        		};
+    	                    	continue; // end the loop here -> go back to NoInterface state
+    	                    },                                               
+	                        EtherCATState::PreOp => continue,
+	                        EtherCATState::Op => (),    	                    
+	                        _ => continue,
+	                	},
+                    	ChannelRequests::Shutdown() => return, // We CAN safely shutdonw in PreOp
+                    	_ => continue,
+                	}
 
-
+                	// Starting transition to PreopPdi
+                	println!("Starting transition to PreopPdi");
 
                     let mut now = Instant::now();
                     let start = Instant::now();
@@ -484,6 +525,7 @@ let (tx, rx) = mpsc::channel();
             output_write_idx: CachePaddedAtomic(AtomicUsize::new(0)),   
     });
     let controller_for_thread = Arc::clone(&controller);
+    
     let handle = std::thread::Builder::new()
         .name("EthercatStateMachine".into())
         .spawn(move || {
