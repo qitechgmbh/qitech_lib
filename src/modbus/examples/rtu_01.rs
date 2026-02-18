@@ -3,10 +3,8 @@ use std::time::Duration;
 use modbus::rtu::{ RtuClient, RtuClientConfig };
 use tokio_serial::{ DataBits, FlowControl, Parity, StopBits };
 
-use modbus::Result;
-
 #[tokio::main]
-async fn main() -> Result<()>
+async fn main() -> modbus::Result<()>
 {
     let config = RtuClientConfig { 
         path:         "/dev/ttyUSB0", 
