@@ -1,0 +1,16 @@
+[package]
+name = "modbus"
+version = "0.1.0"
+edition = "2024"
+description = "Modbus subcrate"
+
+[dependencies]
+
+bytemuck = "1.25.0"
+tokio = { version = "1.49.0", features = ["full"] }
+
+tokio-serial = "5.0"
+
+num_enum = "0.7.5"
+
+[lib]

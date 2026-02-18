@@ -5,7 +5,7 @@ edition = "2024"
 
 [workspace]
 # This tells Cargo to look inside the subfolder for another project
-members = ["src/ethercat"]
+members = ["src/ethercat", "src/modbus"]
 
 [dependencies]
 # This is the "bridge" that allows main.rs to see the subcrate
