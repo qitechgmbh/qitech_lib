@@ -1,7 +1,7 @@
 use std::time::Duration;
 
+use tokio::io::AsyncReadExt;
 use tokio_serial::SerialStream;
-use tokio::io::{ AsyncReadExt };
 
 use crate::{ Error, Result };
 
