@@ -1,7 +1,6 @@
 use std::time::Duration;
-
-use modbus::rtu::{ RtuClient, RtuClientConfig };
 use tokio_serial::{ DataBits, FlowControl, Parity, StopBits };
+use modbus::rtu::{ RtuClient, RtuClientConfig };
 
 #[tokio::main]
 async fn main() -> modbus::Result<()>
@@ -25,6 +24,8 @@ async fn main() -> modbus::Result<()>
 
     // read 0
     let res = dev.read_holding_registers(0x2, 1).await?;
+
+    // verify
     assert!(res[0] == 0);
 
     // write 500
@@ -33,6 +34,7 @@ async fn main() -> modbus::Result<()>
     // read 500
     let res = dev.read_holding_registers(0x2, 1).await?;
 
+    // verify
     assert!(res[0] == 500);
 
     Ok(())
