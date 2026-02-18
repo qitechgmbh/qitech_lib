@@ -1,7 +1,18 @@
 use ethercrab::{
-    MainDevice, MainDeviceConfig, PduStorage, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts, std::ethercat_now, subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp}
+    EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, MainDeviceConfig,
+    PduStorage, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
+    std::ethercat_now,
+    subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
 };
-use std::{cell::UnsafeCell, sync::{Arc, OnceLock, atomic::Ordering, mpsc::{Receiver, Sender}}};
+use std::{
+    cell::UnsafeCell,
+    marker::PhantomData,
+    sync::{
+        Arc, OnceLock,
+        atomic::Ordering,
+        mpsc::{Receiver, Sender},
+    },
+};
 use std::{
     io::Error,
     sync::atomic::AtomicUsize,
@@ -9,10 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
-use tokio::{
-    runtime::Runtime,
-    time::{interval},
-};
+use tokio::{runtime::Runtime, time::interval};
 
 use std::sync::mpsc;
 
@@ -35,7 +43,6 @@ pub const MAX_FRAMES: usize = 16;
 pub const PDI_LEN: usize = 1024;
 static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
 
-
 #[derive(Debug)]
 pub enum EtherCATState {
     NoInterface = 0,
@@ -55,48 +62,56 @@ enum GroupState {
 #[repr(align(64))]
 pub struct CachePaddedAtomic(AtomicUsize);
 
-
 pub struct SdoRequest<T> {
-        device_address: u16,
-        index: u16,
-        sub_index: u16,
-        value: T,
+    device_address: u16,
+    index: u16,
+    sub_index: u16,
+    value: T,
 }
 
-pub struct SdoReadRequest {
-	    device_address: u16,
-        index: u16,
-        sub_index: u16,        
+pub struct SdoReadRequest<T> {
+    device_address: u16,
+    index: u16,
+    sub_index: u16,
+    _p: PhantomData<T>, // need this so we can apply generics here ... little bit hacky but works great
 }
 
 // LEGACY CODE HIDE BEHIND FLAG
 pub struct MachineIdent {}
 
+// TODO: instead of using ethercrab::error:Error use something more generic like anyhow::Error
 #[derive(Debug)]
 pub enum ChannelResponse {
-	// For simplicity every response that is unsigned -> u32
-	SdoResponseU32(Result<u32,ethercrab::error::Error>),
-	// And every signed  is promoted to i32 
-	SdoResponseI32(Result<u32,ethercrab::error::Error>),
-	ChangeState(Result<(),ethercrab::error::Error>),
+    // For simplicity every response that is unsigned -> u32
+    SdoResponseU32(Result<u32, ethercrab::error::Error>),
+    // And every signed  is promoted to i32
+    SdoResponseI32(Result<i32, ethercrab::error::Error>),
+    SdoWriteResponse(Result<(), ethercrab::error::Error>),
+    ChangeState(Result<(), ethercrab::error::Error>),
 }
 
 pub enum ChannelRequests {
-	// Sadly need a few variants so compiler doesnt scream here 
-	SdoRequestU8(SdoRequest<u8>),
-	SdoRequestU16(SdoRequest<u16>),
-	SdoRequestU32(SdoRequest<u32>),
-	SdoRequestI16(SdoRequest<i16>),
-	SdoRequestI32(SdoRequest<i32>),
-	SdoReadRequest(SdoReadRequest),
-	MachineIdent(MachineIdent),
-	ChangeState(EtherCATState),
-	Shutdown(),
+    // Sadly need a few variants so compiler doesnt scream here
+    SdoRequestU8(SdoRequest<u8>),
+    SdoRequestU16(SdoRequest<u16>),
+    SdoRequestU32(SdoRequest<u32>),
+    SdoRequestI16(SdoRequest<i16>),
+    SdoRequestI32(SdoRequest<i32>),
+
+    SdoReadU8(SdoReadRequest<u8>),
+    SdoReadU16(SdoReadRequest<u16>),
+    SdoReadU32(SdoReadRequest<u32>),
+    SdoReadI16(SdoReadRequest<i16>),
+    SdoReadI32(SdoReadRequest<i32>),
+
+    MachineIdent(MachineIdent),
+    ChangeState(EtherCATState),
+    Shutdown(),
 }
 
 pub struct ChannelRequest {
-	pub channel_request: ChannelRequests,
-	pub response_channel: Option<Sender<ChannelResponse>>,
+    pub channel_request: ChannelRequests,
+    pub response_channel: Option<Sender<ChannelResponse>>,
 }
 
 pub struct EtherCATController {
@@ -104,7 +119,7 @@ pub struct EtherCATController {
     pub interface: Option<String>,
     pub state: EtherCATState,
     pub requested_state: Option<EtherCATState>,
-	pub rx_channel : Receiver<ChannelRequest>,
+    pub rx_channel: Receiver<ChannelRequest>,
 
     input_buffers: [UnsafeCell<[u8; ETHERCAT_TX_RX_SIZE]>; 2],
     input_read_idx: CachePaddedAtomic,
@@ -138,13 +153,56 @@ impl EtherCATController {
     }
 }
 
-pub fn send_response(response_channel : Option<Sender<ChannelResponse>>, response : ChannelResponse ){
-	match response_channel {
-    	Some(chan) => {
-    		let _ = chan.send(response);
-    	}
-    	None => (),
-	};
+pub fn send_response(response_channel: Option<Sender<ChannelResponse>>, response: ChannelResponse) {
+    match response_channel {
+        Some(chan) => {
+            let _ = chan.send(response);
+        }
+        None => (),
+    };
+}
+
+/*
+ Value type needs to have EtherCrabWireWrite + Copy at the least to be able to write with ethecrab
+*/
+pub fn sdo_write<T>(
+    maindevice: &MainDevice,
+    group: &SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
+    request: SdoRequest<T>,
+) -> Result<(), ethercrab::error::Error>
+where
+    T: EtherCrabWireWrite + Copy,
+{
+    for device in group.iter(maindevice) {
+        if device.configured_address() == request.device_address {
+            let runtime = get_async_runtime();
+            let _res = runtime.block_on(device.sdo_write::<T>(
+                request.index,
+                request.sub_index as u8,
+                request.value,
+            ));
+        }
+    }
+    Err(ethercrab::error::Error::UnknownSubDevice)
+}
+
+pub fn sdo_read<T>(
+    maindevice: &MainDevice,
+    group: &SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
+    request: SdoReadRequest<T>,
+) -> Result<T, ethercrab::error::Error>
+where
+    T: EtherCrabWireRead + EtherCrabWireSized + Copy,
+{
+    for device in group.iter(maindevice) {
+        if device.configured_address() == request.device_address {
+            let runtime = get_async_runtime();
+            let res =
+                runtime.block_on(device.sdo_read::<T>(request.index, request.sub_index as u8));
+            return res;
+        }
+    }
+    Err(ethercrab::error::Error::UnknownSubDevice)
 }
 
 impl EtherCATController {
@@ -157,7 +215,7 @@ impl EtherCATController {
         > = None;
         let mut group_op: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, Op, HasDc>> = None;
         let mut maindevice: Option<MainDevice> = None;
-		println!("ECAT Controller Addr: {:p}", self);
+        println!("ECAT Controller Addr: {:p}", self);
         loop {
             match self.state {
                 EtherCATState::NoInterface => {
@@ -170,19 +228,19 @@ impl EtherCATController {
                     // Do Nothing
                 }
                 EtherCATState::Init => {
-                	let msg = match self.rx_channel.try_recv() {
-                    	Ok(value) => value,
-                    	Err(_) => continue,
-                	};
+                    let msg = match self.rx_channel.try_recv() {
+                        Ok(value) => value,
+                        Err(_) => continue,
+                    };
 
-                	match msg.channel_request {
-                    	ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {                                               
-	                        EtherCATState::PreOp => (),    	                    
-	                        _ => continue,
-	                	},
-                    	ChannelRequests::Shutdown() => return, // We CAN safely shutdonw in Init
-                    	_ => continue,
-                	}
+                    match msg.channel_request {
+                        ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {
+                            EtherCATState::PreOp => (),
+                            _ => continue,
+                        },
+                        ChannelRequests::Shutdown() => return, // We CAN safely shutdonw in Init
+                        _ => continue,
+                    }
 
                     use ethercrab::std::tx_rx_task_io_uring;
                     if self.interface.is_some() {
@@ -229,43 +287,136 @@ impl EtherCATController {
                             Err(err) => {
                                 println!("failed moving to PreOp from Init {:?}", err);
                                 self.state = EtherCATState::Init;
-                               	send_response(msg.response_channel,ChannelResponse::ChangeState(Err(err)));
+                                send_response(
+                                    msg.response_channel,
+                                    ChannelResponse::ChangeState(Err(err)),
+                                );
                                 continue;
                             }
                         });
                         self.state = EtherCATState::PreOp;
-						send_response(msg.response_channel,ChannelResponse::ChangeState(Ok(())));
+                        send_response(msg.response_channel, ChannelResponse::ChangeState(Ok(())));
                     };
                 }
                 EtherCATState::PreOp => {
-                	let msg = match self.rx_channel.try_recv() {
-                    	Ok(value) => value,
-                    	Err(_) => continue,
-                	};
-                	match msg.channel_request {
-                    	ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {
-    	                    EtherCATState::NoInterface => {
-    	                    	self.state = ether_catstate;
-    	                    	match msg.response_channel {
-                            		Some(channel) => {
-                            			let res = channel.send(
-                            				ChannelResponse::ChangeState(Ok(()))
-                            			);
-                            		},
-                            		None => todo!(),
-                        		};
-    	                    	continue; // end the loop here -> go back to NoInterface state
-    	                    },                                               
-	                        EtherCATState::PreOp => continue,
-	                        EtherCATState::Op => (),    	                    
-	                        _ => continue,
-	                	},
-                    	ChannelRequests::Shutdown() => return, // We CAN safely shutdonw in PreOp
-                    	_ => continue,
-                	}
+                    let msg = match self.rx_channel.try_recv() {
+                        Ok(value) => value,
+                        Err(_) => continue,
+                    };
 
-                	// Starting transition to PreopPdi
-                	println!("Starting transition to PreopPdi");
+                    let maindev = maindevice.as_ref().unwrap();
+                    let preop_group = group.as_ref().unwrap();
+                    match msg.channel_request {
+                        ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {
+                            EtherCATState::NoInterface => {
+                                self.state = ether_catstate;
+                                send_response(
+                                    msg.response_channel,
+                                    ChannelResponse::ChangeState(Ok(())),
+                                );
+                                continue; // end the loop here -> go back to NoInterface state
+                            }
+                            EtherCATState::PreOp => continue,
+                            EtherCATState::Op => (),
+                            _ => continue,
+                        },
+                        ChannelRequests::Shutdown() => return,
+                        // enum variants suuuuuuuuck
+                        ChannelRequests::SdoRequestU8(request) => {
+                            let res = sdo_write(maindev, preop_group, request);
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::SdoWriteResponse(res),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::SdoRequestU16(request) => {
+                            let res = sdo_write(maindev, preop_group, request);
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::SdoWriteResponse(res),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::SdoRequestU32(request) => {
+                            let res = sdo_write(maindev, preop_group, request);
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::SdoWriteResponse(res),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::SdoRequestI16(request) => {
+                            let res = sdo_write(maindev, preop_group, request);
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::SdoWriteResponse(res),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::SdoRequestI32(request) => {
+                            let res = sdo_write(maindev, preop_group, request);
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::SdoWriteResponse(res),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::SdoReadU8(request) => {
+                            let res = sdo_read(maindev, preop_group, request);
+                            let res_u32: Result<u32, ethercrab::error::Error> =
+                                res.map(|v| v as u32);
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::SdoResponseU32(res_u32),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::SdoReadU16(request) => {
+                            let res = sdo_read(maindev, preop_group, request);
+                            let res_u32: Result<u32, ethercrab::error::Error> =
+                                res.map(|v| v as u32);
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::SdoResponseU32(res_u32),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::SdoReadU32(request) => {
+                            let res = sdo_read(maindev, preop_group, request);
+                            let res_u32: Result<u32, ethercrab::error::Error> =
+                                res.map(|v| v as u32);
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::SdoResponseU32(res_u32),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::SdoReadI16(request) => {
+                            let res = sdo_read(maindev, preop_group, request);
+                            let res_i32: Result<i32, ethercrab::error::Error> =
+                                res.map(|v| v as i32);
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::SdoResponseI32(res_i32),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::SdoReadI32(request) => {
+                            let res = sdo_read(maindev, preop_group, request);
+                            let res_i32: Result<i32, ethercrab::error::Error> =
+                                res.map(|v| v as i32);
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::SdoResponseI32(res_i32),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::MachineIdent(machine_ident) => todo!(),
+                    }
+
+                    // Starting transition to PreopPdi
+                    println!("Starting transition to PreopPdi");
 
                     let mut now = Instant::now();
                     let start = Instant::now();
@@ -278,9 +429,8 @@ impl EtherCATController {
                     }
 
                     let rt = get_async_runtime();
-    				let mut tick_interval = rt.block_on(async {
-    	    			interval(Duration::from_micros(1000))
-    				});                    
+                    let mut tick_interval =
+                        rt.block_on(async { interval(Duration::from_micros(1000)) });
 
                     println!("Moving into PRE-OP with PDI");
                     let group_to_transition = group.take().expect("Group missing in PreOp");
@@ -366,7 +516,7 @@ impl EtherCATController {
 
                     let mut tick = 0;
                     let rt = get_async_runtime();
-                    let group_safe_op = loop {                       
+                    let group_safe_op = loop {
                         match group_container.take().unwrap() {
                             GroupState::PreOp(group) => {
                                 let device = maindevice.as_ref().unwrap();
@@ -438,98 +588,101 @@ impl EtherCATController {
                             )
                             .expect("TX/RX");
                         if response.all_op() {
-                        	println!("Not All OP");
+                            println!("Not All OP");
                             break;
                         }
                     }
 
                     println!("ALL OP");
-                    let group = group_op
-                                .as_ref()
-                                .unwrap();
+                    let group = group_op.as_ref().unwrap();
 
-                   	let maindevice = maindevice.as_ref().unwrap();
+                    let maindevice = maindevice.as_ref().unwrap();
                     loop {
-                    	let res = rt.block_on(
-                    		async {
-        						let res = group.tx_rx_dc(&maindevice).await.expect("TX/RX");
-	        					let now = tokio::time::Instant::now();
-	        					(res,now)
-		        			}
-	        				);
+                        let res = rt.block_on(async {
+                            let res = group.tx_rx_dc(&maindevice).await.expect("TX/RX");
+                            let now = tokio::time::Instant::now();
+                            (res, now)
+                        });
 
-        					// 1. Determine which buffer is NOT being read by the app right now
-        					let read_idx = self.input_read_idx.0.load(Ordering::Acquire);
-        					let write_idx = 1 - read_idx;
-	        	
-        					// 2. Get a mutable pointer to that buffer and write the data
-        					let dest_ptr = self.input_buffers[write_idx].get();
-							unsafe {
-    								// We get a mutable slice to the whole buffer to make sub-slicing easier
-    								let full_buffer = &mut *dest_ptr;
-	    							let mut current_offset = 0;
-    								for subdevice in group.iter(&maindevice) {
-        								let len = subdevice.io_raw().inputs().len();
-        								
-        								//println!("{:?}",subdevice.io_raw().inputs());
-        								if current_offset + len <= ETHERCAT_TX_RX_SIZE {
-            								full_buffer[current_offset..current_offset + len].copy_from_slice(subdevice.io_raw().inputs());
-	            							//println!("{:?}",full_buffer);
-	            							current_offset += len;
-        								} else {
-            								println!("Data exceeds buffer");
-            								break; 
-	        							}
-        							}							
-        					}
-        					// 3. Update the read index so the app sees the fresh buffer
-        					self.input_read_idx.0.store(write_idx, Ordering::Release);              				
-	        				rt.block_on(async {tokio::time::sleep_until(res.1 + res.0.extra.next_cycle_wait).await});
+                        // 1. Determine which buffer is NOT being read by the app right now
+                        let read_idx = self.input_read_idx.0.load(Ordering::Acquire);
+                        let write_idx = 1 - read_idx;
 
-	        				/*
-							// Write Outputs 
-	        				let out_idx = self.output_write_idx.load(Ordering::Acquire);
-        					let out_read_idx = 1 - out_idx;
-        					let src_ptr = self.output_buffers[out_read_idx].get();		        
-					        unsafe {
-            					// Apply commands from the buffer to the EtherCAT group
-            					group.apply_output_data(&*src_ptr);
-        					}*/
+                        // 2. Get a mutable pointer to that buffer and write the data
+                        let dest_ptr = self.input_buffers[write_idx].get();
+                        unsafe {
+                            // We get a mutable slice to the whole buffer to make sub-slicing easier
+                            let full_buffer = &mut *dest_ptr;
+                            let mut current_offset = 0;
+                            for subdevice in group.iter(&maindevice) {
+                                let len = subdevice.io_raw().inputs().len();
 
-    					
+                                //println!("{:?}",subdevice.io_raw().inputs());
+                                if current_offset + len <= ETHERCAT_TX_RX_SIZE {
+                                    full_buffer[current_offset..current_offset + len]
+                                        .copy_from_slice(subdevice.io_raw().inputs());
+                                    //println!("{:?}",full_buffer);
+                                    current_offset += len;
+                                } else {
+                                    println!("Data exceeds buffer");
+                                    break;
+                                }
+                            }
+                        }
+                        // 3. Update the read index so the app sees the fresh buffer
+                        self.input_read_idx.0.store(write_idx, Ordering::Release);
+                        rt.block_on(async {
+                            tokio::time::sleep_until(res.1 + res.0.extra.next_cycle_wait).await
+                        });
+
+                        /*
+                        // Write Outputs
+                        let out_idx = self.output_write_idx.load(Ordering::Acquire);
+                        let out_read_idx = 1 - out_idx;
+                        let src_ptr = self.output_buffers[out_read_idx].get();
+                        unsafe {
+                            // Apply commands from the buffer to the EtherCAT group
+                            group.apply_output_data(&*src_ptr);
+                        }*/
+                    }
                 }
             }
+            self.requested_state = None;
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
-        self.requested_state = None;
-        std::thread::sleep(std::time::Duration::from_millis(1));
     }
-}}
+}
 
-pub fn start_ethercat_thread(interface_name: &str) -> ( (Arc<EtherCATController>,Arc<Sender<ChannelRequest>> ), JoinHandle<()>) {
-let (tx, rx) = mpsc::channel();
+pub fn start_ethercat_thread(
+    interface_name: &str,
+) -> (
+    (Arc<EtherCATController>, Arc<Sender<ChannelRequest>>),
+    JoinHandle<()>,
+) {
+    let (tx, rx) = mpsc::channel();
     let controller = Arc::new(EtherCATController {
         interface: Some(interface_name.to_owned()),
         cycle_time_us: 0,
         state: EtherCATState::NoInterface,
         requested_state: None,
-        rx_channel: rx ,
-            input_buffers: [
-                UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
-                UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
-            ],
-            input_read_idx: CachePaddedAtomic(AtomicUsize::new(0)),
-            output_buffers: [
-                UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
-                UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
-            ],
-            output_write_idx: CachePaddedAtomic(AtomicUsize::new(0)),   
+        rx_channel: rx,
+        input_buffers: [
+            UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
+            UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
+        ],
+        input_read_idx: CachePaddedAtomic(AtomicUsize::new(0)),
+        output_buffers: [
+            UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
+            UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
+        ],
+        output_write_idx: CachePaddedAtomic(AtomicUsize::new(0)),
     });
     let controller_for_thread = Arc::clone(&controller);
-    
+
     let handle = std::thread::Builder::new()
         .name("EthercatStateMachine".into())
         .spawn(move || {
-            // We need &mut self for the state machine.            
+            // We need &mut self for the state machine.
             let ptr = Arc::as_ptr(&controller_for_thread) as *mut EtherCATController;
             unsafe {
                 (&mut *ptr).ethercat_state_machine();
