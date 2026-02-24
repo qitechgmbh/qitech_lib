@@ -36,10 +36,6 @@ impl Telemetry
             temperature: words[2],
             frequency:   words[5],
         };
-    // recv
-    mgr.borrow_mut().update();
-
-
 
         Ok(Self { status, sensors, error })
     }
