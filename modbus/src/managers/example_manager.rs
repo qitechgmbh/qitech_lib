@@ -53,7 +53,7 @@ impl ExampleDeviceManager
     pub fn register_device<D>(
         mgr_rc: Rc<RefCell<Self>>, // <- pass Rc of self here
         slave_id: u8,
-    ) -> Rc<RefCell<dyn Device<ExampleScheduler>>>
+    ) -> Rc<RefCell<D>>
     where
         D: Device<ExampleScheduler> + 'static,
     {
