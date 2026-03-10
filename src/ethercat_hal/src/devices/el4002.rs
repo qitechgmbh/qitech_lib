@@ -103,6 +103,7 @@ impl EL4002 {
         subdevice: &EthercrabSubDevicePreoperational<'a>,
     ) -> Result<(), anyhow::Error> {
         tracing::info!("el4002");
+        /*
         self.configuration
             .channel1
             .write_channel_config(subdevice, 0x8000)
@@ -111,7 +112,7 @@ impl EL4002 {
             .channel1
             .write_channel_config(subdevice, 0x8010)
             .await?;
-
+        */
         self.configuration
             .pdo_assignment
             .txpdo_assignment()

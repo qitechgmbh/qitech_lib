@@ -1,21 +1,17 @@
-use ethercat::{ChannelRequest, ChannelResponse, EtherCATState, start_ethercat_thread};
-use ethercat_hal::devices::el3024::EL3024;
-use std::{sync::RwLock, time::Duration};
+use ethercat::{ChannelRequest, ChannelResponse, EtherCATState, EtherCATThreadResponseChannel, start_ethercat_thread};
+use ethercat_hal::devices::{NewEthercatDevice, el3024::{self, EL3024}};
+use std::time::Duration;
 
 pub fn main() {
     let (result, _handle) = start_ethercat_thread("enp101s0f4u1u2");
     let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
+    let response_channel : EtherCATThreadResponseChannel = EtherCATThreadResponseChannel(tx);
     let ecat = result.0;
     let sender = result.1;
-    println!("ECAT Controller Main Addr: {:p}", ecat);
-
-    let el3024 : EL3024 = el3024::EL3024::new();
-
-    // When we requested OP go here
+    let _el3024 : EL3024 = el3024::EL3024::new();
+    
     loop {
-        // Get the latest data
-        // perhaps add a freshness atomic bool to avoid hammering the cache when theres no new data to be read ?
-        let inputs = ecat.get_inputs();
+        let _inputs = ecat.get_inputs();
         std::thread::sleep(Duration::from_millis(1));
 
         if let EtherCATState::Init = ecat.state {
@@ -23,13 +19,10 @@ pub fn main() {
                 channel_request: ethercat::ChannelRequests::ChangeState(
                     ethercat::EtherCATState::PreOp,
                 ),
-                response_channel: Some(tx.clone()),
+                response_channel: response_channel.clone(),
             };
-
-            let res = sender.send(req);
-            println!("sent request");
-            // println!("{:?}",res);
-            let res = rx.recv();
+            let _res = &sender.0.send(req);
+            let _res = rx.recv();
             std::thread::sleep(Duration::from_millis(1000));
         }
 
@@ -38,10 +31,9 @@ pub fn main() {
                 channel_request: ethercat::ChannelRequests::ChangeState(
                     ethercat::EtherCATState::Op,
                 ),
-                response_channel: Some(tx.clone()),
+                response_channel: response_channel.clone(),
             };
-            let res = sender.send(req);
-            println!("{:?}", res);
+            let _res = sender.0.send(req);
             std::thread::sleep(Duration::from_millis(1000));
         }
     }

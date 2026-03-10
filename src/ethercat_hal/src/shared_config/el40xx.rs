@@ -1,4 +1,7 @@
-use ethercat::EtherCATThreadChannel;
+use std::{any::TypeId, default};
+
+use ethercat::{ChannelRequest, ChannelResponse, EtherCATThreadChannel, EtherCATThreadResponseChannel, SdoRequest, SdoType, helpers::sdo_write_helper};
+use ethercrab::EtherCrabWireWrite;
 
 use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 
@@ -109,43 +112,25 @@ impl Default for EL40XXChannelConfiguration {
     }
 }
 
+
 impl EL40XXChannelConfiguration {
     pub async fn write_channel_config<'a>(
         &self,
         channel : EtherCATThreadChannel,
+        device_address : u16, 
         base_index: u16,
     ) -> Result<(), anyhow::Error> {
-        channel.0
-        // Write all configuration parameters according to the documentation table
-        device
-            .sdo_write(base_index, 0x01, self.enable_user_scale as u8)
-            .await?;
-        device
-            .sdo_write(base_index, 0x02, self.presentation.clone() as u8)
-            .await?;
-        device
-            .sdo_write(base_index, 0x05, self.watchdog.clone() as u8)
-            .await?;
-        device
-            .sdo_write(base_index, 0x07, self.enable_user_calibration as u8)
-            .await?;
-        device
-            .sdo_write(base_index, 0x08, self.enable_vendor_calibration as u8)
-            .await?;
-        device.sdo_write(base_index, 0x11, self.offset).await?;
-        device.sdo_write(base_index, 0x12, self.gain).await?;
-        device
-            .sdo_write(base_index, 0x13, self.default_output)
-            .await?;
-        device
-            .sdo_write(base_index, 0x14, self.default_output_ramp)
-            .await?;
-        device
-            .sdo_write(base_index, 0x15, self.user_calibration_offset)
-            .await?;
-        device
-            .sdo_write(base_index, 0x16, self.user_calibration_gain)
-            .await?;
+        sdo_write_helper(device_address,base_index,0x01,self.enable_user_scale as u8);
+        sdo_write_helper(device_address,base_index,0x02,self.presentation.clone() as u8);
+        sdo_write_helper(device_address,base_index,0x05,self.watchdog.clone() as u8);
+        sdo_write_helper(device_address,base_index,0x07,self.enable_user_calibration as u8);
+        sdo_write_helper(device_address,base_index,0x08,self.enable_vendor_calibration as u8);
+
+        sdo_write_helper(device_address,base_index,0x11,self.offset);
+        sdo_write_helper(device_address,base_index,0x12,self.gain);
+        sdo_write_helper(device_address,base_index,0x13,self.default_output);
+        sdo_write_helper(device_address,base_index,0x14,self.default_output);
+
 
         Ok(())
     }
