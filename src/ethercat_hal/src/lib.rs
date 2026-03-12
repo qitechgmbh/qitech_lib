@@ -9,7 +9,6 @@ pub mod helpers;
 pub mod controller;
 
 use crate::controller::EtherCATController;
-
 use ethercrab::{
     PduStorage, SubDeviceGroup, subdevice_group::{HasDc, NoDc, PreOpPdi, SafeOp},
 };
@@ -51,6 +50,8 @@ static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
 pub struct EtherCATThreadChannel(pub Sender<ChannelRequest> );
 #[derive(Clone)]
 pub struct EtherCATThreadResponseChannel(pub Sender<ChannelResponse>);
+
+
 
 /*
     Metadata for a Subdevice 
@@ -145,11 +146,9 @@ pub struct ChannelRequest {
     pub response_channel: EtherCATThreadResponseChannel,
 }
 
-
 pub fn send_response(response_channel: EtherCATThreadResponseChannel, response: ChannelResponse) {
 	let _res = response_channel.0.send(response);
 }
-
 
 pub fn start_ethercat_thread(
     interface_name: &str,

@@ -1,30 +1,28 @@
-use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
+use crate::{EtherCATThreadChannel, };
 
 impl EL30XXChannelConfiguration {
     pub fn write_channel_config<'a>(
         &self,
-        channel : EtherCATThreadChannel,
+        ecat_channel : EtherCATThreadChannel,
         device_address : u16, 
         base_index: u16,
     ) -> Result<(), anyhow::Error> {
-
-        sdo_write_helper(channel.clone(),device_address,base_index, 0x01, self.enable_user_scale);
-        sdo_write_helper(channel.clone(),device_address,base_index, 0x02, u8::from(self.presentation));
-        sdo_write_helper(channel.clone(),device_address,base_index, 0x05, self.siemens_bits);
-        //sdo_write_helper(channel.clone(),device_address,base_index, 0x06, self.enable_filter);
-
-        sdo_write_helper(channel.clone(),device_address,base_index, 0x07, self.enable_limit_1);
-        sdo_write_helper(channel.clone(),device_address,base_index, 0x08, self.enable_limit_2);
-        sdo_write_helper(channel.clone(),device_address,base_index, 0x0A, self.enable_user_calibration);
-        sdo_write_helper(channel.clone(),device_address,base_index, 0x0B, self.enable_vendor_calibration);
-        sdo_write_helper(channel.clone(),device_address,base_index, 0x0E, self.swap_limit_bits);
-        sdo_write_helper(channel.clone(),device_address,base_index, 0x11, self.user_scale_offset);
-        sdo_write_helper(channel.clone(),device_address,base_index, 0x12, self.user_scale_gain);
-        sdo_write_helper(channel.clone(),device_address,base_index, 0x13, self.limit_1);
-        sdo_write_helper(channel.clone(),device_address,base_index, 0x14, self.limit_2);
-     //   sdo_write_helper(channel.clone(),device_address,base_index, 0x15, u16::from(self.filter_settings));
-        sdo_write_helper(channel.clone(),device_address,base_index, 0x17, self.user_calibration_offset);
-        sdo_write_helper(channel,device_address,base_index, 0x18, self.user_calibration_gain);
+        ecat_channel.sdo_write(device_address, base_index, 0x01, self.enable_user_scale)?;
+        ecat_channel.sdo_write(device_address, base_index, 0x02, u8::from(self.presentation))?;
+        ecat_channel.sdo_write(device_address, base_index, 0x05, self.siemens_bits)?;
+        // ecat_channel.sdo_write(device_address, base_index, 0x06, self.enable_filter)?;
+        ecat_channel.sdo_write(device_address, base_index, 0x07, self.enable_limit_1)?;
+        ecat_channel.sdo_write(device_address, base_index, 0x08, self.enable_limit_2)?;
+        ecat_channel.sdo_write(device_address, base_index, 0x0A, self.enable_user_calibration)?;
+        ecat_channel.sdo_write(device_address, base_index, 0x0B, self.enable_vendor_calibration)?;
+        ecat_channel.sdo_write(device_address, base_index, 0x0E, self.swap_limit_bits)?;
+        ecat_channel.sdo_write(device_address, base_index, 0x11, self.user_scale_offset)?;
+        ecat_channel.sdo_write(device_address, base_index, 0x12, self.user_scale_gain)?;
+        ecat_channel.sdo_write(device_address, base_index, 0x13, self.limit_1)?;
+        ecat_channel.sdo_write(device_address, base_index, 0x14, self.limit_2)?;
+        // ecat_channel.sdo_write(device_address, base_index, 0x15, u16::from(self.filter_settings))?;
+        ecat_channel.sdo_write(device_address, base_index, 0x17, self.user_calibration_offset)?;
+        ecat_channel.sdo_write(device_address, base_index, 0x18, self.user_calibration_gain)?;
         Ok(())
     }
 }

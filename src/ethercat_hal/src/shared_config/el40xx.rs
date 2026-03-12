@@ -1,9 +1,4 @@
-use std::{any::TypeId, default};
-use crate::{ChannelRequest, ChannelResponse, EtherCATThreadChannel, EtherCATThreadResponseChannel, SdoRequest, SdoType};
-use ethercrab::EtherCrabWireWrite;
-use crate::ethercat_helpers::sdo_write_helper;
-
-
+use crate::{EtherCATThreadChannel};
 #[derive(Debug, Clone)]
 pub struct EL40XXChannelConfiguration {
     /// Enable user scale (0x80n0:01) - Default: false (0x00)
@@ -113,23 +108,12 @@ impl Default for EL40XXChannelConfiguration {
 
 
 impl EL40XXChannelConfiguration {
-    pub async fn write_channel_config<'a>(
+    pub fn write_channel_config<'a>(
         &self,
-        channel : EtherCATThreadChannel,
-        device_address : u16, 
-        base_index: u16,
+        _channel : EtherCATThreadChannel,
+        _device_address : u16, 
+        _base_index: u16,
     ) -> Result<(), anyhow::Error> {
-        /*sdo_write_helper(device_address,base_index,0x01,self.enable_user_scale as u8);
-        sdo_write_helper(device_address,base_index,0x02,self.presentation.clone() as u8);
-        sdo_write_helper(device_address,base_index,0x05,self.watchdog.clone() as u8);
-        sdo_write_helper(device_address,base_index,0x07,self.enable_user_calibration as u8);
-        sdo_write_helper(device_address,base_index,0x08,self.enable_vendor_calibration as u8);
-
-        sdo_write_helper(device_address,base_index,0x11,self.offset);
-        sdo_write_helper(device_address,base_index,0x12,self.gain);
-        sdo_write_helper(device_address,base_index,0x13,self.default_output);
-        sdo_write_helper(device_address,base_index,0x14,self.default_output);
-        */
 
         Ok(())
     }

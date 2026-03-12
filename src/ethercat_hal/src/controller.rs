@@ -58,7 +58,6 @@ impl EtherCATController {
         > = None;
         let mut group_op: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, Op, HasDc>> = None;
         let mut maindevice: Option<MainDevice> = None;
-        println!("ECAT Controller Addr: {:p}", self);
         loop {
             match self.state {
                 EtherCATState::NoInterface => {
@@ -231,10 +230,6 @@ impl EtherCATController {
                         }
                         ChannelRequests::MachineIdent(_machine_ident) => todo!(),
                     }
-
-                    // Starting transition to PreopPdi
-                    //println!("Starting transition to PreopPdi");
-
                     let mut now = Instant::now();
                     let start = Instant::now();
                     let mut averages = Vec::new();
@@ -464,10 +459,9 @@ impl EtherCATController {
                         }
                         // 3. Update the read index so the app sees the fresh buffer
                         self.input_read_idx.0.store(write_idx, Ordering::Release);
-                        
-                        rt.block_on(async {
+                        /*rt.block_on(async {
                             tokio::time::sleep_until(res.1 + res.0.extra.next_cycle_wait).await
-                        });
+                        });*/
 
                         let out_idx = self.output_write_idx.0.load(Ordering::Acquire);
                         let src_ptr = self.output_buffers[out_idx].get();

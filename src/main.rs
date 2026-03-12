@@ -1,9 +1,8 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use ethercat_hal::coe::ConfigurableDevice;
 use ethercat_hal::devices::el3024::{EL3024_IDENTITY_A, EL3024Configuration};
-use ethercat_hal::ethercat_helpers::{sdo_read_helper, sdo_write_helper};
 use ethercat_hal::{ChannelRequest, ChannelResponse, EtherCATState, EtherCATThreadResponseChannel, start_ethercat_thread};
-use ethercat_hal::devices::{EthercatDevice, NewEthercatDevice, el1008::{self, EL1008, EL1008_IDENTITY_A}, el2004::{EL2004, EL2004_IDENTITY_A}, el3024::{self, EL3024}};
+use ethercat_hal::devices::{EthercatDevice, NewEthercatDevice, el1008::{EL1008, EL1008_IDENTITY_A}, el2004::{EL2004, EL2004_IDENTITY_A}, el3024::EL3024};
 use std::time::Duration;
 
 pub fn main() {
@@ -11,7 +10,7 @@ pub fn main() {
     let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
     let response_channel : EtherCATThreadResponseChannel = EtherCATThreadResponseChannel(tx);
     let ecat = result.0;
-    let sender = result.1;
+    let ecat_channel = result.1;
 
     let mut el1008 : EL1008 = EL1008::new();
     let mut el2004 : EL2004 = EL2004::new();
@@ -29,7 +28,7 @@ pub fn main() {
                 ),
                 response_channel: response_channel.clone(),
             };
-            let _res = sender.clone().0.send(req);
+            let _res = ecat_channel.clone().0.send(req);
             let _res = rx.recv();
             std::thread::sleep(Duration::from_millis(1000));
         }
@@ -42,13 +41,13 @@ pub fn main() {
                 println!();
                 
                 if dev.product_id == EL3024_IDENTITY_A.1 && !initialized {
-                    el3024.write_config(sender.clone(), dev.device_address, &EL3024Configuration::default());
+                    let _res = el3024.write_config(ecat_channel.clone(), dev.device_address, &EL3024Configuration::default());
                     println!("Configuring EL3024");
                     initialized = true;
                 }
 
-                let res = sdo_write_helper::<u32>(sender.clone(), dev.device_address, 0xF008, 0, 0x12345678);
-                let res = sdo_read_helper::<u32>(sender.clone(), dev.device_address, 0xF008, 0);
+                let _res = ecat_channel.sdo_write::<u32>(dev.device_address, 0xF008, 0, 0x12345678);
+                let res = ecat_channel.sdo_read::<u32>(dev.device_address, 0xF008, 0);
                 println!("res {:?}",res)
             }
 
@@ -61,16 +60,13 @@ pub fn main() {
                 ),
                 response_channel: response_channel.clone(),
             };
-            let _res = sender.clone().0.send(req);
+            let _res = ecat_channel.clone().0.send(req);
             std::thread::sleep(Duration::from_millis(1000));
         }
 
         if let EtherCATState::Op = ecat.state {
-          //  println!("entered op with {} subdevices",ecat.subdevice_count);
-            
             let inputs = ecat.get_inputs();
-            let mut outputs = ecat.get_outputs();
-
+            let outputs = ecat.get_outputs();
             for dev in ecat.subdevices {
                 if !dev.initialized {
                     break;
@@ -88,23 +84,24 @@ pub fn main() {
 
                 if dev.product_id == EL3024_IDENTITY_A.1 {
                     let _res = el3024.input(input_bits);
-                    let val = match el3024.txpdo.ai_standard_channel1 {
+                    let _val = match el3024.txpdo.ai_standard_channel1 {
                         Some(ref v) => v,
                         None => continue,
                     };
                 }
 
                 if dev.product_id == EL2004_IDENTITY_A.1 {
+                    /*
                     let chan = &mut el2004.rxpdo.channel2;
                     match chan {
                         Some(c) => c.value = true,
                         None => (),
                     };
                     let _res = el2004.output(output_bits);
-                    ecat.finish_write();
+                    ecat.finish_write();*/
                 }
-              //  println!("cycle time: {:?}", ecat.cycle_time_us);
             }
         }
+
     }
 }

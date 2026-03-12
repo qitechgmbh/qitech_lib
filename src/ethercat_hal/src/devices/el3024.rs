@@ -3,7 +3,7 @@ use super::{NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::io::analog_input::physical::AnalogInputRange;
 use crate::pdo::RxPdo;
 use crate::pdo::TxPdo;
-use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
+use crate::{EtherCATThreadChannel};
 use crate::{
     coe::{ConfigurableDevice, Configuration},
     helpers::signing_converter_u16::U16SigningConverter,
@@ -227,14 +227,14 @@ impl Configuration for EL3024Configuration {
         channel: EtherCATThreadChannel,
         device_address: u16,
     ) -> Result<(), anyhow::Error> {
-        self.channel1.write_channel_config(channel.clone(),device_address, 0x8000);
-        self.channel2.write_channel_config(channel.clone(),device_address, 0x8010);
-        self.channel3.write_channel_config(channel.clone(),device_address, 0x8020);
-        self.channel4.write_channel_config(channel.clone(),device_address, 0x8030);
+        self.channel1.write_channel_config(channel.clone(),device_address, 0x8000)?;
+        self.channel2.write_channel_config(channel.clone(),device_address, 0x8010)?;
+        self.channel3.write_channel_config(channel.clone(),device_address, 0x8020)?;
+        self.channel4.write_channel_config(channel.clone(),device_address, 0x8030)?;
 
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(channel.clone(),device_address);
+            .write_config(channel.clone(),device_address)?;
         Ok(())
     }
     /*async fn write_config<'a>(
