@@ -108,8 +108,10 @@ impl EtherCATThreadChannel {
             channel_request: crate::ChannelRequests::SdoReadRequest(sdo_request), 
             response_channel: EtherCATThreadResponseChannel(tx) 
         };
-        self.0.send(req);
-    
+        match self.0.send(req) {
+            Ok(_) => (),
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
         let res = rx.recv_timeout(Duration::from_millis(500));
         let response : ChannelResponse = match res {
             Ok(res) => res,
@@ -139,7 +141,12 @@ where T : EtherCrabWireWrite + EthercatSdoBytes
         channel_request: crate::ChannelRequests::SdoWriteRequest(sdo_request), 
         response_channel: EtherCATThreadResponseChannel(tx) 
     };
-    let _res = self.0.send(req);
+    let res = self.0.send(req);
+    match res {
+        Ok(_) => (),
+        Err(e) => return Err(anyhow::anyhow!(e)),
+    };
+
     let res = rx.recv_timeout(Duration::from_millis(500));
     let response : ChannelResponse = match res {
         Ok(res) => res,
@@ -182,7 +189,7 @@ pub fn type_id_to_sdo_type<T : 'static>() -> Result<SdoType, anyhow::Error>{
 }
 
 /*
- Value type needs to have EtherCrabWireWrite + Copy at the least to be able to write with ethecrab
+ Value type needs to have EtherCrabWireWriteSized at the least to be able to write with ethecrab
 */
 pub fn sdo_write(
     maindevice: &MainDevice,
