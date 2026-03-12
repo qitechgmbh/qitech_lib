@@ -120,15 +120,16 @@ pub struct SdoReadRequest {
 // LEGACY CODE HIDE BEHIND FLAG
 pub struct MachineIdent {}
 
-// TODO: instead of using ethercrab::error:Error use something more generic like anyhow::Error
 #[derive(Debug)]
 pub enum ChannelResponse {
-    // For simplicity every response that is unsigned -> u32
-    SdoResponseU32(Result<u32, ethercrab::error::Error>),
-    // And every signed  is promoted to i32
-    SdoResponseI32(Result<i32, ethercrab::error::Error>),
-    SdoWriteResponse(Result<(), ethercrab::error::Error>),
-    ChangeState(Result<(), ethercrab::error::Error>),
+    SdoResponseBool(Result<bool, anyhow::Error>),    
+    SdoResponseU8(Result<u8, anyhow::Error>),    
+    SdoResponseU16(Result<u16, anyhow::Error>),    
+    SdoResponseU32(Result<u32, anyhow::Error>),
+    SdoResponseI16(Result<i16, anyhow::Error>),
+    SdoResponseI32(Result<i32, anyhow::Error>),
+    SdoWriteResponse(Result<(), anyhow::Error>),
+    ChangeState(Result<(), anyhow::Error>),
 }
 
 pub enum ChannelRequests {

@@ -3,7 +3,7 @@ use ethercrab::{MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, S
 use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::time::interval;
 
-use crate::{CachePaddedAtomic, ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType, get_async_runtime, ethercat_helpers::{sdo_read_signed, sdo_read_unsigned, sdo_write}, send_response};
+use crate::{CachePaddedAtomic, ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType, ethercat_helpers::{sdo_read, sdo_write}, get_async_runtime, send_response};
 
 pub struct EtherCATController {
     pub cycle_time_us: u64,
@@ -131,7 +131,7 @@ impl EtherCATController {
                                 self.state = EtherCATState::Init;
                                 send_response(
                                     msg.response_channel,
-                                    ChannelResponse::ChangeState(Err(err)),
+                                    ChannelResponse::ChangeState(Err(err.into())),
                                 );
                                 continue;
                             }
@@ -183,19 +183,43 @@ impl EtherCATController {
                         }
                         ChannelRequests::SdoReadRequest(request) => {
                             match request.type_flag {
-                                SdoType::BOOL|
-                                SdoType::U8 |
-                                SdoType::U16 |
+                                SdoType::BOOL => {
+                                    let res = sdo_read::<bool>(maindev, preop_group, request);
+                                    send_response(
+                                        msg.response_channel,
+                                        ChannelResponse::SdoResponseBool(res),
+                                    );
+                                }
+                                SdoType::U8 => {
+                                    let res = sdo_read::<u8>(maindev, preop_group, request);
+                                    send_response(
+                                        msg.response_channel,
+                                        ChannelResponse::SdoResponseU8(res),
+                                    );
+                                }
+                                SdoType::U16 => {
+                                    let res = sdo_read::<u16>(maindev, preop_group, request);
+                                    send_response(
+                                        msg.response_channel,
+                                        ChannelResponse::SdoResponseU16(res),
+                                    );
+                                }
                                 SdoType::U32 => {
-                                    let res = sdo_read_unsigned(maindev, preop_group, request);
+                                    let res = sdo_read::<u32>(maindev, preop_group, request);
                                     send_response(
                                         msg.response_channel,
                                         ChannelResponse::SdoResponseU32(res),
                                     );
                                 },
-                                SdoType::I16 |
+                                SdoType::I16 => {
+                                    let res = sdo_read::<i16>(maindev, preop_group, request);
+                                    send_response(
+                                        msg.response_channel,
+                                        ChannelResponse::SdoResponseI16(res),
+                                    );
+                                }
                                 SdoType::I32 => {
-                                    let res = sdo_read_signed(maindev, preop_group, request);
+                                    let res = sdo_read::<i32>(maindev, preop_group, request);
                                     send_response(
                                         msg.response_channel,
                                         ChannelResponse::SdoResponseI32(res),
@@ -209,7 +233,7 @@ impl EtherCATController {
                     }
 
                     // Starting transition to PreopPdi
-                    println!("Starting transition to PreopPdi");
+                    //println!("Starting transition to PreopPdi");
 
                     let mut now = Instant::now();
                     let start = Instant::now();
@@ -225,7 +249,7 @@ impl EtherCATController {
                     let mut tick_interval =
                         rt.block_on(async { interval(Duration::from_micros(1000)) });
 
-                    println!("Moving into PRE-OP with PDI");
+                   // println!("Moving into PRE-OP with PDI");
                     let group_to_transition = group.take().expect("Group missing in PreOp");
                     let device_ref = maindevice.as_ref().expect("MainDevice missing");
                     let rt = get_async_runtime();
@@ -237,7 +261,7 @@ impl EtherCATController {
                         Err(_) => todo!(),
                     };
 
-                    println!("Done. PDI available. Waiting for SubDevices to align");
+                   // println!("Done. PDI available. Waiting for SubDevices to align");
 
                     loop {
                         rt.block_on(
@@ -282,7 +306,6 @@ impl EtherCATController {
                         }
                         rt.block_on(tick_interval.tick());
                     }
-                    println!("test");
                     let device = maindevice.as_ref().unwrap();
                     group_preop_pdi_dc = Some(
                         rt.block_on(group_preop_pdi.configure_dc_sync(

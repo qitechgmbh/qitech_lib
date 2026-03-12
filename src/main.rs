@@ -1,6 +1,7 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use ethercat_hal::coe::ConfigurableDevice;
 use ethercat_hal::devices::el3024::{EL3024_IDENTITY_A, EL3024Configuration};
+use ethercat_hal::ethercat_helpers::{sdo_read_helper, sdo_write_helper};
 use ethercat_hal::{ChannelRequest, ChannelResponse, EtherCATState, EtherCATThreadResponseChannel, start_ethercat_thread};
 use ethercat_hal::devices::{EthercatDevice, NewEthercatDevice, el1008::{self, EL1008, EL1008_IDENTITY_A}, el2004::{EL2004, EL2004_IDENTITY_A}, el3024::{self, EL3024}};
 use std::time::Duration;
@@ -38,12 +39,20 @@ pub fn main() {
                 if dev.device_address == 0 {
                     break;
                 }
+                println!();
+                
                 if dev.product_id == EL3024_IDENTITY_A.1 && !initialized {
                     el3024.write_config(sender.clone(), dev.device_address, &EL3024Configuration::default());
                     println!("Configuring EL3024");
                     initialized = true;
                 }
+
+                let res = sdo_write_helper::<u32>(sender.clone(), dev.device_address, 0xF008, 0, 0x12345678);
+                let res = sdo_read_helper::<u32>(sender.clone(), dev.device_address, 0xF008, 0);
+                println!("res {:?}",res)
             }
+
+
 
 
             let req: ChannelRequest = ChannelRequest {
@@ -83,7 +92,6 @@ pub fn main() {
                         Some(ref v) => v,
                         None => continue,
                     };
-                    println!("{:?}",val);
                 }
 
                 if dev.product_id == EL2004_IDENTITY_A.1 {
