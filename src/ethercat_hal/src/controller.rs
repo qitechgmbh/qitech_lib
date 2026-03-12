@@ -141,13 +141,23 @@ impl EtherCATController {
                     };
                 }
                 EtherCATState::PreOp => {
+                    let maindev = maindevice.as_ref().unwrap();
+                    let preop_group = group.as_ref().unwrap();
+
+                    let mut i = 0;
+                    for subdevice in preop_group.iter(&maindev) {
+                        self.subdevices[i].product_id = subdevice.identity().product_id;
+                        self.subdevices[i].revision   = subdevice.identity().revision;
+                        self.subdevices[i].vendor     = subdevice.identity().vendor_id;
+                        self.subdevices[i].device_address = subdevice.configured_address();
+                        i += 1;
+                    }
+
                     let msg = match self.rx_channel.try_recv() {
                         Ok(value) => value,
                         Err(_) => continue,
                     };
 
-                    let maindev = maindevice.as_ref().unwrap();
-                    let preop_group = group.as_ref().unwrap();
                     match msg.channel_request {
                         ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {
                             EtherCATState::NoInterface => {
@@ -173,6 +183,7 @@ impl EtherCATController {
                         }
                         ChannelRequests::SdoReadRequest(request) => {
                             match request.type_flag {
+                                SdoType::BOOL|
                                 SdoType::U8 |
                                 SdoType::U16 |
                                 SdoType::U32 => {
@@ -389,11 +400,6 @@ impl EtherCATController {
                                 self.subdevices[i].start_rx = rx_offset;
                                 self.subdevices[i].end_rx = rx_offset + length_rx;
 
-                                self.subdevices[i].product_id =subdevice.identity().product_id;
-                                self.subdevices[i].revision =subdevice.identity().revision;
-                                self.subdevices[i].vendor = subdevice.identity().vendor_id;
-
-
                                 rx_offset += length_rx;
                                 tx_offset += length_tx;
                                 i += 1;
@@ -435,10 +441,10 @@ impl EtherCATController {
                         }
                         // 3. Update the read index so the app sees the fresh buffer
                         self.input_read_idx.0.store(write_idx, Ordering::Release);
-                        /*
+                        
                         rt.block_on(async {
                             tokio::time::sleep_until(res.1 + res.0.extra.next_cycle_wait).await
-                        });*/
+                        });
 
                         let out_idx = self.output_write_idx.0.load(Ordering::Acquire);
                         let src_ptr = self.output_buffers[out_idx].get();
@@ -450,15 +456,11 @@ impl EtherCATController {
                             for subdevice in group.iter(&maindevice) {
                                 let mut output = subdevice.outputs_raw_mut();
                                 let len = output.len();                    
-                                //println!("full_buffer: {:?}",&full_buffer[current_offset..current_offset + len]);
                                 output.copy_from_slice(&full_buffer[current_offset..current_offset + len]);
                                 current_offset += len;                                
                             }
-
                         }
-
                         self.cycle_time_us = now.elapsed().as_micros() as u64;
-
                     }
                 }
             }

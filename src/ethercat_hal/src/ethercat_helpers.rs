@@ -80,7 +80,10 @@ where T : EtherCrabWireWrite + EthercatSdoBytes
     // TypeId is not const compatible ... i love rust 
     // now get read for ten billion if statements, because match also doesnt work
     let sdo_type : SdoType = {
-        if t_id == TypeId::of::<u8>() {
+        if t_id == TypeId::of::<bool>() {
+            SdoType::BOOL
+        }
+        else if t_id == TypeId::of::<u8>() {
             SdoType::U8
         }
         else if t_id == TypeId::of::<u16>() {
@@ -99,6 +102,7 @@ where T : EtherCrabWireWrite + EthercatSdoBytes
             SdoType::U8  
         }        
     };
+    println!("type: {:?}",sdo_type);
     let sdo_request : SdoRequest = SdoRequest { device_address, index, sub_index: sub_index as u16, data:bytes, type_flag:sdo_type};
     let req : ChannelRequest = ChannelRequest{ 
         channel_request: crate::ChannelRequests::SdoWriteRequest(sdo_request), 
@@ -161,8 +165,18 @@ pub fn sdo_write(
                         request.sub_index as u8,
                         i32::from_le_bytes(request.data)
                     )),
+                SdoType::BOOL =>  {
+                    let b : bool= request.data[0] == 1;
+                    println!("{} {} {} {:?}",request.device_address,request.index,request.sub_index,request.data);
+                    runtime.block_on(device.sdo_write(
+                        request.index,
+                        request.sub_index as u8,
+                        b
+                    ))
+                }
+                    
             };
-
+            println!("res: {} {} {:?}",request.index,request.sub_index,res);
             return res;
 
         }

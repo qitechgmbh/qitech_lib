@@ -67,7 +67,8 @@ pub struct MetaSubdevice {
     // Gives the offset at which the RxPdo starts
     pub start_rx : usize,
     pub end_rx : usize,
-
+    // Device address (ado, i think), first one would be 0x1000, so 4096
+    pub device_address : u16,
     pub initialized : bool,
 }
 
@@ -91,7 +92,9 @@ enum GroupState {
 #[repr(align(64))]
 pub struct CachePaddedAtomic(AtomicUsize);
 
+#[derive(Debug)]
 pub enum SdoType {
+    BOOL,
 	U8,
 	U16,
 	U32,

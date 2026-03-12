@@ -1,10 +1,12 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
-use ethercat::{ChannelRequest, ChannelResponse, EtherCATState, EtherCATThreadResponseChannel, start_ethercat_thread};
+use ethercat_hal::coe::ConfigurableDevice;
+use ethercat_hal::devices::el3024::{EL3024_IDENTITY_A, EL3024Configuration};
+use ethercat_hal::{ChannelRequest, ChannelResponse, EtherCATState, EtherCATThreadResponseChannel, start_ethercat_thread};
 use ethercat_hal::devices::{EthercatDevice, NewEthercatDevice, el1008::{self, EL1008, EL1008_IDENTITY_A}, el2004::{EL2004, EL2004_IDENTITY_A}, el3024::{self, EL3024}};
 use std::time::Duration;
 
 pub fn main() {
-    let (result, _handle) = start_ethercat_thread("enp101s0f4u1u2");
+    let (result, _handle) = start_ethercat_thread("enp101s0f3u1u2");
     let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
     let response_channel : EtherCATThreadResponseChannel = EtherCATThreadResponseChannel(tx);
     let ecat = result.0;
@@ -13,6 +15,7 @@ pub fn main() {
     let mut el1008 : EL1008 = EL1008::new();
     let mut el2004 : EL2004 = EL2004::new();
     let mut el3024 : EL3024 = EL3024::new();
+    let mut initialized = false;
 
     loop {
         let _inputs = ecat.get_inputs();
@@ -20,24 +23,36 @@ pub fn main() {
 
         if let EtherCATState::Init = ecat.state {
             let req: ChannelRequest = ChannelRequest {
-                channel_request: ethercat::ChannelRequests::ChangeState(
-                    ethercat::EtherCATState::PreOp,
+                channel_request: ethercat_hal::ChannelRequests::ChangeState(
+                    ethercat_hal::EtherCATState::PreOp,
                 ),
                 response_channel: response_channel.clone(),
             };
-            let _res = &sender.0.send(req);
+            let _res = sender.clone().0.send(req);
             let _res = rx.recv();
             std::thread::sleep(Duration::from_millis(1000));
         }
 
         if let EtherCATState::PreOp = ecat.state {
+            for dev in ecat.subdevices {
+                if dev.device_address == 0 {
+                    break;
+                }
+                if dev.product_id == EL3024_IDENTITY_A.1 && !initialized {
+                    el3024.write_config(sender.clone(), dev.device_address, &EL3024Configuration::default());
+                    println!("Configuring EL3024");
+                    initialized = true;
+                }
+            }
+
+
             let req: ChannelRequest = ChannelRequest {
-                channel_request: ethercat::ChannelRequests::ChangeState(
-                    ethercat::EtherCATState::Op,
+                channel_request: ethercat_hal::ChannelRequests::ChangeState(
+                    ethercat_hal::EtherCATState::Op,
                 ),
                 response_channel: response_channel.clone(),
             };
-            let _res = sender.0.send(req);
+            let _res = sender.clone().0.send(req);
             std::thread::sleep(Duration::from_millis(1000));
         }
 
@@ -60,6 +75,15 @@ pub fn main() {
 
                 if dev.product_id == EL1008_IDENTITY_A.1 {
                     let _res = el1008.input(input_bits);
+                }
+
+                if dev.product_id == EL3024_IDENTITY_A.1 {
+                    let _res = el3024.input(input_bits);
+                    let val = match el3024.txpdo.ai_standard_channel1 {
+                        Some(ref v) => v,
+                        None => continue,
+                    };
+                    println!("{:?}",val);
                 }
 
                 if dev.product_id == EL2004_IDENTITY_A.1 {

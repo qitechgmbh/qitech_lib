@@ -235,9 +235,6 @@ impl Configuration for EL3024Configuration {
         self.pdo_assignment
             .txpdo_assignment()
             .write_config(channel.clone(),device_address);
-        self.pdo_assignment
-            .rxpdo_assignment()
-            .write_config(channel.clone(),device_address);
         Ok(())
     }
     /*async fn write_config<'a>(
