@@ -1,5 +1,6 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::coe::Configuration;
+use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
 use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::io::analog_output::{AnalogOutputDevice, AnalogOutputOutput};
 use crate::pdo::PredefinedPdoAssignment;

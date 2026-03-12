@@ -2,6 +2,8 @@ use super::{
     EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed, NewEthercatDevice,
     SubDeviceIdentityTuple,
 };
+use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
+
 use crate::devices::wago_modules::wago_750_430::{
     WAGO_750_430_MODULE_IDENT, WAGO_750_430_PRODUCT_ID,
 };

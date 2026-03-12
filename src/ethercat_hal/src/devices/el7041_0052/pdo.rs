@@ -7,7 +7,7 @@ use crate::pdo::el70x1::{
     StmSynchronInfoData, StmVelocity,
 };
 use ethercat_hal_derive::{RxPdo, TxPdo};
-
+use crate::{EtherCATThreadChannel, helpers::sdo_write_helper};
 #[derive(Debug, Clone, TxPdo)]
 pub struct EL7041_0052TxPdo {
     #[pdo_object_index(0x1A00)]

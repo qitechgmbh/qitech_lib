@@ -1,5 +1,6 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::pdo::RxPdo;
+use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
 use crate::{
     coe::{ConfigurableDevice, Configuration},
     helpers::signing_converter_u16::U16SigningConverter,

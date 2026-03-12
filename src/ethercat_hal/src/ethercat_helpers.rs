@@ -1,6 +1,6 @@
 use std::any::TypeId;
 use ethercrab::{EtherCrabWireWrite, MainDevice, SubDeviceGroup};
-use crate::{ChannelRequest, ChannelResponse, EtherCATThreadResponseChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType, get_async_runtime};
+use crate::{ChannelRequest, ChannelResponse, EtherCATThreadChannel, EtherCATThreadResponseChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType, get_async_runtime};
 
 pub trait EthercatSdoBytes{
     fn size(&self) -> usize;
@@ -60,8 +60,17 @@ impl EthercatSdoBytes for u32 {
 }
 
 
+impl EthercatSdoBytes for bool {
+    fn size(&self) -> usize {
+        1
+    }
 
-pub fn sdo_write_helper<T : 'static>(device_address : u16, index : u16,sub_index : u8, value : T) -> Result<(),ethercrab::error::Error>
+    fn to_bytes(&self) -> [u8;4] {        
+        [*self as u8,0,0,0]
+    }
+}
+
+pub fn sdo_write_helper<T : 'static>(ecat_channel : EtherCATThreadChannel,device_address : u16, index : u16,sub_index : u8, value : T) -> Result<(),ethercrab::error::Error>
 where T : EtherCrabWireWrite + EthercatSdoBytes
 {        
     let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
@@ -90,12 +99,13 @@ where T : EtherCrabWireWrite + EthercatSdoBytes
             SdoType::U8  
         }        
     };
-    let sdo_request : SdoRequest = SdoRequest { device_address, index, sub_index: sub_index as u16, data:bytes,type_flag:sdo_type};
+    let sdo_request : SdoRequest = SdoRequest { device_address, index, sub_index: sub_index as u16, data:bytes, type_flag:sdo_type};
     let req : ChannelRequest = ChannelRequest{ 
         channel_request: crate::ChannelRequests::SdoWriteRequest(sdo_request), 
         response_channel: EtherCATThreadResponseChannel(tx) 
     };
-    let res = rx.recv();
+    let _res = ecat_channel.0.send(req);
+    let _res = rx.recv();
    /* match res {
         Ok(_) => todo!(),
         Err(_) => todo!(),

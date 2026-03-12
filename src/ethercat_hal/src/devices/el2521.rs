@@ -12,6 +12,7 @@ use crate::{
 };
 use anyhow::Ok;
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
+use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
 
 /// EL2521 1-channel pulse train output terminal
 #[derive(EthercatDevice)]
@@ -83,7 +84,6 @@ impl PulseTrainOutputDevice<EL2521Port> for EL2521 {
 impl ConfigurableDevice<EL2521Configuration> for EL2521 {
     async fn write_config<'maindevice>(
         &mut self,
-        device: &EthercrabSubDevicePreoperational<'maindevice>,
         config: &EL2521Configuration,
     ) -> Result<(), anyhow::Error> {
         config.write_config(device).await?;

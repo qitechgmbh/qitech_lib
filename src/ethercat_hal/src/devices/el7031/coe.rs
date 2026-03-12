@@ -1,3 +1,4 @@
+use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
 use crate::{
     coe::{ConfigurableDevice, Configuration},
     helpers::ethercrab_types::EthercrabSubDevicePreoperational,

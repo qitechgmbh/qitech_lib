@@ -3,7 +3,7 @@ use ethercrab::{MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, S
 use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::time::interval;
 
-use crate::{CachePaddedAtomic, ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType, get_async_runtime, helpers::{sdo_read_signed, sdo_read_unsigned, sdo_write}, send_response};
+use crate::{CachePaddedAtomic, ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType, get_async_runtime, ethercat_helpers::{sdo_read_signed, sdo_read_unsigned, sdo_write}, send_response};
 
 pub struct EtherCATController {
     pub cycle_time_us: u64,
@@ -29,22 +29,21 @@ unsafe impl Send for EtherCATController {}
 
 impl EtherCATController {
     /// Read latest input blob (App side)
-    pub fn get_inputs(&self) -> [u8; ETHERCAT_TX_RX_SIZE] {
+    pub fn get_inputs(&self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
         let idx = self.input_read_idx.0.load(Ordering::Relaxed);
         let ptr = self.input_buffers[idx].get();
-        unsafe { *ptr }
+        unsafe { &mut *ptr }
+    }
+
+    pub fn get_outputs(&self) -> &mut  [u8; ETHERCAT_TX_RX_SIZE] {
+        let idx = self.output_write_idx.0.load(Ordering::Relaxed);
+        let ptr = self.output_buffers[1- idx].get();
+        unsafe {&mut *ptr}
     }
 
     /// Write output commands (App side)
-    pub fn set_outputs(&self, data: &[u8]) {
+    pub fn finish_write(&self) {
         let idx = self.output_write_idx.0.load(Ordering::Relaxed);
-        let ptr = self.output_buffers[idx].get();
-        unsafe {
-            let buf = &mut *ptr;
-            let len = data.len().min(ETHERCAT_TX_RX_SIZE);
-            buf[..len].copy_from_slice(&data[..len]);
-        }
-        // Switch index to signal the EtherCAT thread
         self.output_write_idx.0.store(1 - idx, Ordering::Release);
     }
 }
@@ -66,7 +65,6 @@ impl EtherCATController {
                     if self.interface.is_some() {
                         self.state = EtherCATState::Init;
                     }
-                    // Do Nothing
                 }
                 EtherCATState::Boot => {
                     // Do Nothing
@@ -381,8 +379,8 @@ impl EtherCATController {
                             let mut i = 0;
 
                             for subdevice in group.iter(&maindevice) {
-                                let length_rx = subdevice.io_raw().inputs().len();
-                                let length_tx = subdevice.io_raw().outputs().len();
+                                let length_tx = subdevice.io_raw().inputs().len();
+                                let length_rx = subdevice.io_raw().outputs().len();
 
                                 self.subdevices[i].initialized = true;
                                 self.subdevices[i].start_tx = tx_offset;
@@ -393,25 +391,26 @@ impl EtherCATController {
 
                                 self.subdevices[i].product_id =subdevice.identity().product_id;
                                 self.subdevices[i].revision =subdevice.identity().revision;
+                                self.subdevices[i].vendor = subdevice.identity().vendor_id;
 
 
                                 rx_offset += length_rx;
                                 tx_offset += length_tx;
                                 i += 1;
                             }
+                            self.subdevice_count = i;
+                            println!("ALL OP");
                             break;
                         }
                     }
-
-                    println!("ALL OP");
    
                     loop {
+                        let now = Instant::now();
                         let res = rt.block_on(async {
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX/RX");
                             let now = tokio::time::Instant::now();
                             (res, now)
                         });
-
                         // 1. Determine which buffer is NOT being read by the app right now
                         let read_idx = self.input_read_idx.0.load(Ordering::Acquire);
                         let write_idx = 1 - read_idx;
@@ -436,19 +435,30 @@ impl EtherCATController {
                         }
                         // 3. Update the read index so the app sees the fresh buffer
                         self.input_read_idx.0.store(write_idx, Ordering::Release);
+                        /*
                         rt.block_on(async {
                             tokio::time::sleep_until(res.1 + res.0.extra.next_cycle_wait).await
-                        });
+                        });*/
 
-                        /*
-                        // Write Outputs
-                        let out_idx = self.output_write_idx.load(Ordering::Acquire);
-                        let out_read_idx = 1 - out_idx;
-                        let src_ptr = self.output_buffers[out_read_idx].get();
+                        let out_idx = self.output_write_idx.0.load(Ordering::Acquire);
+                        let src_ptr = self.output_buffers[out_idx].get();
                         unsafe {
-                            // Apply commands from the buffer to the EtherCAT group
-                            //group.apply_output_data(&*src_ptr);
-                        }*/
+                            // We get a mutable slice to the whole buffer to make sub-slicing easier
+                            let full_buffer = &mut *src_ptr;
+                            let mut current_offset = 0;
+
+                            for subdevice in group.iter(&maindevice) {
+                                let mut output = subdevice.outputs_raw_mut();
+                                let len = output.len();                    
+                                //println!("full_buffer: {:?}",&full_buffer[current_offset..current_offset + len]);
+                                output.copy_from_slice(&full_buffer[current_offset..current_offset + len]);
+                                current_offset += len;                                
+                            }
+
+                        }
+
+                        self.cycle_time_us = now.elapsed().as_micros() as u64;
+
                     }
                 }
             }

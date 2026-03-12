@@ -1,5 +1,6 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::coe::{ConfigurableDevice, Configuration};
+use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
 use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::io::serial_interface::{SerialEncoding, SerialInterfaceDevice};
 use crate::pdo::{PredefinedPdoAssignment, RxPdo, RxPdoObject, TxPdo, TxPdoObject};
@@ -114,7 +115,8 @@ impl Default for EL6021Configuration {
 impl ConfigurableDevice<EL6021Configuration> for EL6021 {
     async fn write_config<'maindevice>(
         &mut self,
-        device: &EthercrabSubDevicePreoperational<'maindevice>,
+        channel : EtherCATThreadChannel,
+        device_address : u16, 
         config: &EL6021Configuration,
     ) -> Result<(), anyhow::Error> {
         config.write_config(device).await?;

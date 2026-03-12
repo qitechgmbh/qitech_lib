@@ -1,3 +1,4 @@
+use crate::{EtherCATThreadChannel, helpers::sdo_write_helper};
 use super::Device;
 use crate::io::analog_output::{AnalogOutputDevice, AnalogOutputState};
 use std::any::Any;

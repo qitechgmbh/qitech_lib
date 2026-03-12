@@ -10,6 +10,7 @@ use crate::{
         el252x::{EncControl, EncStatus, PtoControl, PtoStatus, PtoTarget},
     },
 };
+use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
 use anyhow::Ok;
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 

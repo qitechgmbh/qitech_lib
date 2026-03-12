@@ -1,5 +1,6 @@
+use bitvec::{order::Lsb0, slice::BitSlice};
 use ethercat::{ChannelRequest, ChannelResponse, EtherCATState, EtherCATThreadResponseChannel, start_ethercat_thread};
-use ethercat_hal::devices::{NewEthercatDevice, el3024::{self, EL3024}};
+use ethercat_hal::devices::{EthercatDevice, NewEthercatDevice, el1008::{self, EL1008, EL1008_IDENTITY_A}, el2004::{EL2004, EL2004_IDENTITY_A}, el3024::{self, EL3024}};
 use std::time::Duration;
 
 pub fn main() {
@@ -8,8 +9,11 @@ pub fn main() {
     let response_channel : EtherCATThreadResponseChannel = EtherCATThreadResponseChannel(tx);
     let ecat = result.0;
     let sender = result.1;
-    let _el3024 : EL3024 = el3024::EL3024::new();
-    
+
+    let mut el1008 : EL1008 = EL1008::new();
+    let mut el2004 : EL2004 = EL2004::new();
+    let mut el3024 : EL3024 = EL3024::new();
+
     loop {
         let _inputs = ecat.get_inputs();
         std::thread::sleep(Duration::from_millis(1));
@@ -35,6 +39,40 @@ pub fn main() {
             };
             let _res = sender.0.send(req);
             std::thread::sleep(Duration::from_millis(1000));
+        }
+
+        if let EtherCATState::Op = ecat.state {
+          //  println!("entered op with {} subdevices",ecat.subdevice_count);
+            
+            let inputs = ecat.get_inputs();
+            let mut outputs = ecat.get_outputs();
+
+            for dev in ecat.subdevices {
+                if !dev.initialized {
+                    break;
+                }
+
+                let input_slice = &inputs[dev.start_tx..dev.end_tx];
+                let input_bits = BitSlice::<u8, Lsb0>::from_slice(input_slice);
+                
+                let output_slice = &mut outputs[dev.start_rx..dev.end_rx];
+                let output_bits = BitSlice::<u8, Lsb0>::from_slice_mut(output_slice);
+
+                if dev.product_id == EL1008_IDENTITY_A.1 {
+                    let _res = el1008.input(input_bits);
+                }
+
+                if dev.product_id == EL2004_IDENTITY_A.1 {
+                    let chan = &mut el2004.rxpdo.channel2;
+                    match chan {
+                        Some(c) => c.value = true,
+                        None => (),
+                    };
+                    let _res = el2004.output(output_bits);
+                    ecat.finish_write();
+                }
+              //  println!("cycle time: {:?}", ecat.cycle_time_us);
+            }
         }
     }
 }

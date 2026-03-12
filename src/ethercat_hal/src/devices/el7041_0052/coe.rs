@@ -7,7 +7,7 @@ use crate::{
         StmMotorConfiguration,
     },
 };
-
+use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
 use super::{EL7041_0052, pdo::EL7041_0052PredefinedPdoAssignment};
 
 /// Configuration for EL7041_0052 Stepper Motor Terminal

@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
-ethercat = { path = "../ethercat" }
 ethercrab = { git = "https://github.com/v-morlock/ethercrab", branch = "main" }
 ethercat_hal_derive = { version = "0.1.0", path = "../ethercat_hal_derive" }
 units = { path = "../units" }
@@ -13,6 +12,8 @@ bitvec = { version = "1.0.1", features = ["alloc"] }
 smol = "2.0.2"
 rand = "0.9.2"
 tracing = "0.1.44"
+tokio = { version = "1.50.0", features = ["rt", "rt-multi-thread", "macros", "time"] }
+ta = "0.5.0"
 
 [dev-dependencies]
 approx = "0.5.1"

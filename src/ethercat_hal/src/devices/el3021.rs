@@ -3,6 +3,7 @@ use super::{NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::io::analog_input::physical::AnalogInputRange;
 use crate::pdo::RxPdo;
 use crate::pdo::TxPdo;
+use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
 use crate::{
     coe::{ConfigurableDevice, Configuration},
     helpers::signing_converter_u16::U16SigningConverter,

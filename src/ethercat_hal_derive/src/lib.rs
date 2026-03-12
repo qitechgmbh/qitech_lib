@@ -44,21 +44,22 @@ fn rxpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::
     let expanded = quote! {
         impl #impl_generics crate::coe::Configuration for #ident #ty_generics #where_clause {
             #[doc="Implemented by the ethercat_hal_derive::RxPdo derive macro"]
-            async fn write_config<'a>(
+            fn write_config(
                 &self,
-                device: &EthercrabSubDevicePreoperational<'a>,
+                channel: crate::EtherCATThreadChannel,
+                device_address : u16,
             ) -> Result<(), anyhow::Error> {
-                device.sdo_write(0x1C12, 0, 0u8).await?;
+
+                let _res = sdo_write_helper(channel.clone(),device_address,0x1C12, 0, 0u8);
                 let mut len = 0;
 
                 #(
                      if let Some(_) = &self.#field_name {
-                     len += 1;
-                     device.sdo_write(0x1C12, len, #pdo_index).await?;
+                        len += 1;
+                        let _res = sdo_write_helper(channel.clone(),device_address,0x1C12, len, #pdo_index);
                  }
                 )*
-
-                device.sdo_write(0x1C12, 0, len).await?;
+                let _res = sdo_write_helper(channel.clone(),device_address,0x1C12, 0, len);
                 Ok(())
             }
         }
@@ -95,21 +96,21 @@ fn txpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::
     let expanded = quote! {
         impl #impl_generics crate::coe::Configuration for #ident #ty_generics #where_clause {
             #[doc="Implemented by the ethercat_hal_derive::TxPdo derive macro"]
-            async fn write_config<'a>(
+            fn write_config(
                 &self,
-                device: &EthercrabSubDevicePreoperational<'a>,
+                channel: crate::EtherCATThreadChannel,
+                device_address : u16,
             ) -> Result<(), anyhow::Error> {
-                device.sdo_write(0x1C13, 0, 0u8).await?;
+                let _res = sdo_write_helper(channel.clone(),device_address,0x1C13, 0, 0u8);
                 let mut len = 0;
 
                 #(
-                     if let Some(_) = &self.#field_name {
-                     len += 1;
-                     device.sdo_write(0x1C13, len, #pdo_index).await?;
+                    if let Some(_) = &self.#field_name {
+                        len += 1;
+                        let _res = sdo_write_helper(channel.clone(),device_address,0x1C13, len, #pdo_index);
                  }
                 )*
-
-                device.sdo_write(0x1C13, 0, len).await?;
+                let _res = sdo_write_helper(channel.clone(),device_address,0x1C13, 0, len);
                 Ok(())
             }
         }

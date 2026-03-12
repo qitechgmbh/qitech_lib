@@ -13,6 +13,7 @@ use crate::{
     helpers::ethercrab_types::EthercrabSubDevicePreoperational,
     io::analog_input::{AnalogInputDevice, AnalogInputInput},
 };
+use crate::EtherCATThreadChannel;
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 use units::{electric_potential::volt, f64::ElectricPotential};
 
@@ -92,10 +93,11 @@ impl AnalogInputDevice<EL3001Port> for EL3001 {
 impl ConfigurableDevice<EL3001Configuration> for EL3001 {
     async fn write_config<'maindevice>(
         &mut self,
+        channel: EtherCATThreadChannel,
         device: &EthercrabSubDevicePreoperational<'maindevice>,
         config: &EL3001Configuration,
     ) -> Result<(), anyhow::Error> {
-        config.write_config(device).await?;
+        config.write_config(channel,device).await?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         Ok(())
@@ -131,16 +133,18 @@ pub struct EL3001Configuration {
 impl Configuration for EL3001Configuration {
     async fn write_config<'a>(
         &self,
+        channel : EtherCATThreadChannel,
         device: &EthercrabSubDevicePreoperational<'a>,
     ) -> Result<(), anyhow::Error> {
-        self.channel_1.write_channel_config(device, 0x8000).await?;
+        self.channel_1.write_channel_config(channel.clone(),0, 0x8000).await?;
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(device)
+            .write_config(channel.clone(),device)
             .await?;
+            
         self.pdo_assignment
             .rxpdo_assignment()
-            .write_config(device)
+            .write_config(channel,device)
             .await?;
         Ok(())
     }

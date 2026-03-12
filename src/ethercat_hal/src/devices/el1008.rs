@@ -1,7 +1,7 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
-use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::io::digital_input::{DigitalInputDevice, DigitalInputInput};
 use crate::pdo::{PredefinedPdoAssignment, TxPdo, basic::BoolPdoObject};
+use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
 use ethercat_hal_derive::{EthercatDevice, TxPdo};
 
 /// EL1008 8-channel digital input device

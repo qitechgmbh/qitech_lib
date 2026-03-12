@@ -1,5 +1,6 @@
 use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::pdo::TxPdo;
+use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
 use crate::{
     io::temperature_input::{TemperatureInputDevice, TemperatureInputInput},
     pdo::el32xx::RtdInput,
