@@ -1,19 +1,18 @@
 pub mod ek1100;
-//pub mod el1002;
+pub mod el1002;
 pub mod el1008;
-//pub mod el2002;
+pub mod el2002;
 pub mod el2004;
-//pub mod el2008;
-/*pub mod el2024;
+pub mod el2008;
+pub mod el2024;
 pub mod el2521;
 pub mod el2522;
 pub mod el2634;
 pub mod el2809;
 pub mod el3001;
 pub mod el3021;
-*/
 pub mod el3024;
-/*pub mod el3062_0030;
+pub mod el3062_0030;
 pub mod el3204;
 pub mod el4002;
 pub mod el5152;
@@ -21,14 +20,14 @@ pub mod el6021;
 pub mod el7031;
 pub mod el7031_0030;
 pub mod el7041_0052;
+
 pub mod wago_750_354;
 pub mod wago_modules;
-*/
+
 use super::devices::el1008::EL1008;
 use crate::{
     helpers::ethercrab_types::EthercrabSubDeviceGroupPreoperational,
 };
-use anyhow::anyhow;
 use bitvec::{order::Lsb0, slice::BitSlice};
 use ek1100::{EK1100, EK1100_IDENTITY_A};
 use el1008::EL1008_IDENTITY_A;
@@ -78,19 +77,7 @@ where
 
     /// automatically validate input length, then calls input
     fn input_checked(&mut self, input: &BitSlice<u8, Lsb0>) -> Result<(), anyhow::Error> {
-        // validate input has correct length
-        /* let expected = self.input_len();
-        let actual = input.len();
-        if actual != expected {
-            return Err(anyhow::anyhow!(
-                "[{}::Device::input_checked] Input length is {} ({} bytes) and must be {} bits ({} bytes)",
-                module_path!(),
-                actual,
-                actual / 8,
-                expected,
-                expected / 8
-            ));
-        }*/
+
         self.input(input)
     }
 
@@ -103,21 +90,6 @@ where
 
     fn output_checked(&self, output: &mut BitSlice<u8, Lsb0>) -> Result<(), anyhow::Error> {
         self.output(output)?;
-
-        // validate input has correct length
-        /*let expected = self.output_len();
-        let actual = output.len();
-        if output.len() != expected {
-            return Err(anyhow::anyhow!(
-                "[{}::Device::output_checked] Output length is {} ({} bytes) and must be {} bits ({} bytes)",
-                module_path!(),
-                actual,
-                actual / 8,
-                expected,
-                expected / 8
-            ));
-        }*/
-
         Ok(())
     }
 
@@ -129,11 +101,9 @@ where
 }
 
 pub trait DynamicEthercatDevice: EthercatDevice + EthercatDynamicPDO {}
-
 pub trait EthercatDynamicPDO {
     fn get_tx_offset(&self) -> usize;
     fn get_rx_offset(&self) -> usize;
-
     fn set_tx_offset(&mut self, offset: usize);
     fn set_rx_offset(&mut self, offset: usize);
 }
@@ -155,7 +125,7 @@ pub trait EthercatDeviceProcessing {
 
 /// A constructor trait for devices
 ///
-/// The [`NewDevice::new`] function cannot have params because of it's usage in [`device_from_subdevice`]
+/// The [`NewDevice::new`] function cannot have params because of it's usage in [`device_from_subdevice`] 
 pub trait NewEthercatDevice {
     /// Create a new device
     fn new() -> Self
@@ -170,31 +140,6 @@ pub trait EthercatDeviceUsed {
 
     /// Sets the device as used
     fn set_used(&mut self, used: bool);
-}
-
-/// Casts a `dyn Device` to a specific device type
-pub async fn downcast_device<T: EthercatDevice>(
-    device: Arc<RwLock<dyn EthercatDevice>>,
-) -> Result<Arc<RwLock<T>>, anyhow::Error> {
-    // Acquire a read lock on the RwLock
-    let read_lock = device.read().await;
-
-    // Check if the inner type can be downcasted to T
-    if read_lock.as_any().is::<T>() {
-        // Clone the Arc and return it as the desired type
-        let cloned_device = Arc::clone(&device);
-        // Transmute the Arc to the desired type
-        unsafe {
-            Ok(Arc::from_raw(
-                Arc::into_raw(cloned_device) as *const RwLock<T>
-            ))
-        }
-    } else {
-        Err(anyhow!(
-            "[{}::downcast_device] Downcast failed",
-            module_path!()
-        ))
-    }
 }
 
 /// Construct a device from a subdevice name
@@ -258,23 +203,7 @@ pub fn devices_from_subdevices<'maindevice, const MAX_SUBDEVICES: usize, const P
         .collect::<Result<Vec<_>, anyhow::Error>>()
 }
 
-/// Casts a `dyn Device` from an array into a specific device type using [`downcast_device`]
-pub async fn specific_device_from_devices<DEVICE: EthercatDevice>(
-    devices: &Vec<Arc<RwLock<dyn EthercatDevice>>>,
-    index: usize,
-) -> Result<Arc<RwLock<DEVICE>>, anyhow::Error> {
-    downcast_device::<DEVICE>(devices.get(index).cloned().ok_or({
-        anyhow!(
-            "[{}::specific_device_from_devices] Couldnt find device with matching type at {}",
-            module_path!(),
-            index
-        )
-    })?)
-    .await
-}
-
 pub type SubDeviceIdentityTuple = (u32, u32, u32);
-
 // Is vendor id at 0, and prodid at 1
 pub type SubDeviceProductTuple = (u32, u32);
 

@@ -1,6 +1,6 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::EtherCATThreadChannel;
 use crate::coe::{ConfigurableDevice, Configuration};
-use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
 use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::io::serial_interface::{SerialEncoding, SerialInterfaceDevice};
 use crate::pdo::{PredefinedPdoAssignment, RxPdo, RxPdoObject, TxPdo, TxPdoObject};
@@ -113,13 +113,13 @@ impl Default for EL6021Configuration {
 }
 
 impl ConfigurableDevice<EL6021Configuration> for EL6021 {
-    async fn write_config<'maindevice>(
+    fn write_config<'maindevice>(
         &mut self,
         channel : EtherCATThreadChannel,
         device_address : u16, 
         config: &EL6021Configuration,
     ) -> Result<(), anyhow::Error> {
-        config.write_config(device).await?;
+        config.write_config(channel,device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         self.rxpdo = config.pdo_assignment.rxpdo_assignment();
@@ -218,9 +218,10 @@ const fn convert_serial_encoding(encoding: SerialEncoding) -> u8 {
 }
 
 impl Configuration for EL6021Configuration {
-    async fn write_config<'a>(
+    fn write_config(
         &self,
-        device: &EthercrabSubDevicePreoperational<'a>,
+        ecat_channel : EtherCATThreadChannel,
+        device_address: u16,
     ) -> Result<(), anyhow::Error> {
         match (self.baud_rate, self.data_frame) {
             (EL6021Baudrate::B2400, SerialEncoding::Coding7E1)
@@ -236,49 +237,24 @@ impl Configuration for EL6021Configuration {
                 ));
             }
         }
-
-        device
-            .sdo_write(0x8000, 0x2, self.xon_on_supported_tx)
-            .await?;
-
-        device
-            .sdo_write(0x8000, 0x3, self.xon_off_supported_rx)
-            .await?;
-
-        device
-            .sdo_write(0x8000, 0x4, self.fifo_continuous_send_enabled)
-            .await?;
-
-        device
-            .sdo_write(0x8000, 0x5, self.enable_transfer_rate_optimization)
-            .await?;
-
-        device
-            .sdo_write(0x8000, 0x6, self.half_duplex_enabled)
-            .await?;
-
-        device
-            .sdo_write(0x8000, 0x7, self.point_to_point_connection_enabled)
-            .await?;
-
+        ecat_channel.sdo_write(device_address,0x8000, 0x2, self.xon_on_supported_tx)?;
+        ecat_channel.sdo_write(device_address,0x8000, 0x3, self.xon_off_supported_rx)?;
+        ecat_channel.sdo_write(device_address,0x8000, 0x4, self.fifo_continuous_send_enabled)?;
+        ecat_channel.sdo_write(device_address,0x8000, 0x5, self.enable_transfer_rate_optimization)?;
+        ecat_channel.sdo_write(device_address,0x8000, 0x6, self.half_duplex_enabled)?;
+        ecat_channel.sdo_write(device_address,0x8000, 0x7, self.point_to_point_connection_enabled)?;
         let baudrate_coe_value = u8::from(self.baud_rate);
-        device.sdo_write(0x8000, 0x11, baudrate_coe_value).await?;
-
-        device
-            .sdo_write(0x8000, 0x15, convert_serial_encoding(self.data_frame))
-            .await?;
-        device
-            .sdo_write(0x8000, 0x1a, self.rx_buffer_full_notification)
-            .await?;
+        ecat_channel.sdo_write(device_address,0x8000, 0x11, baudrate_coe_value)?;
+        ecat_channel.sdo_write(device_address,0x8000, 0x15, convert_serial_encoding(self.data_frame))?;
+        ecat_channel
+            .sdo_write(device_address,0x8000, 0x1a, self.rx_buffer_full_notification)?;
 
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(device)
-            .await?;
+            .write_config(ecat_channel.clone(),device_address)?;
         self.pdo_assignment
             .rxpdo_assignment()
-            .write_config(device)
-            .await?;
+            .write_config(ecat_channel.clone(),device_address)?;
 
         Ok(())
     }

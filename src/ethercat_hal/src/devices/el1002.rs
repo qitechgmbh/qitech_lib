@@ -1,6 +1,5 @@
 use super::{NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::devices::EthercatDeviceProcessing;
-use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::io::digital_input::{DigitalInputDevice, DigitalInputInput};
 use crate::pdo::{PredefinedPdoAssignment, TxPdo, basic::BoolPdoObject};
 use ethercat_hal_derive::{EthercatDevice, TxPdo};

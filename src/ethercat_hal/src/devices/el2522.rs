@@ -1,7 +1,6 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::{
     coe::{ConfigurableDevice, Configuration},
-    helpers::ethercrab_types::EthercrabSubDevicePreoperational,
     io::pulse_train_output::{
         PulseTrainOutputDevice, PulseTrainOutputInput, PulseTrainOutputOutput,
     },
@@ -10,7 +9,7 @@ use crate::{
         el252x::{EncControl, EncStatus, PtoControl, PtoStatus, PtoTarget},
     },
 };
-use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
+use crate::{EtherCATThreadChannel};
 use anyhow::Ok;
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
@@ -47,12 +46,13 @@ impl NewEthercatDevice for EL2522 {
 }
 
 impl ConfigurableDevice<EL2522Configuration> for EL2522 {
-    async fn write_config<'maindevice>(
+    fn write_config<'maindevice>(
         &mut self,
-        device: &EthercrabSubDevicePreoperational<'maindevice>,
+        ecat_channel: EtherCATThreadChannel,
+        device_address : u16,
         config: &EL2522Configuration,
     ) -> Result<(), anyhow::Error> {
-        config.write_config(device).await?;
+        config.write_config(ecat_channel,device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         self.rxpdo = config.pdo_assignment.rxpdo_assignment();
@@ -336,120 +336,61 @@ impl Default for EL2522Configuration {
 }
 
 impl Configuration for EL2522Configuration {
-    async fn write_config<'a>(
+    fn write_config<'a>(
         &self,
-        device: &EthercrabSubDevicePreoperational<'a>,
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
     ) -> Result<(), anyhow::Error> {
         // Write configuration for Channel 1
-        self.write_channel_config(device, 0x8000, 0x8020, &self.channel1_configuration)
-            .await?;
-
+        self.write_channel_config(ecat_channel.clone(),device_address, 0x8000, 0x8020, &self.channel1_configuration)?;
         // Write configuration for Channel 2
-        self.write_channel_config(device, 0x8010, 0x8030, &self.channel2_configuration)
-            .await?;
+        self.write_channel_config(ecat_channel.clone(),device_address, 0x8010, 0x8030, &self.channel2_configuration)?;
 
         // Write PDO assignments
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(device)
-            .await?;
+            .write_config(ecat_channel.clone(),device_address);
         self.pdo_assignment
             .rxpdo_assignment()
-            .write_config(device)
-            .await?;
-
+            .write_config(ecat_channel.clone(),device_address);
         Ok(())
     }
 }
 
 impl EL2522Configuration {
-    async fn write_channel_config<'a>(
+    fn write_channel_config<'a>(
         &self,
-        device: &EthercrabSubDevicePreoperational<'a>,
+        ecat_channel : EtherCATThreadChannel,
+        device_address: u16,
         pto_base_index: u16,
         enc_base_index: u16,
         config: &EL2522ChannelConfiguration,
     ) -> Result<(), anyhow::Error> {
-        // Write PTO settings
-        device
-            .sdo_write(pto_base_index, 0x01, config.adapt_a_b_on_position_set)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x02, config.emergency_ramp_active)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x03, config.watchdog_timer_deactive)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x04, config.sign_amount_representation)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x06, config.ramp_function_active)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x07, config.ramp_base_frequency)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x08, config.direct_input_mode)
-            .await?;
-        device
-            .sdo_write(
-                pto_base_index,
-                0x09,
-                config.user_switch_on_value_on_watchdog,
-            )
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x0A, config.travel_distance_control)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x0E, u8::from(config.operating_mode))
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x10, config.negative_logic)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x11, config.user_switch_on_value)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x12, config.base_frequency_1)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x13, config.base_frequency_2)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x14, config.ramp_time_constant_rising)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x15, config.ramp_time_constant_falling)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x16, config.frequency_factor)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x17, config.slowing_down_frequency)
-            .await?;
-        device
-            .sdo_write(pto_base_index, 0x18, config.ramp_time_constant_emergency)
-            .await?;
-
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x01, config.adapt_a_b_on_position_set)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x02, config.emergency_ramp_active)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x03, config.watchdog_timer_deactive)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x04, config.sign_amount_representation)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x06, config.ramp_function_active)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x07, config.ramp_base_frequency)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x08, config.direct_input_mode)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x09, config.user_switch_on_value_on_watchdog)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x0A, config.travel_distance_control)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x0E, u8::from(config.operating_mode))?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x10, config.negative_logic)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x11, config.user_switch_on_value)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x12, config.base_frequency_1)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x13, config.base_frequency_2)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x14, config.ramp_time_constant_rising)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x15, config.ramp_time_constant_falling)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x16, config.frequency_factor)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x17, config.slowing_down_frequency)?;
+        ecat_channel.sdo_write(device_address, pto_base_index, 0x18, config.ramp_time_constant_emergency)?;
         // Write ENC settings
-        device
-            .sdo_write(enc_base_index, 0x01, config.enable_c_reset)
-            .await?;
-        device
-            .sdo_write(enc_base_index, 0x0A, config.enable_micro_increments)
-            .await?;
-        device
-            .sdo_write(enc_base_index, 0x18, config.micro_increment_bits)
-            .await?;
-        device
-            .sdo_write(enc_base_index, 0x19, config.pulses_per_revolution)
-            .await?;
-        device
-            .sdo_write(enc_base_index, 0x1A, config.autoset_threshold)
-            .await?;
-
+        ecat_channel.sdo_write(device_address, enc_base_index, 0x01, config.enable_c_reset)?;
+        ecat_channel.sdo_write(device_address, enc_base_index, 0x0A, config.enable_micro_increments)?;
+        ecat_channel.sdo_write(device_address, enc_base_index, 0x18, config.micro_increment_bits)?;
+        ecat_channel.sdo_write(device_address, enc_base_index, 0x19, config.pulses_per_revolution)?;
+        ecat_channel.sdo_write(device_address, enc_base_index, 0x1A, config.autoset_threshold)?;
         Ok(())
     }
 }

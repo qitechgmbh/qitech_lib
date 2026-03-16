@@ -1,13 +1,9 @@
-use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
 use crate::{
-    coe::{ConfigurableDevice, Configuration},
-    helpers::ethercrab_types::EthercrabSubDevicePreoperational,
-    pdo::PredefinedPdoAssignment,
-    shared_config::el70x1::{
+    EtherCATThreadChannel, coe::{ConfigurableDevice, Configuration}, pdo::PredefinedPdoAssignment, shared_config::el70x1::{
         EL70x1InfoData, EL70x1InputFunction, EL70x1OperationMode, EL70x1SpeedRange,
         EL7031_0030AnalogInputChannelConfiguration, EncConfiguration, PosConfiguration,
         PosFeatures, StmControllerConfiguration, StmMotorConfiguration,
-    },
+    }
 };
 
 use super::{EL7031_0030, pdo::EL7031_0030PredefinedPdoAssignment};
@@ -15,33 +11,15 @@ use super::{EL7031_0030, pdo::EL7031_0030PredefinedPdoAssignment};
 /// Configuration for EL7031_0030 Stepper Motor Terminal
 #[derive(Debug, Clone)]
 pub struct EL7031_0030Configuration {
-    /// Encoder configuration
     pub encoder: EncConfiguration,
-
-    /// STM motor configuration
     pub stm_motor: StmMotorConfiguration,
-
-    /// STM controller configuration
     pub stm_controller_1: StmControllerConfiguration,
-
-    /// STM controller configuration
     pub stm_controller_2: StmControllerConfiguration,
-
-    /// STM features
     pub stm_features: StmFeatures,
-
-    /// POS configuration
     pub pos_configuration: PosConfiguration,
-
-    /// POS features
     pub pos_features: PosFeatures,
-
-    /// Analog Channel 1
     pub analog_input_channel_1: EL7031_0030AnalogInputChannelConfiguration,
-
-    /// Analog Channel 2
     pub analog_input_channel_2: EL7031_0030AnalogInputChannelConfiguration,
-
     pub pdo_assignment: EL7031_0030PredefinedPdoAssignment,
 }
 
@@ -64,42 +42,40 @@ impl Default for EL7031_0030Configuration {
 }
 
 impl Configuration for EL7031_0030Configuration {
-    async fn write_config<'a>(
+    fn write_config(
         &self,
-        device: &EthercrabSubDevicePreoperational<'a>,
-    ) -> Result<(), anyhow::Error> {
-        self.encoder.write_config(device).await?;
-        self.stm_motor.write_config(device).await?;
-        self.stm_controller_1.write_config(device, 0x8011).await?;
-        self.stm_controller_2.write_config(device, 0x8013).await?;
-        self.stm_features.write_config(device).await?;
-        self.pos_configuration.write_config(device).await?;
-        self.pos_features.write_config(device).await?;
+        ecat_channel : EtherCATThreadChannel,   
+        device_address : u16,
+        ) -> Result<(), anyhow::Error> {
+        self.encoder.write_config(ecat_channel.clone(),device_address)?;
+        self.stm_motor.write_config(ecat_channel.clone(),device_address)?;
+        self.stm_controller_1.write_config(ecat_channel.clone(),device_address, 0x8011)?;
+        self.stm_controller_2.write_config(ecat_channel.clone(),device_address, 0x8013)?;
+        self.stm_features.write_config(ecat_channel.clone(),device_address)?;
+        self.pos_configuration.write_config(ecat_channel.clone(),device_address)?;
+        self.pos_features.write_config(ecat_channel.clone(),device_address)?;
         self.analog_input_channel_1
-            .write_channel_config(device, 0x8030)
-            .await?;
+            .write_channel_config(ecat_channel.clone(),device_address, 0x8030)?;
         self.analog_input_channel_2
-            .write_channel_config(device, 0x8040)
-            .await?;
+            .write_channel_config(ecat_channel.clone(),device_address, 0x8040)?;
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(device)
-            .await?;
+            .write_config(ecat_channel.clone(),device_address)?;
         self.pdo_assignment
             .rxpdo_assignment()
-            .write_config(device)
-            .await?;
+            .write_config(ecat_channel.clone(),device_address)?;
         Ok(())
     }
 }
 
 impl ConfigurableDevice<EL7031_0030Configuration> for EL7031_0030 {
-    async fn write_config<'maindevice>(
+    fn write_config(
         &mut self,
-        device: &EthercrabSubDevicePreoperational<'maindevice>,
+        ecat_channel : EtherCATThreadChannel,
+        device_address: u16,
         config: &EL7031_0030Configuration,
     ) -> Result<(), anyhow::Error> {
-        config.write_config(device).await?;
+        config.write_config(ecat_channel.clone(),device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         self.rxpdo = config.pdo_assignment.rxpdo_assignment();
@@ -232,53 +208,55 @@ impl Default for StmFeatures {
 }
 
 impl StmFeatures {
-    pub async fn write_config<'a>(
+    pub fn write_config(
         &self,
-        device: &EthercrabSubDevicePreoperational<'a>,
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
     ) -> Result<(), anyhow::Error> {
-        device.sdo_write(0x8012, 0x01, 0u8).await?;
-        device
-            .sdo_write(0x8012, 0x05, u8::from(self.speed_range))
-            .await?;
-        device
-            .sdo_write(0x8012, 0x09, self.invert_motor_polarity)
-            .await?;
-        device
-            .sdo_write(0x8012, 0x11, u8::from(self.select_info_data_1))
-            .await?;
-        device
-            .sdo_write(0x8012, 0x19, u8::from(self.select_info_data_2))
-            .await?;
-        device
-            .sdo_write(0x8012, 0x30, self.invert_digital_input_1)
-            .await?;
-        device
-            .sdo_write(0x8012, 0x31, self.invert_digital_input_2)
-            .await?;
-        device
-            .sdo_write(0x8012, 0x32, u8::from(self.function_for_input_1))
-            .await?;
-        device
-            .sdo_write(0x8012, 0x36, u8::from(self.function_for_input_2))
-            .await?;
-        device
-            .sdo_write(
-                0x8012,
-                0x45,
-                u8::from(self.digital_input_emulation_channel_1.clone()),
-            )
-            .await?;
-        device
-            .sdo_write(
-                0x8012,
-                0x49,
-                u8::from(self.digital_input_emulation_channel_2.clone()),
-            )
-            .await?;
+        ecat_channel.sdo_write(device_address, 0x8012, 0x01, 0u8)?;
+        ecat_channel.sdo_write(device_address, 0x8012, 0x05, u8::from(self.speed_range))?;
+        ecat_channel.sdo_write(device_address, 0x8012, 0x09, self.invert_motor_polarity)?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8012,
+            0x11,
+            u8::from(self.select_info_data_1),
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8012,
+            0x19,
+            u8::from(self.select_info_data_2),
+        )?;
+        ecat_channel.sdo_write(device_address, 0x8012, 0x30, self.invert_digital_input_1)?;
+        ecat_channel.sdo_write(device_address, 0x8012, 0x31, self.invert_digital_input_2)?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8012,
+            0x32,
+            u8::from(self.function_for_input_1),
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8012,
+            0x36,
+            u8::from(self.function_for_input_2),
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8012,
+            0x45,
+            u8::from(self.digital_input_emulation_channel_1.clone()),
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8012,
+            0x49,
+            u8::from(self.digital_input_emulation_channel_2.clone()),
+        )?;
         Ok(())
     }
 }
-
 #[derive(Debug, Clone, Default)]
 pub enum EL7031_0030DigitalInputEmulation {
     #[default]

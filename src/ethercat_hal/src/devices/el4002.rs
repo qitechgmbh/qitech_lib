@@ -1,7 +1,6 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::EtherCATThreadChannel;
 use crate::coe::Configuration;
-use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
-use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::io::analog_output::{AnalogOutputDevice, AnalogOutputOutput};
 use crate::pdo::PredefinedPdoAssignment;
 use crate::pdo::RxPdo;
@@ -99,11 +98,11 @@ impl AnalogOutputDevice<EL4002Port> for EL4002 {
 }
 
 impl EL4002 {
-    pub async fn write_config<'a>(
+    pub fn write_config(
         &mut self,
-        subdevice: &EthercrabSubDevicePreoperational<'a>,
+        ecat_channel : EtherCATThreadChannel,
+        device_address: u16,
     ) -> Result<(), anyhow::Error> {
-        tracing::info!("el4002");
         /*
         self.configuration
             .channel1
@@ -117,13 +116,11 @@ impl EL4002 {
         self.configuration
             .pdo_assignment
             .txpdo_assignment()
-            .write_config(subdevice)
-            .await?;
+            .write_config(ecat_channel.clone(),device_address)?;
         self.configuration
             .pdo_assignment
             .rxpdo_assignment()
-            .write_config(subdevice)
-            .await?;
+            .write_config(ecat_channel.clone(),device_address)?;
         Ok(())
     }
 }

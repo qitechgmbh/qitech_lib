@@ -160,21 +160,11 @@ impl AnalogInputDevice<EL3024Port> for EL3024 {
 }
 
 impl ConfigurableDevice<EL3024Configuration> for EL3024 {
-    
-   /* fn write_config(
-        &mut self,
-    ) -> Result<(), anyhow::Error> {
-        config.write_config(device).await?;
-        self.configuration = config.clone();
-        self.txpdo = config.pdo_assignment.txpdo_assignment();
-        Ok(())
-    }
-*/
     fn get_config(&self) -> EL3024Configuration {
         self.configuration.clone()
     }
 
-fn write_config(
+    fn write_config(
         &mut self,
         channel: EtherCATThreadChannel,
         device_address : u16,
@@ -237,30 +227,6 @@ impl Configuration for EL3024Configuration {
             .write_config(channel.clone(),device_address)?;
         Ok(())
     }
-    /*async fn write_config<'a>(
-        &self,
-        device: &EthercrabSubDevicePreoperational<'a>,
-    ) -> Result<(), anyhow::Error> {
-        // Write configuration for Channel 1
-        self.channel1.write_channel_config(device, 0x8000).await?;
-
-        // Write configuration for Channel 2
-        self.channel2.write_channel_config(device, 0x8010).await?;
-        // Write configuration for Channel 3
-        self.channel3.write_channel_config(device, 0x8020).await?;
-
-        // Write configuration for Channel 4
-        self.channel4.write_channel_config(device, 0x8030).await?;
-        self.pdo_assignment
-            .txpdo_assignment()
-            .write_config(device)
-            .await?;
-        self.pdo_assignment
-            .rxpdo_assignment()
-            .write_config(device)
-            .await?;
-        Ok(())
-    }*/
 }
 
 #[derive(Debug, Clone)]

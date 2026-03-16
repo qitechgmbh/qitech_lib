@@ -1,8 +1,6 @@
-use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::io::digital_output::{DigitalOutputDevice, DigitalOutputOutput};
 use crate::pdo::{RxPdo, basic::BoolPdoObject};
 use ethercat_hal_derive::{EthercatDevice, RxPdo};
-use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
 use super::{EthercatDeviceProcessing, NewEthercatDevice};
 
 /// EL2809 16-channel digital output device

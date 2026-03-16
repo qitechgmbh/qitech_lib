@@ -1,7 +1,6 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
-use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
+use crate::EtherCATThreadChannel;
 use crate::coe::{ConfigurableDevice, Configuration};
-use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::io::encoder_input::{
     EncoderInputCounter, EncoderInputDevice, EncoderInputFrequency, EncoderInputPeriod,
 };
@@ -76,12 +75,13 @@ impl NewEthercatDevice for EL5152 {
 }
 
 impl ConfigurableDevice<EL5152Configuration> for EL5152 {
-    async fn write_config<'maindevice>(
+    fn write_config(
         &mut self,
-        device: &EthercrabSubDevicePreoperational<'maindevice>,
+        ecat_chhanel : EtherCATThreadChannel,
+        device_address: u16,
         config: &EL5152Configuration,
     ) -> Result<(), anyhow::Error> {
-        config.write_config(device).await?;
+        config.write_config(ecat_chhanel,device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         self.rxpdo = config.pdo_assignment.rxpdo_assignment();
@@ -175,23 +175,22 @@ impl EncoderInputDevice<EL5152Port> for EL5152 {
 }
 
 impl Configuration for EL5152Configuration {
-    async fn write_config<'a>(
+    fn write_config(
         &self,
-        device: &EthercrabSubDevicePreoperational<'a>,
+        ecat_channel : EtherCATThreadChannel,
+        device_address: u16,
     ) -> Result<(), anyhow::Error> {
         // Configure channel 1
-        self.channel1.write_channel_config(device, 0x8000).await?;
+        self.channel1.write_channel_config(ecat_channel.clone(),device_address, 0x8000)?;
         // Configure channel 2
-        self.channel2.write_channel_config(device, 0x8010).await?;
+        self.channel2.write_channel_config(ecat_channel.clone(),device_address, 0x8010)?;
         // Write PDO assignments
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(device)
-            .await?;
+            .write_config(ecat_channel.clone(),device_address)?;
         self.pdo_assignment
             .rxpdo_assignment()
-            .write_config(device)
-            .await?;
+            .write_config(ecat_channel.clone(),device_address)?;
 
         Ok(())
     }
@@ -281,45 +280,23 @@ pub struct EL5152ChannelConfiguration {
 }
 
 impl EL5152ChannelConfiguration {
-    pub async fn write_channel_config<'a>(
+    pub fn write_channel_config<'a>(
         &self,
-        device: &EthercrabSubDevicePreoperational<'a>,
+        ecat_channel : EtherCATThreadChannel,
+        device_address: u16,
         base_index: u16,
     ) -> Result<(), anyhow::Error> {
-        device
-            .sdo_write(base_index, 0x03, self.enable_counter)
-            .await?;
-        device
-            .sdo_write(base_index, 0x08, self.disable_filter)
-            .await?;
-        device
-            .sdo_write(base_index, 0x0A, self.enable_micro_increment)
-            .await?;
-        device
-            .sdo_write(base_index, 0x0E, self.reversion_rotation)
-            .await?;
-        device
-            .sdo_write(base_index, 0x0F, self.frequency_based_window)
-            .await?;
-        device
-            .sdo_write(base_index, 0x11, self.frequency_window)
-            .await?;
-
-        device
-            .sdo_write(base_index, 0x13, self.frequency_scaling)
-            .await?;
-        device
-            .sdo_write(base_index, 0x14, self.period_scaling)
-            .await?;
-        device
-            .sdo_write(base_index, 0x15, self.frequency_resolution)
-            .await?;
-        device
-            .sdo_write(base_index, 0x16, self.period_resolution)
-            .await?;
-        device
-            .sdo_write(base_index, 0x17, self.frequency_wait_time)
-            .await?;
+        ecat_channel.sdo_write(device_address,base_index, 0x03, self.enable_counter)?;
+        ecat_channel.sdo_write(device_address,base_index, 0x08, self.disable_filter)?;
+        ecat_channel.sdo_write(device_address,base_index, 0x0A, self.enable_micro_increment)?;
+        ecat_channel.sdo_write(device_address,base_index, 0x0E, self.reversion_rotation)?;
+        ecat_channel.sdo_write(device_address,base_index, 0x0F, self.frequency_based_window)?;
+        ecat_channel.sdo_write(device_address,base_index, 0x11, self.frequency_window)?;
+        ecat_channel.sdo_write(device_address,base_index, 0x13, self.frequency_scaling)?;
+        ecat_channel.sdo_write(device_address,base_index, 0x14, self.period_scaling)?;
+        ecat_channel.sdo_write(device_address,base_index, 0x15, self.frequency_resolution)?;
+        ecat_channel.sdo_write(device_address,base_index, 0x16, self.period_resolution)?;
+        ecat_channel.sdo_write(device_address,base_index, 0x17, self.frequency_wait_time)?;
 
         Ok(())
     }

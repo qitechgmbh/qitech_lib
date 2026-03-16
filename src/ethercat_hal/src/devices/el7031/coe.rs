@@ -1,12 +1,8 @@
-use crate::{EtherCATThreadChannel, ethercat_helpers::sdo_write_helper};
 use crate::{
-    coe::{ConfigurableDevice, Configuration},
-    helpers::ethercrab_types::EthercrabSubDevicePreoperational,
-    pdo::PredefinedPdoAssignment,
-    shared_config::el70x1::{
+    EtherCATThreadChannel, coe::{ConfigurableDevice, Configuration}, pdo::PredefinedPdoAssignment, shared_config::el70x1::{
         EncConfiguration, PosConfiguration, PosFeatures, StmControllerConfiguration, StmFeatures,
         StmMotorConfiguration,
-    },
+    }
 };
 
 use super::{EL7031, pdo::EL7031PredefinedPdoAssignment};
@@ -54,37 +50,44 @@ impl Default for EL7031Configuration {
     }
 }
 
+
 impl Configuration for EL7031Configuration {
-    async fn write_config<'a>(
+    fn write_config(
         &self,
-        device: &EthercrabSubDevicePreoperational<'a>,
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
     ) -> Result<(), anyhow::Error> {
-        self.encoder.write_config(device).await?;
-        self.stm_motor.write_config(device).await?;
-        self.stm_controller_1.write_config(device, 0x8011).await?;
-        self.stm_controller_2.write_config(device, 0x8013).await?;
-        self.stm_features.write_config(device).await?;
-        self.pos_configuration.write_config(device).await?;
-        self.pos_features.write_config(device).await?;
+        // All calls are now synchronous and use the (channel, address) pattern
+        self.encoder.write_config(ecat_channel.clone(), device_address)?;
+        self.stm_motor.write_config(ecat_channel.clone(), device_address)?;
+        // Pass the base_index as the third argument for controllers
+        self.stm_controller_1.write_config(ecat_channel.clone(), device_address, 0x8011)?;
+        self.stm_controller_2.write_config(ecat_channel.clone(), device_address, 0x8013)?;
+        self.stm_features.write_config(ecat_channel.clone(), device_address)?;
+        self.pos_configuration.write_config(ecat_channel.clone(), device_address)?;
+        self.pos_features.write_config(ecat_channel.clone(), device_address)?;
+        
+        // PDO assignments
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(device)
-            .await?;
+            .write_config(ecat_channel.clone(), device_address)?;
+            
         self.pdo_assignment
             .rxpdo_assignment()
-            .write_config(device)
-            .await?;
+            .write_config(ecat_channel.clone(), device_address)?;
+            
         Ok(())
     }
 }
 
 impl ConfigurableDevice<EL7031Configuration> for EL7031 {
-    async fn write_config<'maindevice>(
+    fn write_config(
         &mut self,
-        device: &EthercrabSubDevicePreoperational<'maindevice>,
+        ecat_channel : EtherCATThreadChannel,
+        device_address : u16,
         config: &EL7031Configuration,
     ) -> Result<(), anyhow::Error> {
-        config.write_config(device).await?;
+        config.write_config(ecat_channel,device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         self.rxpdo = config.pdo_assignment.rxpdo_assignment();
