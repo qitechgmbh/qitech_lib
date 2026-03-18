@@ -1,16 +1,18 @@
 [package]
-name = "QiTech-Lib"
+name = "qitech_lib"
 version = "0.1.0"
 edition = "2024"
 
 [workspace]
 # This tells Cargo to look inside the subfolder for another project
-members = ["src/ethercat_hal","src/ethercat_hal_derive","src/units"]
+members = ["ethercat_hal","ethercat_hal_derive","units","modbus"]
 
 [dependencies]
 bitvec = "1.0.1"
 # This is the "bridge" that allows main.rs to see the subcrate
-ethercat_hal = { path = "src/ethercat_hal" }
-ethercat_hal_derive = { path = "src/ethercat_hal_derive" }
-
+ethercat_hal = { path = "ethercat_hal" }
+ethercat_hal_derive = { path = "ethercat_hal_derive" }
+modbus = { path = "modbus"}
 tokio = "1.49.0"
+
+[lib]
