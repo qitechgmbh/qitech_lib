@@ -258,22 +258,23 @@ impl std::fmt::Debug for IP20EcDi8Do8 {
     }
 }
 
-impl DigitalInputDevice<IP20EcDi8Do8InputPort> for IP20EcDi8Do8 {
-    fn get_input(&self, port: IP20EcDi8Do8InputPort) -> Result<bool, anyhow::Error> {
+impl DigitalInputDevice for IP20EcDi8Do8 {
+    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
         Ok( match port {
-                IP20EcDi8Do8InputPort::DI1 => self.tx_pdo.di1,
-                IP20EcDi8Do8InputPort::DI2 => self.tx_pdo.di2,
-                IP20EcDi8Do8InputPort::DI3 => self.tx_pdo.di3,
-                IP20EcDi8Do8InputPort::DI4 => self.tx_pdo.di4,
-                IP20EcDi8Do8InputPort::DI5 => self.tx_pdo.di5,
-                IP20EcDi8Do8InputPort::DI6 => self.tx_pdo.di6,
-                IP20EcDi8Do8InputPort::DI7 => self.tx_pdo.di7,
-                IP20EcDi8Do8InputPort::DI8 => self.tx_pdo.di8,
+                0 => self.tx_pdo.di1,
+                1 => self.tx_pdo.di2,
+                2 => self.tx_pdo.di3,
+                3 => self.tx_pdo.di4,
+                4 => self.tx_pdo.di5,
+                5 => self.tx_pdo.di6,
+                6 => self.tx_pdo.di7,
+                7 => self.tx_pdo.di8,
+                _ => return Err(anyhow::anyhow!("IP20EcDi8Do8 only has 8 inputs (0-7)")),
             })
     }
 
-    fn get_port_count() -> usize {
-        4
+    fn get_port_count(&self) -> usize {
+        8
     }
 }
 

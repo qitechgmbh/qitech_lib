@@ -240,18 +240,18 @@ impl StepperVelocityEL70x1Device<EL7041_0052Port> for EL7041_0052 {
     }
 }
 
-impl DigitalInputDevice<EL7041_0052Port> for EL7041_0052 {
-    fn get_input(&self, port: EL7041_0052Port) -> Result<bool, anyhow::Error> {
+impl DigitalInputDevice for EL7041_0052 {
+    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
         let error1 = anyhow::anyhow!("stm_status is None");
         Ok(match port {
-                EL7041_0052Port::DI1 => {
+                0 => {
                     self.txpdo
                         .stm_status
                         .as_ref()
                         .ok_or(error1)?
                         .digital_input_1
                 }
-                EL7041_0052Port::DI2 => {
+               1 => {
                     self.txpdo
                         .stm_status
                         .as_ref()
@@ -260,12 +260,18 @@ impl DigitalInputDevice<EL7041_0052Port> for EL7041_0052 {
                 }
                 _ => {
                     return Err(anyhow!(
-                        "Port {:?} is not supported for digital input",
+                        "Port {:?} is not supported for digital input EL7041_0052",
                         port
                     ));
                 }  
         })
     }
+
+    fn get_port_count(&self) -> usize {
+        2
+    }
+
+
 }
 
 #[derive(Debug, Clone, Copy)]

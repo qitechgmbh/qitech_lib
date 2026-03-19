@@ -43,7 +43,7 @@ impl DigitalInputDevice for EL1002 {
         }
     }
 
-    fn get_port_count() -> usize {
+    fn get_port_count(&self) -> usize {
         2
     }
 }

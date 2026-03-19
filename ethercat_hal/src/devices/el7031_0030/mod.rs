@@ -255,32 +255,45 @@ impl StepperVelocityEL70x1Device<EL7031_0030StepperPort> for EL7031_0030 {
     }
 }
 
-impl DigitalInputDevice<EL7031_0030DigitalInputPort> for EL7031_0030 {
+impl DigitalInputDevice for EL7031_0030 {
     fn get_input(
         &self,
-        port: EL7031_0030DigitalInputPort,
+        port: usize,
     ) -> Result<bool, anyhow::Error> {
         let error1 = anyhow::anyhow!(
             "[{}::DigitalInputDevice::digital_input_state] StmStatus is None",
             module_path!(),
         );
-        Ok(match port {
-                EL7031_0030DigitalInputPort::DI1 => {
+        Ok(
+            match port {
+                0 => {
                     self.txpdo
                         .stm_status
                         .as_ref()
                         .ok_or(error1)?
                         .digital_input_1
                 }
-                EL7031_0030DigitalInputPort::DI2 => {
+                1 => {
                     self.txpdo
                         .stm_status
                         .as_ref()
                         .ok_or(error1)?
                         .digital_input_2
                 }
+                _ => {
+                    return Err(anyhow!(
+                        "Port {:?} is not supported for digital input EL7041_0052",
+                        port
+                    ));
+                }  
             })
     }
+
+    fn get_port_count(&self) -> usize {
+        2
+    }
+
+
 }
 
 impl AnalogInputDevice<EL7031_0030AnalogInputPort> for EL7031_0030 {

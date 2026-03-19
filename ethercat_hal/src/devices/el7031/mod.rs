@@ -225,29 +225,40 @@ impl StepperVelocityEL70x1Device<EL7031StepperPort> for EL7031 {
     }
 }
 
-impl DigitalInputDevice<EL7031DigitalInputPort> for EL7031 {
-    fn get_input(&self, port: EL7031DigitalInputPort) -> Result<bool, anyhow::Error> {
+impl DigitalInputDevice for EL7031 {
+    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
         let error1 = anyhow::anyhow!(
             "[{}::Device::digital_input_state] Port {:?} is not available",
             module_path!(),
             port
         );
+
         Ok(match port {
-                EL7031DigitalInputPort::DI1 => {
+                0 => {
                     self.txpdo
                         .stm_status
                         .as_ref()
                         .ok_or(error1)?
                         .digital_input_1
                 }
-                EL7031DigitalInputPort::DI2 => {
+                1 => {
                     self.txpdo
                         .stm_status
                         .as_ref()
                         .ok_or(error1)?
                         .digital_input_2
-                }
+                },
+                _ => {
+                    return Err(anyhow!(
+                        "Port {:?} is not supported for digital input EL7041_0052",
+                        port
+                    ));
+                }  
             })
+    }
+
+    fn get_port_count(&self) -> usize {
+        2    
     }
 }
 

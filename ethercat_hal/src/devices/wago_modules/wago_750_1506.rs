@@ -106,7 +106,7 @@ impl DigitalInputDevice for Wago750_1506 {
         Ok(val)
     }
 
-    fn get_port_count() -> usize {
+    fn get_port_count(&self) -> usize {
         8
     }
 }
