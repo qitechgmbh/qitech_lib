@@ -6,3 +6,5 @@ rust-version = "1.86"
 
 [dependencies]
 uom = { version = "0.37.0", default-features = false, features = [ "f64" ] }
+
+[lib]

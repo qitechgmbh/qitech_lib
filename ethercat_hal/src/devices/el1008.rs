@@ -1,5 +1,5 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
-use crate::io::digital_input::{DigitalInputDevice, DigitalInputInput};
+use crate::io::digital_input::{DigitalInputDevice};
 use crate::pdo::{PredefinedPdoAssignment, TxPdo, basic::BoolPdoObject};
 use ethercat_hal_derive::{EthercatDevice, TxPdo};
 
@@ -30,14 +30,13 @@ impl NewEthercatDevice for EL1008 {
 }
 
 impl DigitalInputDevice<EL1008Port> for EL1008 {
-    fn get_input(&self, port: EL1008Port) -> Result<DigitalInputInput, anyhow::Error> {
+    fn get_input(&self, port: EL1008Port) -> Result<bool, anyhow::Error> {
         let error = anyhow::anyhow!(
             "[{}::Device::digital_input_state] Port {:?} is not available",
             module_path!(),
             port
         );
-        Ok(DigitalInputInput {
-            value: match port {
+        Ok(match port {
                 EL1008Port::DI1 => self.txpdo.channel1.as_ref().ok_or(error)?.value,
                 EL1008Port::DI2 => self.txpdo.channel2.as_ref().ok_or(error)?.value,
                 EL1008Port::DI3 => self.txpdo.channel3.as_ref().ok_or(error)?.value,
@@ -46,7 +45,6 @@ impl DigitalInputDevice<EL1008Port> for EL1008 {
                 EL1008Port::DI6 => self.txpdo.channel6.as_ref().ok_or(error)?.value,
                 EL1008Port::DI7 => self.txpdo.channel7.as_ref().ok_or(error)?.value,
                 EL1008Port::DI8 => self.txpdo.channel8.as_ref().ok_or(error)?.value,
-            },
         })
     }
 }

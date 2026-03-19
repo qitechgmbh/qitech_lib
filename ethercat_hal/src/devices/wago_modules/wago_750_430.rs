@@ -3,7 +3,7 @@ use crate::devices::{
     SubDeviceProductTuple,
 };
 use crate::devices::{EthercatDeviceProcessing, NewEthercatDevice};
-use crate::io::digital_input::{DigitalInputDevice, DigitalInputInput};
+use crate::io::digital_input::{DigitalInputDevice};
 
 #[derive(Clone)]
 pub struct Wago750_430 {
@@ -54,37 +54,21 @@ pub struct Wago750_430TxPdo {
 }
 
 impl DigitalInputDevice<Wago750_430Port> for Wago750_430 {
-    fn get_input(
-        &self,
-        port: Wago750_430Port,
-    ) -> Result<crate::io::digital_input::DigitalInputInput, anyhow::Error> {
-        match port {
-            Wago750_430Port::Port1 => Ok(DigitalInputInput {
-                value: self.txpdo.port1,
-            }),
-            Wago750_430Port::Port2 => Ok(DigitalInputInput {
-                value: self.txpdo.port2,
-            }),
-            Wago750_430Port::Port3 => Ok(DigitalInputInput {
-                value: self.txpdo.port3,
-            }),
-            Wago750_430Port::Port4 => Ok(DigitalInputInput {
-                value: self.txpdo.port4,
-            }),
-            Wago750_430Port::Port5 => Ok(DigitalInputInput {
-                value: self.txpdo.port5,
-            }),
-            Wago750_430Port::Port6 => Ok(DigitalInputInput {
-                value: self.txpdo.port6,
-            }),
-            Wago750_430Port::Port7 => Ok(DigitalInputInput {
-                value: self.txpdo.port7,
-            }),
-            Wago750_430Port::Port8 => Ok(DigitalInputInput {
-                value: self.txpdo.port8,
-            }),
-        }
+fn get_input(
+    &self,
+    port: Wago750_430Port,
+) -> Result<bool, anyhow::Error> {
+    match port {
+        Wago750_430Port::Port1 => Ok(self.txpdo.port1),
+        Wago750_430Port::Port2 => Ok(self.txpdo.port2),
+        Wago750_430Port::Port3 => Ok(self.txpdo.port3),
+        Wago750_430Port::Port4 => Ok(self.txpdo.port4),
+        Wago750_430Port::Port5 => Ok(self.txpdo.port5),
+        Wago750_430Port::Port6 => Ok(self.txpdo.port6),
+        Wago750_430Port::Port7 => Ok(self.txpdo.port7),
+        Wago750_430Port::Port8 => Ok(self.txpdo.port8),
     }
+}
 }
 
 impl EthercatDeviceUsed for Wago750_430 {

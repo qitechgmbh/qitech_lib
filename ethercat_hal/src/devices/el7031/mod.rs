@@ -1,15 +1,13 @@
 pub mod coe;
 pub mod pdo;
-
 use anyhow::anyhow;
 use coe::EL7031Configuration;
 use ethercat_hal_derive::EthercatDevice;
 use pdo::{EL7031RxPdo, EL7031TxPdo};
-
 use crate::{
     helpers::counter_wrapper_u16_i128::CounterWrapperU16U128,
     io::{
-        digital_input::{DigitalInputDevice, DigitalInputInput},
+        digital_input::{DigitalInputDevice},
         stepper_velocity_el70x1::{
             StepperVelocityEL70x1Device, StepperVelocityEL70x1Input, StepperVelocityEL70x1Output,
         },
@@ -20,7 +18,7 @@ use crate::{
 
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 
-#[derive(Debug, EthercatDevice)]
+#[derive(Debug,Clone,EthercatDevice)]
 pub struct EL7031 {
     pub txpdo: EL7031TxPdo,
     pub rxpdo: EL7031RxPdo,
@@ -228,14 +226,13 @@ impl StepperVelocityEL70x1Device<EL7031StepperPort> for EL7031 {
 }
 
 impl DigitalInputDevice<EL7031DigitalInputPort> for EL7031 {
-    fn get_input(&self, port: EL7031DigitalInputPort) -> Result<DigitalInputInput, anyhow::Error> {
+    fn get_input(&self, port: EL7031DigitalInputPort) -> Result<bool, anyhow::Error> {
         let error1 = anyhow::anyhow!(
             "[{}::Device::digital_input_state] Port {:?} is not available",
             module_path!(),
             port
         );
-        Ok(DigitalInputInput {
-            value: match port {
+        Ok(match port {
                 EL7031DigitalInputPort::DI1 => {
                     self.txpdo
                         .stm_status
@@ -250,8 +247,7 @@ impl DigitalInputDevice<EL7031DigitalInputPort> for EL7031 {
                         .ok_or(error1)?
                         .digital_input_2
                 }
-            },
-        })
+            })
     }
 }
 

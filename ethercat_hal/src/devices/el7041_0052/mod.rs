@@ -5,7 +5,7 @@ use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple}
 use crate::{
     helpers::counter_wrapper_u16_i128::CounterWrapperU16U128,
     io::{
-        digital_input::{DigitalInputDevice, DigitalInputInput},
+        digital_input::{DigitalInputDevice},
         stepper_velocity_el70x1::{
             StepperVelocityEL70x1Device, StepperVelocityEL70x1Input, StepperVelocityEL70x1Output,
         },
@@ -18,7 +18,7 @@ use anyhow::anyhow;
 pub mod coe;
 pub mod pdo;
 
-#[derive(EthercatDevice, Debug)]
+#[derive(EthercatDevice,Clone, Debug)]
 pub struct EL7041_0052 {
     pub txpdo: pdo::EL7041_0052TxPdo,
     pub rxpdo: pdo::EL7041_0052RxPdo,
@@ -241,11 +241,9 @@ impl StepperVelocityEL70x1Device<EL7041_0052Port> for EL7041_0052 {
 }
 
 impl DigitalInputDevice<EL7041_0052Port> for EL7041_0052 {
-    fn get_input(&self, port: EL7041_0052Port) -> Result<DigitalInputInput, anyhow::Error> {
+    fn get_input(&self, port: EL7041_0052Port) -> Result<bool, anyhow::Error> {
         let error1 = anyhow::anyhow!("stm_status is None");
-
-        Ok(DigitalInputInput {
-            value: match port {
+        Ok(match port {
                 EL7041_0052Port::DI1 => {
                     self.txpdo
                         .stm_status
@@ -265,8 +263,7 @@ impl DigitalInputDevice<EL7041_0052Port> for EL7041_0052 {
                         "Port {:?} is not supported for digital input",
                         port
                     ));
-                }
-            },
+                }  
         })
     }
 }

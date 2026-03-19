@@ -242,7 +242,7 @@ impl Wago750_354 {
     }
 
     // This should probably be a generic function instead
-    pub async fn get_modules<'a>(
+    pub fn get_modules<'a>(
         ecat_channel: EtherCATThreadChannel,
         device_address : u16,
         module_count: usize,
@@ -404,7 +404,7 @@ impl Wago750_354 {
         }
     }
 
-    pub async fn initialize_modules<'a>(
+    pub fn initialize_modules<'a>(
         ecat_channel: EtherCATThreadChannel,
         device_address : u16,
     ) -> Result<Vec<Module>, Error> {
@@ -415,7 +415,7 @@ impl Wago750_354 {
         if count == 0 {
             return Ok(vec![]);
         }
-        let modules = Wago750_354::get_modules(ecat_channel, device_address, count).await?;
+        let modules = Wago750_354::get_modules(ecat_channel, device_address, count)?;
         Ok(modules)
     }
 }

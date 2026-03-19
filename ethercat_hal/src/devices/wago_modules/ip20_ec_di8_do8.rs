@@ -7,7 +7,7 @@ use crate::{
     devices::{DynamicEthercatDevice, Module},
     helpers::ethercrab_types::EthercrabSubDevicePreoperational,
     io::{
-        digital_input::{DigitalInputDevice, DigitalInputInput},
+        digital_input::{DigitalInputDevice},
         digital_output::{DigitalOutputDevice, DigitalOutputOutput},
     },
 };
@@ -105,6 +105,7 @@ pub struct IP20EcDi8Do8TxPdo {
 
 /// Wago 0x741:0x117b6722 bus coupler with digital I/O
 /// This device has 8x Digital Input and 8x Digital Output terminals
+#[derive(Clone)]
 pub struct IP20EcDi8Do8 {
     is_used: bool,
     pub slots: [Option<Module>; 64],
@@ -258,9 +259,8 @@ impl std::fmt::Debug for IP20EcDi8Do8 {
 }
 
 impl DigitalInputDevice<IP20EcDi8Do8InputPort> for IP20EcDi8Do8 {
-    fn get_input(&self, port: IP20EcDi8Do8InputPort) -> Result<DigitalInputInput, anyhow::Error> {
-        Ok(DigitalInputInput {
-            value: match port {
+    fn get_input(&self, port: IP20EcDi8Do8InputPort) -> Result<bool, anyhow::Error> {
+        Ok( match port {
                 IP20EcDi8Do8InputPort::DI1 => self.tx_pdo.di1,
                 IP20EcDi8Do8InputPort::DI2 => self.tx_pdo.di2,
                 IP20EcDi8Do8InputPort::DI3 => self.tx_pdo.di3,
@@ -269,8 +269,7 @@ impl DigitalInputDevice<IP20EcDi8Do8InputPort> for IP20EcDi8Do8 {
                 IP20EcDi8Do8InputPort::DI6 => self.tx_pdo.di6,
                 IP20EcDi8Do8InputPort::DI7 => self.tx_pdo.di7,
                 IP20EcDi8Do8InputPort::DI8 => self.tx_pdo.di8,
-            },
-        })
+            })
     }
 }
 
