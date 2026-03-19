@@ -12,6 +12,12 @@ pub struct BoolPdoObject {
     pub value: bool,
 }
 
+impl AsRef<bool> for BoolPdoObject {
+    fn as_ref(&self) -> &bool {
+        &self.value
+    }
+}
+
 impl TxPdoObject for BoolPdoObject {
     fn read(&mut self, buffer: &BitSlice<u8, Lsb0>) {
         self.value = buffer[0];

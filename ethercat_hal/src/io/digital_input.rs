@@ -1,6 +1,6 @@
-pub trait DigitalInputDevice<PORTS> : Clone
-where
-    PORTS: Clone,
+use std::fmt::Debug;
+pub trait DigitalInputDevice : Debug
 {
-    fn get_input(&self, port: PORTS) -> Result<bool, anyhow::Error>;
+    fn get_input(&self, port : usize) -> Result<bool, anyhow::Error>;
+    fn get_port_count() -> usize;
 }

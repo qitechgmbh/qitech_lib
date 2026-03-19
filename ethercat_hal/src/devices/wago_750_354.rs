@@ -21,8 +21,6 @@ use crate::{
     },
 };
 use anyhow::Error;
-use smol::lock::RwLock;
-use std::sync::Arc;
 const MODULE_COUNT_INDEX: (u16, u8) = (0xf050, 0x00);
 const TX_MAPPING_INDEX: (u16, u8) = (0x1c13, 0x00);
 const RX_MAPPING_INDEX: (u16, u8) = (0x1c12, 0x00);
@@ -37,7 +35,7 @@ struct ModulePdoMapping {
 pub struct Wago750_354 {
     is_used: bool,
     pub slots: [Option<Module>; 64],
-    pub slot_devices: [Option<Arc<RwLock<dyn DynamicEthercatDevice>>>; 64],
+    pub slot_devices: [Option<Box<dyn DynamicEthercatDevice>>; 64],
     pub dev_count: usize,
     pub module_count: usize,
     rx_pdo_mappings: Vec<ModulePdoMapping>,
@@ -54,10 +52,7 @@ impl EthercatDevice for Wago750_354 {
         for slot_device in &mut self.slot_devices {
             match slot_device {
                 Some(device) => {
-                    // Give all Modules access to the couplers input image and call their input func
-                    let mut d = device.write_blocking();
-                    let _ = d.input(input);
-                    drop(d);
+                    let _ = device.input(input);
                 }
                 None => break,
             }
@@ -77,10 +72,7 @@ impl EthercatDevice for Wago750_354 {
         for slot_device in &self.slot_devices {
             match slot_device {
                 Some(device) => {
-                    // Give all Modules access to the couplers Output image and call their output func
-                    let d = device.read_blocking();
-                    let _ = d.output(output);
-                    drop(d);
+                    let _ = device.output(output);
                 }
                 None => break,
             }
@@ -356,30 +348,30 @@ impl Wago750_354 {
             match module {
                 Some(m) => {
                     // Map ModuleIdent's to Terminals
-                    let dev: Arc<RwLock<dyn DynamicEthercatDevice>> = match (
+                    let mut dev: Box<dyn DynamicEthercatDevice> = match (
                         m.vendor_id,
                         m.product_id,
                     ) {
                         WAGO_750_455_MODULE_IDENT => {
-                            Arc::new(RwLock::new(wago_750_455::Wago750_455::new()))
+                            Box::new(wago_750_455::Wago750_455::new())
                         }
                         WAGO_750_501_MODULE_IDENT => {
-                            Arc::new(RwLock::new(wago_750_501::Wago750_501::new()))
+                            Box::new(wago_750_501::Wago750_501::new())
                         }
                         WAGO_750_530_MODULE_IDENT => {
-                            Arc::new(RwLock::new(wago_750_530::Wago750_530::new()))
+                            Box::new(wago_750_530::Wago750_530::new())
                         }
                         WAGO_750_1506_MODULE_IDENT => {
-                            Arc::new(RwLock::new(wago_750_1506::Wago750_1506::new()))
+                            Box::new(wago_750_1506::Wago750_1506::new())
                         }
                         WAGO_750_652_MODULE_IDENT => {
-                            Arc::new(RwLock::new(wago_750_652::Wago750_652::new()))
+                            Box::new(wago_750_652::Wago750_652::new())
                         }
                         WAGO_750_402_MODULE_IDENT => {
-                            Arc::new(RwLock::new(wago_750_402::Wago750_402::new()))
+                            Box::new(wago_750_402::Wago750_402::new())
                         }
                         WAGO_750_430_MODULE_IDENT => {
-                            Arc::new(RwLock::new(wago_750_430::Wago750_430::new()))
+                            Box::new(wago_750_430::Wago750_430::new())
                         }
 
                         _ => {
@@ -392,10 +384,9 @@ impl Wago750_354 {
                             return;
                         }
                     };
-                    let mut dev_guard = dev.write_blocking();
-                    dev_guard.set_tx_offset(m.tx_offset);
-                    dev_guard.set_rx_offset(m.rx_offset);
-                    drop(dev_guard);
+                    
+                    dev.set_tx_offset(m.tx_offset);
+                    dev.set_rx_offset(m.rx_offset);
                     self.slot_devices[self.dev_count] = Some(dev);
                     self.dev_count += 1;
                 }

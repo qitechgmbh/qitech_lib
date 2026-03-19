@@ -1,6 +1,7 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::io::digital_input::{DigitalInputDevice};
-use crate::pdo::{PredefinedPdoAssignment, TxPdo, basic::BoolPdoObject};
+use crate::pdo::basic::BoolPdoObject;
+use crate::pdo::{PredefinedPdoAssignment, TxPdo};
 use ethercat_hal_derive::{EthercatDevice, TxPdo};
 
 /// EL1008 8-channel digital input device
@@ -29,23 +30,24 @@ impl NewEthercatDevice for EL1008 {
     }
 }
 
-impl DigitalInputDevice<EL1008Port> for EL1008 {
-    fn get_input(&self, port: EL1008Port) -> Result<bool, anyhow::Error> {
-        let error = anyhow::anyhow!(
-            "[{}::Device::digital_input_state] Port {:?} is not available",
-            module_path!(),
-            port
-        );
-        Ok(match port {
-                EL1008Port::DI1 => self.txpdo.channel1.as_ref().ok_or(error)?.value,
-                EL1008Port::DI2 => self.txpdo.channel2.as_ref().ok_or(error)?.value,
-                EL1008Port::DI3 => self.txpdo.channel3.as_ref().ok_or(error)?.value,
-                EL1008Port::DI4 => self.txpdo.channel4.as_ref().ok_or(error)?.value,
-                EL1008Port::DI5 => self.txpdo.channel5.as_ref().ok_or(error)?.value,
-                EL1008Port::DI6 => self.txpdo.channel6.as_ref().ok_or(error)?.value,
-                EL1008Port::DI7 => self.txpdo.channel7.as_ref().ok_or(error)?.value,
-                EL1008Port::DI8 => self.txpdo.channel8.as_ref().ok_or(error)?.value,
-        })
+impl DigitalInputDevice for EL1008 {
+    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
+        let val = match port {
+                0 => self.txpdo.channel1.as_ref().expect("EL1008 Channel 1 not found").value,
+                1 => self.txpdo.channel2.as_ref().expect("EL1008 Channel 2 not found").value,
+                2 => self.txpdo.channel3.as_ref().expect("EL1008 Channel 3 not found").value,
+                3 => self.txpdo.channel4.as_ref().expect("EL1008 Channel 4 not found").value,
+                4 => self.txpdo.channel5.as_ref().expect("EL1008 Channel 5 not found").value,
+                5 => self.txpdo.channel6.as_ref().expect("EL1008 Channel 6 not found").value,
+                6 => self.txpdo.channel7.as_ref().expect("EL1008 Channel 7 not found").value,
+                7 => self.txpdo.channel8.as_ref().expect("EL1008 Channel 8 not found").value,
+                _ => return Err(anyhow::anyhow!("EL1008 has 8 ports! (0-7)")),
+        };
+        Ok(val)
+    }
+
+    fn get_port_count() -> usize {
+        8
     }
 }
 
@@ -76,7 +78,7 @@ impl EL1008Port {
     }
 }
 
-#[derive(Debug, Clone, TxPdo)]
+#[derive(Debug, Clone, TxPdo,Default)]
 pub struct EL1008TxPdo {
     #[pdo_object_index(0x1A00)]
     pub channel1: Option<BoolPdoObject>,
@@ -96,20 +98,6 @@ pub struct EL1008TxPdo {
     pub channel8: Option<BoolPdoObject>,
 }
 
-impl Default for EL1008TxPdo {
-    fn default() -> Self {
-        Self {
-            channel1: Some(BoolPdoObject::default()),
-            channel2: Some(BoolPdoObject::default()),
-            channel3: Some(BoolPdoObject::default()),
-            channel4: Some(BoolPdoObject::default()),
-            channel5: Some(BoolPdoObject::default()),
-            channel6: Some(BoolPdoObject::default()),
-            channel7: Some(BoolPdoObject::default()),
-            channel8: Some(BoolPdoObject::default()),
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum EL1008PredefinedPdoAssignment {

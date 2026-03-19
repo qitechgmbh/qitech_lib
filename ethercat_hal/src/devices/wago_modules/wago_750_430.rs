@@ -53,22 +53,25 @@ pub struct Wago750_430TxPdo {
     pub port8: bool,
 }
 
-impl DigitalInputDevice<Wago750_430Port> for Wago750_430 {
-fn get_input(
-    &self,
-    port: Wago750_430Port,
-) -> Result<bool, anyhow::Error> {
-    match port {
-        Wago750_430Port::Port1 => Ok(self.txpdo.port1),
-        Wago750_430Port::Port2 => Ok(self.txpdo.port2),
-        Wago750_430Port::Port3 => Ok(self.txpdo.port3),
-        Wago750_430Port::Port4 => Ok(self.txpdo.port4),
-        Wago750_430Port::Port5 => Ok(self.txpdo.port5),
-        Wago750_430Port::Port6 => Ok(self.txpdo.port6),
-        Wago750_430Port::Port7 => Ok(self.txpdo.port7),
-        Wago750_430Port::Port8 => Ok(self.txpdo.port8),
+impl DigitalInputDevice for Wago750_430 {
+    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
+        let val = match port {
+            0 => self.txpdo.port1,
+            1 => self.txpdo.port2,
+            2 => self.txpdo.port3,
+            3 => self.txpdo.port4,
+            4 => self.txpdo.port5,
+            5 => self.txpdo.port6,
+            6 => self.txpdo.port7,
+            7 => self.txpdo.port8,
+            _ => return Err(anyhow::anyhow!("Wago750_430 has 8 ports (0-7)")),
+        };
+        Ok(val)
     }
-}
+
+    fn get_port_count() -> usize {
+        8
+    }
 }
 
 impl EthercatDeviceUsed for Wago750_430 {

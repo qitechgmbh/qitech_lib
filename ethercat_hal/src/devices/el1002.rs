@@ -28,18 +28,23 @@ impl NewEthercatDevice for EL1002 {
     }
 }
 
-impl DigitalInputDevice<EL1002Port> for EL1002 {
-    fn get_input(&self, port: EL1002Port) -> Result<bool, anyhow::Error> {
+impl DigitalInputDevice for EL1002 {
+    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
         let error = anyhow::anyhow!(
-            "[{}::Device::digital_input_state] Port {:?} is not available",
+            "[{}::Device::digital_input_state] Port index {} is not available",
             module_path!(),
             port
         );
-        Ok(
-            match port {
-                EL1002Port::DI1 => self.txpdo.channel1.as_ref().ok_or(error)?.value,
-                EL1002Port::DI2 => self.txpdo.channel2.as_ref().ok_or(error)?.value,            
-        })
+
+        match port {
+            0 => Ok(self.txpdo.channel1.as_ref().ok_or(error)?.value),
+            1 => Ok(self.txpdo.channel2.as_ref().ok_or(error)?.value),
+            _ => Err(anyhow::anyhow!("EL1002 has 2 ports (0-1), requested index {}", port)),
+        }
+    }
+
+    fn get_port_count() -> usize {
+        2
     }
 }
 

@@ -33,15 +33,22 @@ pub struct Wago750_402TxPdo {
     port4: bool,
 }
 
-impl DigitalInputDevice<Wago750_402InputPort> for Wago750_402 {
-    fn get_input(&self, port: Wago750_402InputPort) -> Result<bool, anyhow::Error> {
-        Ok(match port {
-                Wago750_402InputPort::DI1 => self.tx_pdo.port1,
-                Wago750_402InputPort::DI2 => self.tx_pdo.port2,
-                Wago750_402InputPort::DI3 => self.tx_pdo.port3,
-                Wago750_402InputPort::DI4 => self.tx_pdo.port4,
-        })
+impl DigitalInputDevice for Wago750_402 {
+    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
+        let val = match port {
+                0 => self.tx_pdo.port1,
+                1 => self.tx_pdo.port2,
+                2 => self.tx_pdo.port3,
+                3 => self.tx_pdo.port4,
+                _ => return Err(anyhow::anyhow!("Wago750_1506 has 8 ports!, (0-7)")),
+        };
+        Ok(val)
     }
+
+    fn get_port_count() -> usize {
+        4
+    }
+
 }
 
 #[derive(Clone)]

@@ -1,3 +1,5 @@
+use std::usize;
+
 use crate::{
     devices::{
         DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed,
@@ -87,19 +89,25 @@ pub struct Wago750_1506TxPdo {
     port8: bool,
 }
 
-impl DigitalInputDevice<Wago750_1506InputPort> for Wago750_1506 {
-    fn get_input(&self, port: Wago750_1506InputPort) -> Result<bool, anyhow::Error> {
-        Ok(
-            match port {
-                Wago750_1506InputPort::DI1 => self.tx_pdo.port1,
-                Wago750_1506InputPort::DI2 => self.tx_pdo.port2,
-                Wago750_1506InputPort::DI3 => self.tx_pdo.port3,
-                Wago750_1506InputPort::DI4 => self.tx_pdo.port4,
-                Wago750_1506InputPort::DI5 => self.tx_pdo.port5,
-                Wago750_1506InputPort::DI6 => self.tx_pdo.port6,
-                Wago750_1506InputPort::DI7 => self.tx_pdo.port7,
-                Wago750_1506InputPort::DI8 => self.tx_pdo.port8,
-        })
+impl DigitalInputDevice for Wago750_1506 {
+
+    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
+        let val = match port {
+                0 => self.tx_pdo.port1,
+                1 => self.tx_pdo.port2,
+                2 => self.tx_pdo.port3,
+                3 => self.tx_pdo.port4,
+                4 => self.tx_pdo.port5,
+                5 => self.tx_pdo.port6,
+                6 => self.tx_pdo.port7,
+                7 => self.tx_pdo.port8,
+                _ => return Err(anyhow::anyhow!("Wago750_1506 has 8 ports!, (0-7)")),
+        };
+        Ok(val)
+    }
+
+    fn get_port_count() -> usize {
+        8
     }
 }
 

@@ -271,6 +271,10 @@ impl DigitalInputDevice<IP20EcDi8Do8InputPort> for IP20EcDi8Do8 {
                 IP20EcDi8Do8InputPort::DI8 => self.tx_pdo.di8,
             })
     }
+
+    fn get_port_count() -> usize {
+        4
+    }
 }
 
 impl DigitalOutputDevice<IP20EcDi8Do8OutputPort> for IP20EcDi8Do8 {
