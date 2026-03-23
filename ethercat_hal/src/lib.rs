@@ -8,10 +8,14 @@ pub mod shared_config;
 pub mod helpers;
 pub mod controller;
 
+//#[cfg(feature = "legacy_code")]
+pub mod machine_ident_read;
+
 use crate::controller::EtherCATController;
 use ethercrab::{
-    PduStorage, SubDeviceGroup, subdevice_group::{HasDc, NoDc, PreOpPdi, SafeOp},
+    PduStorage,
 };
+use machine_ident_read::MachineDeviceInfo;
 use std::{
     cell::UnsafeCell,
     sync::{
@@ -25,7 +29,6 @@ use std::{
 };
 use tokio::runtime::Runtime;
 use std::sync::mpsc;
-
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
@@ -50,8 +53,6 @@ static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
 pub struct EtherCATThreadChannel(pub Sender<ChannelRequest> );
 #[derive(Clone)]
 pub struct EtherCATThreadResponseChannel(pub Sender<ChannelResponse>);
-
-
 
 /*
     Metadata for a Subdevice 
@@ -84,13 +85,8 @@ pub enum EtherCATState {
     Op = 5,
 }
 
-enum GroupState {
-    PreOpNoDc(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, NoDc>),
-    PreOpDc(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, HasDc>),
-    SafeOp(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, SafeOp, HasDc>),
-}
-
-#[repr(align(64))]
+// TODO: Remove alignmnet test why necessary if it is 
+#[repr(align(8))]
 pub struct CachePaddedAtomic(AtomicUsize);
 
 #[derive(Debug)]
@@ -131,14 +127,20 @@ pub enum ChannelResponse {
     SdoResponseI32(Result<i32, anyhow::Error>),
     SdoWriteResponse(Result<(), anyhow::Error>),
     ChangeState(Result<(), anyhow::Error>),
+    MachineDeviceInfoResponse(Result<Vec<MachineDeviceInfo>, anyhow::Error>),
+    EnableDCSync0Response(Result<(), anyhow::Error>),
 }
+
 
 pub enum ChannelRequests {
     SdoWriteRequest(SdoRequest),
     SdoReadRequest(SdoReadRequest),
-    MachineIdent(MachineIdent),
     ChangeState(EtherCATState),
+    // usize in this case is the device_address
+    EnableDCSync0(usize),
     Shutdown(),
+    // Legacy code, only usable when feature enable_legacy_code is set 
+    ReadMachineIdent(),
 }
 
 pub struct ChannelRequest {
@@ -149,6 +151,7 @@ pub struct ChannelRequest {
 pub fn send_response(response_channel: EtherCATThreadResponseChannel, response: ChannelResponse) {
 	let _res = response_channel.0.send(response);
 }
+
 
 pub fn start_ethercat_thread(
     interface_name: &str,

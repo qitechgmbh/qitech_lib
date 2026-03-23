@@ -5,10 +5,10 @@ edition = "2024"
 
 [dependencies]
 bitvec = "1.0.1"
-# This is the "bridge" that allows main.rs to see the subcrate
 ethercat_hal = { path = "ethercat_hal" }
 ethercat_hal_derive = { path = "ethercat_hal_derive" }
 modbus = { path = "modbus"}
+machines = { path = "machines" }
 units = {path = "units"}
 tokio = "1.49.0"
 

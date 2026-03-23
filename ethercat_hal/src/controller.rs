@@ -1,9 +1,8 @@
 use std::{cell::UnsafeCell, sync::{atomic::Ordering, mpsc::Receiver}, thread::JoinHandle, time::{Duration, Instant}};
-use ethercrab::{MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts, std::ethercat_now, subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp}};
+use ethercrab::{DcSync, MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts, std::ethercat_now, subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp}};
 use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::time::interval;
-
-use crate::{CachePaddedAtomic, ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType, ethercat_helpers::{sdo_read, sdo_write}, get_async_runtime, send_response};
+use crate::{CachePaddedAtomic, ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType, ethercat_helpers::{sdo_read, sdo_write}, get_async_runtime, machine_ident_read::read_device_identifications, send_response};
 
 pub struct EtherCATController {
     pub cycle_time_us: u64,
@@ -23,6 +22,19 @@ pub struct EtherCATController {
     pub subdevice_count : usize, 
 }
 
+pub fn enable_dc_sync(group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,maindevice: &MainDevice, device_address : usize) {
+    let rt = get_async_runtime();
+    rt.block_on(
+        async {
+            for mut subdevice in group.iter_mut(maindevice) {
+                if subdevice.configured_address() == device_address as u16 {
+                    subdevice.set_dc_sync(DcSync::Sync0);
+                }
+            }
+        }
+    );
+}
+
 // We handle sync through double buffering and an atomic flag
 unsafe impl Sync for EtherCATController {}
 unsafe impl Send for EtherCATController {}
@@ -30,6 +42,9 @@ unsafe impl Send for EtherCATController {}
 impl EtherCATController {
     /// Read latest input blob (App side)
     pub fn get_inputs(&self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
+        /*
+            let idx = self.input_read_idx.0.load(Ordering::Acquire);
+        */
         let idx = self.input_read_idx.0.load(Ordering::Relaxed);
         let ptr = self.input_buffers[idx].get();
         unsafe { &mut *ptr }
@@ -141,7 +156,7 @@ impl EtherCATController {
                 }
                 EtherCATState::PreOp => {
                     let maindev = maindevice.as_ref().unwrap();
-                    let preop_group = group.as_ref().unwrap();
+                    let mut preop_group = group.as_mut().unwrap();
 
                     let mut i = 0;
                     for subdevice in preop_group.iter(&maindev) {
@@ -228,7 +243,14 @@ impl EtherCATController {
 
                             continue;
                         }
-                        ChannelRequests::MachineIdent(_machine_ident) => todo!(),
+                        ChannelRequests::ReadMachineIdent() => {
+                            let res = read_device_identifications(preop_group,maindev);
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::MachineDeviceInfoResponse(res),
+                            );
+                        },
+                        ChannelRequests::EnableDCSync0(device_address) => enable_dc_sync(&mut preop_group,maindev,device_address),
                     }
                     let mut now = Instant::now();
                     let start = Instant::now();
@@ -255,8 +277,6 @@ impl EtherCATController {
                         Ok(group) => group,
                         Err(_) => todo!(),
                     };
-
-                   // println!("Done. PDI available. Waiting for SubDevices to align");
 
                     loop {
                         rt.block_on(

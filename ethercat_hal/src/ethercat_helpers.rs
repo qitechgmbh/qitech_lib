@@ -146,13 +146,11 @@ where T : EtherCrabWireWrite + EthercatSdoBytes
         Ok(_) => (),
         Err(e) => return Err(anyhow::anyhow!(e)),
     };
-
     let res = rx.recv_timeout(Duration::from_millis(500));
     let response : ChannelResponse = match res {
         Ok(res) => res,
         Err(e) => return Err(anyhow::anyhow!(e)),
     };
-
     match response {
         ChannelResponse::SdoWriteResponse(result) => result,
         _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
