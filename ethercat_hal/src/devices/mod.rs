@@ -24,23 +24,36 @@ pub mod el7041_0052;
 pub mod wago_750_354;
 pub mod wago_modules;
 
+use crate::MetaSubdevice;
+
 use super::devices::el1008::EL1008;
-use crate::{
-    helpers::ethercrab_types::EthercrabSubDeviceGroupPreoperational,
-};
-use bitvec::{order::Lsb0, slice::BitSlice};
+use bitvec::order::Lsb0;
+use bitvec::slice::BitSlice;
 use ek1100::{EK1100, EK1100_IDENTITY_A};
+use el1002::{EL1002, EL1002_IDENTITY_A};
 use el1008::EL1008_IDENTITY_A;
+use el2002::{EL2002, EL2002_IDENTITY_A, EL2002_IDENTITY_B};
 use el2004::{EL2004, EL2004_IDENTITY_A};
+use el2008::{EL2008, EL2008_IDENTITY_A, EL2008_IDENTITY_B};
+use el2521::EL2521;
+use el2521::{EL2521_IDENTITY_0000_A, EL2521_IDENTITY_0000_B, EL2521_IDENTITY_0024_A};
+use el2522::{EL2522, EL2522_IDENTITY_A};
+use el3001::EL3001_IDENTITY_A;
+use el3021::EL3021_IDENTITY_A;
 use el3024::EL3024_IDENTITY_A;
-
-
-
-
-use ethercrab::{MainDevice, SubDeviceIdentity};
-use smol::lock::RwLock;
-use std::{any::Any, fmt::Debug, sync::Arc};
-
+use el3062_0030::EL3062_0030_IDENTITY_A;
+use el3204::EL3204_IDENTITY_A;
+use el3204::EL3204_IDENTITY_B;
+use el4002::EL4002;
+use el4002::EL4002_IDENTITY_A;
+use el5152::{EL5152, EL5152_IDENTITY_A};
+use el6021::{EL6021_IDENTITY_A, EL6021_IDENTITY_B, EL6021_IDENTITY_C, EL6021_IDENTITY_D};
+use el7031::{EL7031_IDENTITY_A, EL7031_IDENTITY_B};
+use el7031_0030::EL7031_0030_IDENTITY_A;
+use el7041_0052::EL7041_0052_IDENTITY_A;
+use std::{any::Any, fmt::Debug};
+use wago_750_354::{WAGO_750_354_IDENTITY_A, Wago750_354};
+use wago_modules::ip20_ec_di8_do8::{IP20_EC_DI8_DO8_IDENTITY, IP20EcDi8Do8};
 
 #[derive(Debug, Clone)]
 pub struct Module {
@@ -77,7 +90,6 @@ where
 
     /// automatically validate input length, then calls input
     fn input_checked(&mut self, input: &BitSlice<u8, Lsb0>) -> Result<(), anyhow::Error> {
-
         self.input(input)
     }
 
@@ -125,7 +137,7 @@ pub trait EthercatDeviceProcessing {
 
 /// A constructor trait for devices
 ///
-/// The [`NewDevice::new`] function cannot have params because of it's usage in [`device_from_subdevice`] 
+/// The [`NewDevice::new`] function cannot have params because of it's usage in [`device_from_subdevice`]
 pub trait NewEthercatDevice {
     /// Create a new device
     fn new() -> Self
@@ -142,72 +154,55 @@ pub trait EthercatDeviceUsed {
     fn set_used(&mut self, used: bool);
 }
 
-/// Construct a device from a subdevice name
-pub fn device_from_subdevice_identity_tuple(
-    subdevice_identity_tuple: SubDeviceIdentityTuple,
-) -> Result<Arc<RwLock<dyn EthercatDevice>>, anyhow::Error> {
-    match subdevice_identity_tuple {
-      //  WAGO_750_354_IDENTITY_A => Ok(Arc::new(RwLock::new(Wago750_354::new()))),
-      //  IP20_EC_DI8_DO8_IDENTITY => Ok(Arc::new(RwLock::new(IP20EcDi8Do8::new()))),
-        EK1100_IDENTITY_A => Ok(Arc::new(RwLock::new(EK1100::new()))),
-      //  EL1002_IDENTITY_A => Ok(Arc::new(RwLock::new(EL1002::new()))),
-        EL1008_IDENTITY_A => Ok(Arc::new(RwLock::new(EL1008::new()))),
-       // EL2002_IDENTITY_A | EL2002_IDENTITY_B => Ok(Arc::new(RwLock::new(EL2002::new()))),
-        EL2004_IDENTITY_A => Ok(Arc::new(RwLock::new(EL2004::new()))),
-       // EL2008_IDENTITY_A | EL2008_IDENTITY_B => Ok(Arc::new(RwLock::new(EL2008::new()))),
-       // EL2522_IDENTITY_A => Ok(Arc::new(RwLock::new(EL2522::new()))),
-      //  EL3001_IDENTITY_A => Ok(Arc::new(RwLock::new(el3001::EL3001::new()))),
-       // EL3021_IDENTITY_A => Ok(Arc::new(RwLock::new(el3021::EL3021::new()))),
-        EL3024_IDENTITY_A => Ok(Arc::new(RwLock::new(el3024::EL3024::new()))),
-        //EL3062_0030_IDENTITY_A => Ok(Arc::new(RwLock::new(el3062_0030::EL3062_0030::new()))),
-       // EL4002_IDENTITY_A => Ok(Arc::new(RwLock::new(EL4002::new()))),
-        //EL5152_IDENTITY_A => Ok(Arc::new(RwLock::new(EL5152::new()))),
-       // EL6021_IDENTITY_A | EL6021_IDENTITY_B | EL6021_IDENTITY_C | EL6021_IDENTITY_D => {
-       //     Ok(Arc::new(RwLock::new(el6021::EL6021::new())))
-       // }
-       // EL3204_IDENTITY_A | EL3204_IDENTITY_B => Ok(Arc::new(RwLock::new(el3204::EL3204::new()))),
-       // EL7031_IDENTITY_A | EL7031_IDENTITY_B => Ok(Arc::new(RwLock::new(el7031::EL7031::new()))),
-       // EL7031_0030_IDENTITY_A => Ok(Arc::new(RwLock::new(el7031_0030::EL7031_0030::new()))),
-       // EL7041_0052_IDENTITY_A => Ok(Arc::new(RwLock::new(el7041_0052::EL7041_0052::new()))),
-       // EL2521_IDENTITY_0000_A | EL2521_IDENTITY_0000_B | EL2521_IDENTITY_0024_A => {
-       //     Ok(Arc::new(RwLock::new(EL2521::new())))
-       // }
+pub fn device_from_subdevice_identity(
+    dev: MetaSubdevice,
+) -> Result<Box<dyn EthercatDevice>, anyhow::Error> {
+    let ident_tuple: (u32, u32, u32) = (dev.vendor, dev.product_id, dev.revision);
+    match ident_tuple {
+        WAGO_750_354_IDENTITY_A => Ok(Box::new(Wago750_354::new())),
+        IP20_EC_DI8_DO8_IDENTITY => Ok(Box::new(IP20EcDi8Do8::new())),
+        EK1100_IDENTITY_A => Ok(Box::new(EK1100::new())),
+        EL1002_IDENTITY_A => Ok(Box::new(EL1002::new())),
+        EL1008_IDENTITY_A => Ok(Box::new(EL1008::new())),
+        EL2002_IDENTITY_A | EL2002_IDENTITY_B => Ok(Box::new(EL2002::new())),
+        EL2004_IDENTITY_A => Ok(Box::new(EL2004::new())),
+        EL2008_IDENTITY_A | EL2008_IDENTITY_B => Ok(Box::new(EL2008::new())),
+        EL2522_IDENTITY_A => Ok(Box::new(EL2522::new())),
+        EL3001_IDENTITY_A => Ok(Box::new(el3001::EL3001::new())),
+        EL3021_IDENTITY_A => Ok(Box::new(el3021::EL3021::new())),
+        EL3024_IDENTITY_A => Ok(Box::new(el3024::EL3024::new())),
+        EL3062_0030_IDENTITY_A => Ok(Box::new(el3062_0030::EL3062_0030::new())),
+        EL4002_IDENTITY_A => Ok(Box::new(EL4002::new())),
+        EL5152_IDENTITY_A => Ok(Box::new(EL5152::new())),
+        EL6021_IDENTITY_A | EL6021_IDENTITY_B | EL6021_IDENTITY_C | EL6021_IDENTITY_D => {
+            Ok(Box::new(el6021::EL6021::new()))
+        }
+        EL3204_IDENTITY_A | EL3204_IDENTITY_B => Ok(Box::new(el3204::EL3204::new())),
+        EL7031_IDENTITY_A | EL7031_IDENTITY_B => Ok(Box::new(el7031::EL7031::new())),
+        EL7031_0030_IDENTITY_A => Ok(Box::new(el7031_0030::EL7031_0030::new())),
+        EL7041_0052_IDENTITY_A => Ok(Box::new(el7041_0052::EL7041_0052::new())),
+        EL2521_IDENTITY_0000_A | EL2521_IDENTITY_0000_B | EL2521_IDENTITY_0024_A => {
+            Ok(Box::new(EL2521::new()))
+        }
         _ => Err(anyhow::anyhow!(
             "[{}::device_from_subdevice] No Driver: vendor_id: 0x{:x}, product_id: 0x{:x}, revision: 0x{:x}",
             module_path!(),
-            subdevice_identity_tuple.0,
-            subdevice_identity_tuple.1,
-            subdevice_identity_tuple.2,
+            ident_tuple.0,
+            ident_tuple.1,
+            ident_tuple.2,
         )),
     }
 }
 
-/// Construct a device from a subdevice
-/// Combines [`subdevice_identity_to_tuple`] and [`device_from_subdevice_identity_tuple`]
-pub fn device_from_subdevice_identity(
-    subdevice: &SubDeviceIdentity,
-) -> Result<Arc<RwLock<dyn EthercatDevice>>, anyhow::Error> {
-    let subdevice_identity_tuple = subdevice_identity_to_tuple(subdevice);
-    device_from_subdevice_identity_tuple(subdevice_identity_tuple)
+pub fn downcast_subdevice<T : 'static>(dev : Box<dyn EthercatDevice>) -> Result<T,anyhow::Error> {
+    match dev.as_any().downcast_ref::<T>() {
+        Some(_) => todo!(),
+        None => Err(anyhow::anyhow!("Downcast failed")),
+    }
 }
 
-/// Array equivalent of [`device_from_subdevice`]
-pub fn devices_from_subdevices<'maindevice, const MAX_SUBDEVICES: usize, const PDI_LEN: usize>(
-    group: &mut EthercrabSubDeviceGroupPreoperational<MAX_SUBDEVICES, PDI_LEN>,
-    maindevice: &MainDevice,
-) -> Result<Vec<Arc<RwLock<dyn EthercatDevice>>>, anyhow::Error> {
-    group
-        .iter(maindevice)
-        .map(|subdevice| subdevice.identity())
-        .map(|subdevice_identity| device_from_subdevice_identity(&subdevice_identity))
-        .collect::<Result<Vec<_>, anyhow::Error>>()
-}
 
 pub type SubDeviceIdentityTuple = (u32, u32, u32);
+
 // Is vendor id at 0, and prodid at 1
 pub type SubDeviceProductTuple = (u32, u32);
-
-/// function that converts SubDeviceIdentity to tuple
-pub const fn subdevice_identity_to_tuple(identity: &SubDeviceIdentity) -> SubDeviceIdentityTuple {
-    (identity.vendor_id, identity.product_id, identity.revision)
-}

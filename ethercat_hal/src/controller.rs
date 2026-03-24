@@ -1,8 +1,25 @@
-use std::{cell::UnsafeCell, sync::{atomic::Ordering, mpsc::Receiver}, thread::JoinHandle, time::{Duration, Instant}};
-use ethercrab::{DcSync, MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts, std::ethercat_now, subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp}};
+use crate::{
+    CachePaddedAtomic, ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE,
+    EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType,
+    ethercat_helpers::{sdo_read, sdo_write},
+    get_async_runtime,
+    machine_ident_read::read_device_identifications,
+    send_response,
+};
+use ethercrab::{
+    DcSync, MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup,
+    Timeouts,
+    std::ethercat_now,
+    subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
+};
+use std::{
+    cell::UnsafeCell,
+    sync::{atomic::Ordering, mpsc::Receiver},
+    thread::JoinHandle,
+    time::{Duration, Instant},
+};
 use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::time::interval;
-use crate::{CachePaddedAtomic, ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType, ethercat_helpers::{sdo_read, sdo_write}, get_async_runtime, machine_ident_read::read_device_identifications, send_response};
 
 pub struct EtherCATController {
     pub cycle_time_us: u64,
@@ -18,21 +35,23 @@ pub struct EtherCATController {
     pub output_buffers: [UnsafeCell<[u8; ETHERCAT_TX_RX_SIZE]>; 2],
     pub output_write_idx: CachePaddedAtomic, // Which one the "System" is writing to
 
-    pub subdevices : [MetaSubdevice; 256],
-    pub subdevice_count : usize, 
+    pub subdevices: [MetaSubdevice; 256],
+    pub subdevice_count: usize,
 }
 
-pub fn enable_dc_sync(group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,maindevice: &MainDevice, device_address : usize) {
+pub fn enable_dc_sync(
+    group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
+    maindevice: &MainDevice,
+    device_address: usize,
+) {
     let rt = get_async_runtime();
-    rt.block_on(
-        async {
-            for mut subdevice in group.iter_mut(maindevice) {
-                if subdevice.configured_address() == device_address as u16 {
-                    subdevice.set_dc_sync(DcSync::Sync0);
-                }
+    rt.block_on(async {
+        for mut subdevice in group.iter_mut(maindevice) {
+            if subdevice.configured_address() == device_address as u16 {
+                subdevice.set_dc_sync(DcSync::Sync0);
             }
         }
-    );
+    });
 }
 
 // We handle sync through double buffering and an atomic flag
@@ -50,10 +69,10 @@ impl EtherCATController {
         unsafe { &mut *ptr }
     }
 
-    pub fn get_outputs(&self) -> &mut  [u8; ETHERCAT_TX_RX_SIZE] {
+    pub fn get_outputs(&self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
         let idx = self.output_write_idx.0.load(Ordering::Relaxed);
-        let ptr = self.output_buffers[1- idx].get();
-        unsafe {&mut *ptr}
+        let ptr = self.output_buffers[1 - idx].get();
+        unsafe { &mut *ptr }
     }
 
     /// Write output commands (App side)
@@ -161,8 +180,8 @@ impl EtherCATController {
                     let mut i = 0;
                     for subdevice in preop_group.iter(&maindev) {
                         self.subdevices[i].product_id = subdevice.identity().product_id;
-                        self.subdevices[i].revision   = subdevice.identity().revision;
-                        self.subdevices[i].vendor     = subdevice.identity().vendor_id;
+                        self.subdevices[i].revision = subdevice.identity().revision;
+                        self.subdevices[i].vendor = subdevice.identity().vendor_id;
                         self.subdevices[i].device_address = subdevice.configured_address();
                         i += 1;
                     }
@@ -224,7 +243,7 @@ impl EtherCATController {
                                         msg.response_channel,
                                         ChannelResponse::SdoResponseU32(res),
                                     );
-                                },
+                                }
                                 SdoType::I16 => {
                                     let res = sdo_read::<i16>(maindev, preop_group, request);
                                     send_response(
@@ -244,13 +263,15 @@ impl EtherCATController {
                             continue;
                         }
                         ChannelRequests::ReadMachineIdent() => {
-                            let res = read_device_identifications(preop_group,maindev);
+                            let res = read_device_identifications(preop_group, maindev);
                             send_response(
                                 msg.response_channel,
                                 ChannelResponse::MachineDeviceInfoResponse(res),
                             );
-                        },
-                        ChannelRequests::EnableDCSync0(device_address) => enable_dc_sync(&mut preop_group,maindev,device_address),
+                        }
+                        ChannelRequests::EnableDCSync0(device_address) => {
+                            enable_dc_sync(&mut preop_group, maindev, device_address)
+                        }
                     }
                     let mut now = Instant::now();
                     let start = Instant::now();
@@ -266,7 +287,7 @@ impl EtherCATController {
                     let mut tick_interval =
                         rt.block_on(async { interval(Duration::from_micros(1000)) });
 
-                   // println!("Moving into PRE-OP with PDI");
+                    // println!("Moving into PRE-OP with PDI");
                     let group_to_transition = group.take().expect("Group missing in PreOp");
                     let device_ref = maindevice.as_ref().expect("MainDevice missing");
                     let rt = get_async_runtime();
@@ -404,7 +425,7 @@ impl EtherCATController {
                         rt.block_on(group_safe_op.request_into_op(&maindevice.as_ref().unwrap()))
                             .expect("SAFE-OP -> OP"),
                     );
-                    
+
                     println!("Started Transition to OP");
                     self.state = EtherCATState::Op;
                 }
@@ -412,15 +433,10 @@ impl EtherCATController {
                     let rt = get_async_runtime();
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
-                    
+
                     loop {
                         let response = rt
-                            .block_on(
-                                group_op
-                                    .as_ref()
-                                    .unwrap()
-                                    .tx_rx_dc(&maindevice),
-                            )
+                            .block_on(group_op.as_ref().unwrap().tx_rx_dc(&maindevice))
                             .expect("TX/RX");
                         if response.all_op() {
                             let mut rx_offset = 0;
@@ -434,7 +450,7 @@ impl EtherCATController {
                                 self.subdevices[i].initialized = true;
                                 self.subdevices[i].start_tx = tx_offset;
                                 self.subdevices[i].end_tx = tx_offset + length_tx;
-                                
+
                                 self.subdevices[i].start_rx = rx_offset;
                                 self.subdevices[i].end_rx = rx_offset + length_rx;
 
@@ -447,7 +463,7 @@ impl EtherCATController {
                             break;
                         }
                     }
-   
+
                     loop {
                         let now = Instant::now();
                         let res = rt.block_on(async {
@@ -492,9 +508,11 @@ impl EtherCATController {
 
                             for subdevice in group.iter(&maindevice) {
                                 let mut output = subdevice.outputs_raw_mut();
-                                let len = output.len();                    
-                                output.copy_from_slice(&full_buffer[current_offset..current_offset + len]);
-                                current_offset += len;                                
+                                let len = output.len();
+                                output.copy_from_slice(
+                                    &full_buffer[current_offset..current_offset + len],
+                                );
+                                current_offset += len;
                             }
                         }
                         self.cycle_time_us = now.elapsed().as_micros() as u64;

@@ -1,6 +1,6 @@
 use super::{NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::devices::EthercatDeviceProcessing;
-use crate::io::digital_input::{DigitalInputDevice};
+use crate::io::digital_input::DigitalInputDevice;
 use crate::pdo::{PredefinedPdoAssignment, TxPdo, basic::BoolPdoObject};
 use ethercat_hal_derive::{EthercatDevice, TxPdo};
 /// EL1002 2-channel digital input device
@@ -39,7 +39,10 @@ impl DigitalInputDevice for EL1002 {
         match port {
             0 => Ok(self.txpdo.channel1.as_ref().ok_or(error)?.value),
             1 => Ok(self.txpdo.channel2.as_ref().ok_or(error)?.value),
-            _ => Err(anyhow::anyhow!("EL1002 has 2 ports (0-1), requested index {}", port)),
+            _ => Err(anyhow::anyhow!(
+                "EL1002 has 2 ports (0-1), requested index {}",
+                port
+            )),
         }
     }
 

@@ -1,21 +1,18 @@
 use std::{cell::RefCell, rc::Rc, thread::sleep, time::Duration};
 
 use modbus::{
-    clients::example_client::ExampleClient, 
-    devices::{ us_3202510::VfdDevice }, 
-    managers::{ExampleDeviceManager, example_manager::ExampleScheduler}
+    clients::example_client::ExampleClient,
+    devices::us_3202510::VfdDevice,
+    managers::{ExampleDeviceManager, example_manager::ExampleScheduler},
 };
 use tokio_modbus::{Slave, client::rtu};
 use tokio_serial::SerialStream;
 
-
 #[tokio::main]
-pub async fn main()
-{
+pub async fn main() {
     let (tx, rx) = ExampleClient::create_channels();
 
-    tokio::spawn(async move 
-    {
+    tokio::spawn(async move {
         let tty_path = "/dev/ttyUSB0";
         let slave = Slave(0x17);
 
@@ -23,13 +20,14 @@ pub async fn main()
 
         let port = SerialStream::open(&builder).unwrap();
         let ctx = rtu::attach_slave(port, slave);
-        
+
         ExampleClient::run(ctx, rx).await;
     });
 
     let mgr = ExampleDeviceManager::new(tx);
 
-    let vfd_rc: Rc<RefCell<VfdDevice<ExampleScheduler>>> = ExampleDeviceManager::register_device(mgr.clone(), 1);
+    let vfd_rc: Rc<RefCell<VfdDevice<ExampleScheduler>>> =
+        ExampleDeviceManager::register_device(mgr.clone(), 1);
 
     {
         let mut vfd = vfd_rc.borrow_mut();

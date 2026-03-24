@@ -15,7 +15,7 @@ where
     fn write_config(
         &mut self,
         channel: EtherCATThreadChannel,
-        device_address : u16,
+        device_address: u16,
         config: &C,
     ) -> Result<(), anyhow::Error>;
     fn get_config(&self) -> C;

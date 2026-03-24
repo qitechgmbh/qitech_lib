@@ -100,7 +100,7 @@ impl AnalogOutputDevice<EL4002Port> for EL4002 {
 impl EL4002 {
     pub fn write_config(
         &mut self,
-        ecat_channel : EtherCATThreadChannel,
+        ecat_channel: EtherCATThreadChannel,
         device_address: u16,
     ) -> Result<(), anyhow::Error> {
         /*
@@ -116,11 +116,11 @@ impl EL4002 {
         self.configuration
             .pdo_assignment
             .txpdo_assignment()
-            .write_config(ecat_channel.clone(),device_address)?;
+            .write_config(ecat_channel.clone(), device_address)?;
         self.configuration
             .pdo_assignment
             .rxpdo_assignment()
-            .write_config(ecat_channel.clone(),device_address)?;
+            .write_config(ecat_channel.clone(), device_address)?;
         Ok(())
     }
 }

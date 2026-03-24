@@ -1,5 +1,5 @@
+use crate::EtherCATThreadChannel;
 use anyhow;
-use crate::{EtherCATThreadChannel};
 
 #[derive(Debug, Clone)]
 pub struct EncConfiguration {
@@ -22,10 +22,10 @@ impl Default for EncConfiguration {
 impl EncConfiguration {
     pub fn write_config<'a>(
         &self,
-        ecat_channel : EtherCATThreadChannel,
+        ecat_channel: EtherCATThreadChannel,
         device_address: u16,
     ) -> Result<(), anyhow::Error> {
-        ecat_channel.sdo_write(device_address,0x8000, 0x0E, self.reversion_of_rotation)?;
+        ecat_channel.sdo_write(device_address, 0x8000, 0x0E, self.reversion_of_rotation)?;
         Ok(())
     }
 }
@@ -103,7 +103,6 @@ impl Default for StmMotorConfiguration {
         }
     }
 }
-
 
 impl StmMotorConfiguration {
     pub fn write_config(
@@ -307,12 +306,32 @@ impl StmFeatures {
     ) -> Result<(), anyhow::Error> {
         ecat_channel.sdo_write(device_address, 0x8012, 0x05, u8::from(self.speed_range))?;
         ecat_channel.sdo_write(device_address, 0x8012, 0x09, self.invert_motor_polarity)?;
-        ecat_channel.sdo_write(device_address, 0x8012, 0x11, u8::from(self.select_info_data_1))?;
-        ecat_channel.sdo_write(device_address, 0x8012, 0x19, u8::from(self.select_info_data_2))?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8012,
+            0x11,
+            u8::from(self.select_info_data_1),
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8012,
+            0x19,
+            u8::from(self.select_info_data_2),
+        )?;
         ecat_channel.sdo_write(device_address, 0x8012, 0x30, self.invert_digital_input_1)?;
         ecat_channel.sdo_write(device_address, 0x8012, 0x31, self.invert_digital_input_2)?;
-        ecat_channel.sdo_write(device_address, 0x8012, 0x32, u8::from(self.function_for_input_1))?;
-        ecat_channel.sdo_write(device_address, 0x8012, 0x36, u8::from(self.function_for_input_2))?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8012,
+            0x32,
+            u8::from(self.function_for_input_1),
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8012,
+            0x36,
+            u8::from(self.function_for_input_2),
+        )?;
         Ok(())
     }
 }
@@ -465,8 +484,18 @@ impl PosConfiguration {
         ecat_channel.sdo_write(device_address, 0x8020, 0x06, self.deceleration_neg)?;
         ecat_channel.sdo_write(device_address, 0x8020, 0x07, self.emergency_deceleration)?;
         ecat_channel.sdo_write(device_address, 0x8020, 0x08, self.calibration_position)?;
-        ecat_channel.sdo_write(device_address, 0x8020, 0x09, self.calibration_velocity_towards_cam)?;
-        ecat_channel.sdo_write(device_address, 0x8020, 0x0A, self.calibration_velocity_off_cam)?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8020,
+            0x09,
+            self.calibration_velocity_towards_cam,
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8020,
+            0x0A,
+            self.calibration_velocity_off_cam,
+        )?;
         ecat_channel.sdo_write(device_address, 0x8020, 0x0B, self.target_window)?;
         ecat_channel.sdo_write(device_address, 0x8020, 0x0C, self.in_target_timeout)?;
         ecat_channel.sdo_write(device_address, 0x8020, 0x0D, self.dead_time_compensation)?;
@@ -607,7 +636,6 @@ impl Default for PosFeatures {
     }
 }
 
-
 impl PosFeatures {
     pub fn write_config(
         &self,
@@ -616,14 +644,28 @@ impl PosFeatures {
     ) -> Result<(), anyhow::Error> {
         ecat_channel.sdo_write(device_address, 0x8021, 0x01, u16::from(self.start_type))?;
         ecat_channel.sdo_write(device_address, 0x8021, 0x11, self.time_information)?;
-        ecat_channel.sdo_write(device_address, 0x8021, 0x13, self.invert_calibration_cam_search_direction)?;
-        ecat_channel.sdo_write(device_address, 0x8021, 0x14, self.invert_sync_impulse_search_direction)?;
-        ecat_channel.sdo_write(device_address, 0x8021, 0x15, self.emergency_stop_on_position_lag_error)?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8021,
+            0x13,
+            self.invert_calibration_cam_search_direction,
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8021,
+            0x14,
+            self.invert_sync_impulse_search_direction,
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8021,
+            0x15,
+            self.emergency_stop_on_position_lag_error,
+        )?;
         ecat_channel.sdo_write(device_address, 0x8021, 0x16, self.enhanced_diag_history)?;
         Ok(())
     }
 }
-
 
 /// Operation mode for EL7031
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -914,7 +956,6 @@ pub struct EL7031_0030AnalogInputChannelConfiguration {
     pub filter_settings: EL7031_0030AnalogInputFilterSettings,
 }
 
-
 impl EL7031_0030AnalogInputChannelConfiguration {
     pub fn write_channel_config(
         &self,
@@ -930,7 +971,12 @@ impl EL7031_0030AnalogInputChannelConfiguration {
         ecat_channel.sdo_write(device_address, base_index, 0x12, self.user_scale_gain)?;
         ecat_channel.sdo_write(device_address, base_index, 0x13, self.limit_1)?;
         ecat_channel.sdo_write(device_address, base_index, 0x14, self.limit_2)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x15, u16::from(self.filter_settings))?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x15,
+            u16::from(self.filter_settings),
+        )?;
         Ok(())
     }
 }

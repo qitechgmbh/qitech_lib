@@ -1,34 +1,26 @@
 pub mod coe;
+pub mod controller;
 pub mod debugging;
 pub mod devices;
 pub mod ethercat_helpers;
+pub mod helpers;
 pub mod io;
 pub mod pdo;
 pub mod shared_config;
-pub mod helpers;
-pub mod controller;
 
 //#[cfg(feature = "legacy_code")]
 pub mod machine_ident_read;
 
 use crate::controller::EtherCATController;
-use ethercrab::{
-    PduStorage,
-};
+use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
+use std::sync::mpsc;
 use std::{
     cell::UnsafeCell,
-    sync::{
-        Arc, OnceLock,
-        mpsc::Sender,
-    },
+    sync::{Arc, OnceLock, mpsc::Sender},
 };
-use std::{
-    sync::atomic::AtomicUsize,
-    thread::JoinHandle,
-};
+use std::{sync::atomic::AtomicUsize, thread::JoinHandle};
 use tokio::runtime::Runtime;
-use std::sync::mpsc;
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
@@ -50,30 +42,29 @@ static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
 
 // Wrapper to easily refactor later on
 #[derive(Clone)]
-pub struct EtherCATThreadChannel(pub Sender<ChannelRequest> );
+pub struct EtherCATThreadChannel(pub Sender<ChannelRequest>);
 #[derive(Clone)]
 pub struct EtherCATThreadResponseChannel(pub Sender<ChannelResponse>);
 
 /*
-    Metadata for a Subdevice 
+    Metadata for a Subdevice
     Contains start and end of the given subdevices pdu
 */
-#[derive(Copy,Clone,Debug,Default)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct MetaSubdevice {
-    pub product_id : u32,
-    pub revision : u32,
-    pub vendor : u32,
+    pub product_id: u32,
+    pub revision: u32,
+    pub vendor: u32,
     // Gives the offset at which the TxPdo starts
-    pub start_tx : usize,
-    pub end_tx : usize,
+    pub start_tx: usize,
+    pub end_tx: usize,
     // Gives the offset at which the RxPdo starts
-    pub start_rx : usize,
-    pub end_rx : usize,
+    pub start_rx: usize,
+    pub end_rx: usize,
     // Device address (ado, i think), first one would be 0x1000, so 4096
-    pub device_address : u16,
-    pub initialized : bool,
+    pub device_address: u16,
+    pub initialized: bool,
 }
-
 
 #[derive(Debug)]
 pub enum EtherCATState {
@@ -85,33 +76,33 @@ pub enum EtherCATState {
     Op = 5,
 }
 
-// TODO: Remove alignmnet test why necessary if it is 
+// TODO: Remove alignmnet test why necessary if it is
 #[repr(align(8))]
 pub struct CachePaddedAtomic(AtomicUsize);
 
 #[derive(Debug)]
 pub enum SdoType {
     BOOL,
-	U8,
-	U16,
-	U32,
-	I16,
-	I32,
+    U8,
+    U16,
+    U32,
+    I16,
+    I32,
 }
 
 pub struct SdoRequest {
     pub device_address: u16,
     pub index: u16,
     pub sub_index: u16,
-    pub data: [u8;4],
-    pub type_flag : SdoType,
+    pub data: [u8; 4],
+    pub type_flag: SdoType,
 }
 
 pub struct SdoReadRequest {
     pub device_address: u16,
     pub index: u16,
     pub sub_index: u16,
-    pub type_flag : SdoType,
+    pub type_flag: SdoType,
 }
 
 // LEGACY CODE HIDE BEHIND FLAG
@@ -119,9 +110,9 @@ pub struct MachineIdent {}
 
 #[derive(Debug)]
 pub enum ChannelResponse {
-    SdoResponseBool(Result<bool, anyhow::Error>),    
-    SdoResponseU8(Result<u8, anyhow::Error>),    
-    SdoResponseU16(Result<u16, anyhow::Error>),    
+    SdoResponseBool(Result<bool, anyhow::Error>),
+    SdoResponseU8(Result<u8, anyhow::Error>),
+    SdoResponseU16(Result<u16, anyhow::Error>),
     SdoResponseU32(Result<u32, anyhow::Error>),
     SdoResponseI16(Result<i16, anyhow::Error>),
     SdoResponseI32(Result<i32, anyhow::Error>),
@@ -131,7 +122,6 @@ pub enum ChannelResponse {
     EnableDCSync0Response(Result<(), anyhow::Error>),
 }
 
-
 pub enum ChannelRequests {
     SdoWriteRequest(SdoRequest),
     SdoReadRequest(SdoReadRequest),
@@ -139,7 +129,7 @@ pub enum ChannelRequests {
     // usize in this case is the device_address
     EnableDCSync0(usize),
     Shutdown(),
-    // Legacy code, only usable when feature enable_legacy_code is set 
+    // Legacy code, only usable when feature enable_legacy_code is set
     ReadMachineIdent(),
 }
 
@@ -149,9 +139,8 @@ pub struct ChannelRequest {
 }
 
 pub fn send_response(response_channel: EtherCATThreadResponseChannel, response: ChannelResponse) {
-	let _res = response_channel.0.send(response);
+    let _res = response_channel.0.send(response);
 }
-
 
 pub fn start_ethercat_thread(
     interface_name: &str,
@@ -176,7 +165,7 @@ pub fn start_ethercat_thread(
             UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
         ],
         output_write_idx: CachePaddedAtomic(AtomicUsize::new(0)),
-        subdevices: [MetaSubdevice::default();256],
+        subdevices: [MetaSubdevice::default(); 256],
         subdevice_count: 0,
     });
     let controller_for_thread = Arc::clone(&controller);
@@ -192,5 +181,5 @@ pub fn start_ethercat_thread(
         })
         .expect("Failed to spawn thread");
 
-    ((controller, EtherCATThreadChannel(tx) ), handle)
+    ((controller, EtherCATThreadChannel(tx)), handle)
 }

@@ -6,7 +6,7 @@ use crate::{
         EthercatDynamicPDO, Module, NewEthercatDevice, SubDeviceProductTuple,
     },
     io::{
-        digital_input::{DigitalInputDevice},
+        digital_input::DigitalInputDevice,
         digital_output::{DigitalOutputDevice, DigitalOutputOutput},
     },
 };
@@ -90,18 +90,17 @@ pub struct Wago750_1506TxPdo {
 }
 
 impl DigitalInputDevice for Wago750_1506 {
-
     fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
         let val = match port {
-                0 => self.tx_pdo.port1,
-                1 => self.tx_pdo.port2,
-                2 => self.tx_pdo.port3,
-                3 => self.tx_pdo.port4,
-                4 => self.tx_pdo.port5,
-                5 => self.tx_pdo.port6,
-                6 => self.tx_pdo.port7,
-                7 => self.tx_pdo.port8,
-                _ => return Err(anyhow::anyhow!("Wago750_1506 has 8 ports!, (0-7)")),
+            0 => self.tx_pdo.port1,
+            1 => self.tx_pdo.port2,
+            2 => self.tx_pdo.port3,
+            3 => self.tx_pdo.port4,
+            4 => self.tx_pdo.port5,
+            5 => self.tx_pdo.port6,
+            6 => self.tx_pdo.port7,
+            7 => self.tx_pdo.port8,
+            _ => return Err(anyhow::anyhow!("Wago750_1506 has 8 ports!, (0-7)")),
         };
         Ok(val)
     }

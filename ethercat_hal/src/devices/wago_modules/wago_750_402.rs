@@ -3,7 +3,7 @@ use crate::{
         DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed,
         EthercatDynamicPDO, Module, NewEthercatDevice, SubDeviceProductTuple,
     },
-    io::digital_input::{DigitalInputDevice},
+    io::digital_input::DigitalInputDevice,
 };
 
 #[derive(Debug, Clone)]
@@ -36,11 +36,11 @@ pub struct Wago750_402TxPdo {
 impl DigitalInputDevice for Wago750_402 {
     fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
         let val = match port {
-                0 => self.tx_pdo.port1,
-                1 => self.tx_pdo.port2,
-                2 => self.tx_pdo.port3,
-                3 => self.tx_pdo.port4,
-                _ => return Err(anyhow::anyhow!("Wago750_1506 has 8 ports!, (0-7)")),
+            0 => self.tx_pdo.port1,
+            1 => self.tx_pdo.port2,
+            2 => self.tx_pdo.port3,
+            3 => self.tx_pdo.port4,
+            _ => return Err(anyhow::anyhow!("Wago750_1506 has 8 ports!, (0-7)")),
         };
         Ok(val)
     }
@@ -48,7 +48,6 @@ impl DigitalInputDevice for Wago750_402 {
     fn get_port_count(&self) -> usize {
         4
     }
-
 }
 
 #[derive(Clone)]

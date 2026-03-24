@@ -1,9 +1,12 @@
 use crate::{
-    EtherCATThreadChannel, coe::{ConfigurableDevice, Configuration}, pdo::PredefinedPdoAssignment, shared_config::el70x1::{
+    EtherCATThreadChannel,
+    coe::{ConfigurableDevice, Configuration},
+    pdo::PredefinedPdoAssignment,
+    shared_config::el70x1::{
         EL70x1InfoData, EL70x1InputFunction, EL70x1OperationMode, EL70x1SpeedRange,
         EL7031_0030AnalogInputChannelConfiguration, EncConfiguration, PosConfiguration,
         PosFeatures, StmControllerConfiguration, StmMotorConfiguration,
-    }
+    },
 };
 
 use super::{EL7031_0030, pdo::EL7031_0030PredefinedPdoAssignment};
@@ -44,26 +47,39 @@ impl Default for EL7031_0030Configuration {
 impl Configuration for EL7031_0030Configuration {
     fn write_config(
         &self,
-        ecat_channel : EtherCATThreadChannel,   
-        device_address : u16,
-        ) -> Result<(), anyhow::Error> {
-        self.encoder.write_config(ecat_channel.clone(),device_address)?;
-        self.stm_motor.write_config(ecat_channel.clone(),device_address)?;
-        self.stm_controller_1.write_config(ecat_channel.clone(),device_address, 0x8011)?;
-        self.stm_controller_2.write_config(ecat_channel.clone(),device_address, 0x8013)?;
-        self.stm_features.write_config(ecat_channel.clone(),device_address)?;
-        self.pos_configuration.write_config(ecat_channel.clone(),device_address)?;
-        self.pos_features.write_config(ecat_channel.clone(),device_address)?;
-        self.analog_input_channel_1
-            .write_channel_config(ecat_channel.clone(),device_address, 0x8030)?;
-        self.analog_input_channel_2
-            .write_channel_config(ecat_channel.clone(),device_address, 0x8040)?;
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
+    ) -> Result<(), anyhow::Error> {
+        self.encoder
+            .write_config(ecat_channel.clone(), device_address)?;
+        self.stm_motor
+            .write_config(ecat_channel.clone(), device_address)?;
+        self.stm_controller_1
+            .write_config(ecat_channel.clone(), device_address, 0x8011)?;
+        self.stm_controller_2
+            .write_config(ecat_channel.clone(), device_address, 0x8013)?;
+        self.stm_features
+            .write_config(ecat_channel.clone(), device_address)?;
+        self.pos_configuration
+            .write_config(ecat_channel.clone(), device_address)?;
+        self.pos_features
+            .write_config(ecat_channel.clone(), device_address)?;
+        self.analog_input_channel_1.write_channel_config(
+            ecat_channel.clone(),
+            device_address,
+            0x8030,
+        )?;
+        self.analog_input_channel_2.write_channel_config(
+            ecat_channel.clone(),
+            device_address,
+            0x8040,
+        )?;
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(ecat_channel.clone(),device_address)?;
+            .write_config(ecat_channel.clone(), device_address)?;
         self.pdo_assignment
             .rxpdo_assignment()
-            .write_config(ecat_channel.clone(),device_address)?;
+            .write_config(ecat_channel.clone(), device_address)?;
         Ok(())
     }
 }
@@ -71,11 +87,11 @@ impl Configuration for EL7031_0030Configuration {
 impl ConfigurableDevice<EL7031_0030Configuration> for EL7031_0030 {
     fn write_config(
         &mut self,
-        ecat_channel : EtherCATThreadChannel,
+        ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         config: &EL7031_0030Configuration,
     ) -> Result<(), anyhow::Error> {
-        config.write_config(ecat_channel.clone(),device_address)?;
+        config.write_config(ecat_channel.clone(), device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         self.rxpdo = config.pdo_assignment.rxpdo_assignment();

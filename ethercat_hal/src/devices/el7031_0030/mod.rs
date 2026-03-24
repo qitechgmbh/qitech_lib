@@ -13,7 +13,7 @@ use crate::{
     },
     io::{
         analog_input::{AnalogInputDevice, AnalogInputInput, physical::AnalogInputRange},
-        digital_input::{DigitalInputDevice},
+        digital_input::DigitalInputDevice,
         stepper_velocity_el70x1::{
             StepperVelocityEL70x1Device, StepperVelocityEL70x1Input, StepperVelocityEL70x1Output,
         },
@@ -24,7 +24,7 @@ use crate::{
 
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 
-#[derive(Debug, Clone,EthercatDevice)]
+#[derive(Debug, Clone, EthercatDevice)]
 pub struct EL7031_0030 {
     pub txpdo: EL7031_0030TxPdo,
     pub rxpdo: EL7031_0030RxPdo,
@@ -256,44 +256,38 @@ impl StepperVelocityEL70x1Device<EL7031_0030StepperPort> for EL7031_0030 {
 }
 
 impl DigitalInputDevice for EL7031_0030 {
-    fn get_input(
-        &self,
-        port: usize,
-    ) -> Result<bool, anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
         let error1 = anyhow::anyhow!(
             "[{}::DigitalInputDevice::digital_input_state] StmStatus is None",
             module_path!(),
         );
-        Ok(
-            match port {
-                0 => {
-                    self.txpdo
-                        .stm_status
-                        .as_ref()
-                        .ok_or(error1)?
-                        .digital_input_1
-                }
-                1 => {
-                    self.txpdo
-                        .stm_status
-                        .as_ref()
-                        .ok_or(error1)?
-                        .digital_input_2
-                }
-                _ => {
-                    return Err(anyhow!(
-                        "Port {:?} is not supported for digital input EL7041_0052",
-                        port
-                    ));
-                }  
-            })
+        Ok(match port {
+            0 => {
+                self.txpdo
+                    .stm_status
+                    .as_ref()
+                    .ok_or(error1)?
+                    .digital_input_1
+            }
+            1 => {
+                self.txpdo
+                    .stm_status
+                    .as_ref()
+                    .ok_or(error1)?
+                    .digital_input_2
+            }
+            _ => {
+                return Err(anyhow!(
+                    "Port {:?} is not supported for digital input EL7041_0052",
+                    port
+                ));
+            }
+        })
     }
 
     fn get_port_count(&self) -> usize {
         2
     }
-
-
 }
 
 impl AnalogInputDevice<EL7031_0030AnalogInputPort> for EL7031_0030 {

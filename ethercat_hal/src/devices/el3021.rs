@@ -2,6 +2,7 @@ use super::EthercatDeviceProcessing;
 use super::{NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::EtherCATThreadChannel;
 use crate::io::analog_input::physical::AnalogInputRange;
+use crate::io::analog_input::{AnalogInputDevice, AnalogInputInput};
 use crate::pdo::RxPdo;
 use crate::pdo::TxPdo;
 use crate::{
@@ -12,9 +13,6 @@ use crate::{
         analog_input::{AiCompact, AiStandard},
     },
     shared_config::el30xx::{EL30XXChannelConfiguration, EL30XXPresentation},
-};
-use crate::{
-    io::analog_input::{AnalogInputDevice, AnalogInputInput},
 };
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 use units::electric_current::milliampere;
@@ -117,11 +115,11 @@ impl AnalogInputDevice<EL3021Port> for EL3021 {
 impl ConfigurableDevice<EL3021Configuration> for EL3021 {
     fn write_config(
         &mut self,
-        ecat_channel : EtherCATThreadChannel,
+        ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         config: &EL3021Configuration,
     ) -> Result<(), anyhow::Error> {
-        config.write_config(ecat_channel.clone(),device_address)?;
+        config.write_config(ecat_channel.clone(), device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         Ok(())
@@ -151,17 +149,18 @@ pub struct EL3021RxPdo {}
 impl Configuration for EL3021Configuration {
     fn write_config(
         &self,
-        ecat_channel : EtherCATThreadChannel,
+        ecat_channel: EtherCATThreadChannel,
         device_address: u16,
     ) -> Result<(), anyhow::Error> {
         // Write configuration for Channel 1
-        self.channel1.write_channel_config(ecat_channel.clone(),device_address, 0x8000)?;
+        self.channel1
+            .write_channel_config(ecat_channel.clone(), device_address, 0x8000)?;
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(ecat_channel.clone(),device_address)?;
+            .write_config(ecat_channel.clone(), device_address)?;
         self.pdo_assignment
             .rxpdo_assignment()
-            .write_config(ecat_channel,device_address)?;
+            .write_config(ecat_channel, device_address)?;
         Ok(())
     }
 }

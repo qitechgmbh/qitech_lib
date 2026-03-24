@@ -5,7 +5,7 @@ use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple}
 use crate::{
     helpers::counter_wrapper_u16_i128::CounterWrapperU16U128,
     io::{
-        digital_input::{DigitalInputDevice},
+        digital_input::DigitalInputDevice,
         stepper_velocity_el70x1::{
             StepperVelocityEL70x1Device, StepperVelocityEL70x1Input, StepperVelocityEL70x1Output,
         },
@@ -18,7 +18,7 @@ use anyhow::anyhow;
 pub mod coe;
 pub mod pdo;
 
-#[derive(EthercatDevice,Clone, Debug)]
+#[derive(EthercatDevice, Clone, Debug)]
 pub struct EL7041_0052 {
     pub txpdo: pdo::EL7041_0052TxPdo,
     pub rxpdo: pdo::EL7041_0052RxPdo,
@@ -244,34 +244,32 @@ impl DigitalInputDevice for EL7041_0052 {
     fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
         let error1 = anyhow::anyhow!("stm_status is None");
         Ok(match port {
-                0 => {
-                    self.txpdo
-                        .stm_status
-                        .as_ref()
-                        .ok_or(error1)?
-                        .digital_input_1
-                }
-               1 => {
-                    self.txpdo
-                        .stm_status
-                        .as_ref()
-                        .ok_or(error1)?
-                        .digital_input_2
-                }
-                _ => {
-                    return Err(anyhow!(
-                        "Port {:?} is not supported for digital input EL7041_0052",
-                        port
-                    ));
-                }  
+            0 => {
+                self.txpdo
+                    .stm_status
+                    .as_ref()
+                    .ok_or(error1)?
+                    .digital_input_1
+            }
+            1 => {
+                self.txpdo
+                    .stm_status
+                    .as_ref()
+                    .ok_or(error1)?
+                    .digital_input_2
+            }
+            _ => {
+                return Err(anyhow!(
+                    "Port {:?} is not supported for digital input EL7041_0052",
+                    port
+                ));
+            }
         })
     }
 
     fn get_port_count(&self) -> usize {
         2
     }
-
-
 }
 
 #[derive(Debug, Clone, Copy)]

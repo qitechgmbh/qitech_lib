@@ -1,10 +1,13 @@
+use super::{EL7041_0052, pdo::EL7041_0052PredefinedPdoAssignment};
 use crate::{
-    EtherCATThreadChannel, coe::{ConfigurableDevice, Configuration}, pdo::PredefinedPdoAssignment, shared_config::el70x1::{
+    EtherCATThreadChannel,
+    coe::{ConfigurableDevice, Configuration},
+    pdo::PredefinedPdoAssignment,
+    shared_config::el70x1::{
         EncConfiguration, PosConfiguration, PosFeatures, StmControllerConfiguration, StmFeatures,
         StmMotorConfiguration,
-    }
+    },
 };
-use super::{EL7041_0052, pdo::EL7041_0052PredefinedPdoAssignment};
 
 /// Configuration for EL7041_0052 Stepper Motor Terminal
 #[derive(Debug, Clone)]
@@ -52,18 +55,29 @@ impl Default for EL7041_0052Configuration {
 impl Configuration for EL7041_0052Configuration {
     fn write_config(
         &self,
-        ecat_channel : EtherCATThreadChannel,
-        device_address: u16 ,
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
     ) -> Result<(), anyhow::Error> {
-        self.encoder.write_config(ecat_channel.clone(),device_address)?;
-        self.stm_motor.write_config(ecat_channel.clone(),device_address)?;
-        self.stm_controller_1.write_config(ecat_channel.clone(),device_address, 0x8011)?;
-        self.stm_controller_2.write_config(ecat_channel.clone(),device_address, 0x8013)?;
-        self.stm_features.write_config(ecat_channel.clone(),device_address)?;
-        self.pos_configuration.write_config(ecat_channel.clone(),device_address)?;
-        self.pos_features.write_config(ecat_channel.clone(),device_address)?;
-        self.pdo_assignment.txpdo_assignment().write_config(ecat_channel.clone(),device_address)?;
-        self.pdo_assignment.rxpdo_assignment().write_config(ecat_channel.clone(),device_address)?;
+        self.encoder
+            .write_config(ecat_channel.clone(), device_address)?;
+        self.stm_motor
+            .write_config(ecat_channel.clone(), device_address)?;
+        self.stm_controller_1
+            .write_config(ecat_channel.clone(), device_address, 0x8011)?;
+        self.stm_controller_2
+            .write_config(ecat_channel.clone(), device_address, 0x8013)?;
+        self.stm_features
+            .write_config(ecat_channel.clone(), device_address)?;
+        self.pos_configuration
+            .write_config(ecat_channel.clone(), device_address)?;
+        self.pos_features
+            .write_config(ecat_channel.clone(), device_address)?;
+        self.pdo_assignment
+            .txpdo_assignment()
+            .write_config(ecat_channel.clone(), device_address)?;
+        self.pdo_assignment
+            .rxpdo_assignment()
+            .write_config(ecat_channel.clone(), device_address)?;
         Ok(())
     }
 }
@@ -71,11 +85,11 @@ impl Configuration for EL7041_0052Configuration {
 impl ConfigurableDevice<EL7041_0052Configuration> for EL7041_0052 {
     fn write_config(
         &mut self,
-        ecat_channel : EtherCATThreadChannel,
-        device_address : u16,
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
         config: &EL7041_0052Configuration,
     ) -> Result<(), anyhow::Error> {
-        config.write_config(ecat_channel,device_address)?;
+        config.write_config(ecat_channel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         self.rxpdo = config.pdo_assignment.rxpdo_assignment();

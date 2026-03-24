@@ -1,11 +1,14 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::{
-    EtherCATThreadChannel, coe::{ConfigurableDevice, Configuration}, io::pulse_train_output::{
+    EtherCATThreadChannel,
+    coe::{ConfigurableDevice, Configuration},
+    io::pulse_train_output::{
         PulseTrainOutputDevice, PulseTrainOutputInput, PulseTrainOutputOutput,
-    }, pdo::{
+    },
+    pdo::{
         PredefinedPdoAssignment, RxPdo, TxPdo,
         el252x::{EncControl, EncStatus, PtoControl, PtoStatus, PtoTarget},
-    }
+    },
 };
 use anyhow::Ok;
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
@@ -79,12 +82,11 @@ impl PulseTrainOutputDevice<EL2521Port> for EL2521 {
 impl ConfigurableDevice<EL2521Configuration> for EL2521 {
     fn write_config<'maindevice>(
         &mut self,
-        ecat_channel : EtherCATThreadChannel,
-        device_address : u16,
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
         config: &EL2521Configuration,
-
     ) -> Result<(), anyhow::Error> {
-        config.write_config(ecat_channel,device_address)?;
+        config.write_config(ecat_channel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         self.rxpdo = config.pdo_assignment.rxpdo_assignment();
@@ -283,30 +285,75 @@ impl Configuration for EL2521Configuration {
     ) -> Result<(), anyhow::Error> {
         let base_index = 0x8010;
         ecat_channel.sdo_write(device_address, base_index, 0x02, self.emergency_ramp_active)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x03, self.watchdog_timer_deactive)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x04, self.sign_amount_representation)?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x03,
+            self.watchdog_timer_deactive,
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x04,
+            self.sign_amount_representation,
+        )?;
         ecat_channel.sdo_write(device_address, base_index, 0x06, self.ramp_function_active)?;
         ecat_channel.sdo_write(device_address, base_index, 0x07, self.ramp_base_frequency)?;
         ecat_channel.sdo_write(device_address, base_index, 0x08, self.direct_input_mode)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x09, self.user_switch_on_value_on_watchdog)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x0A, self.travel_distance_control)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x0E, u8::from(self.operating_mode))?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x09,
+            self.user_switch_on_value_on_watchdog,
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x0A,
+            self.travel_distance_control,
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x0E,
+            u8::from(self.operating_mode),
+        )?;
         ecat_channel.sdo_write(device_address, base_index, 0x10, self.negative_logic)?;
         ecat_channel.sdo_write(device_address, base_index, 0x11, self.user_switch_on_value)?;
         ecat_channel.sdo_write(device_address, base_index, 0x12, self.base_frequency_1)?;
         ecat_channel.sdo_write(device_address, base_index, 0x13, self.base_frequency_2)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x14, self.ramp_time_constant_rising)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x15, self.ramp_time_constant_falling)?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x14,
+            self.ramp_time_constant_rising,
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x15,
+            self.ramp_time_constant_falling,
+        )?;
         ecat_channel.sdo_write(device_address, base_index, 0x16, self.frequency_factor)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x17, self.slowing_down_frequency)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x18, self.ramp_time_constant_emergency)?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x17,
+            self.slowing_down_frequency,
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x18,
+            self.ramp_time_constant_emergency,
+        )?;
 
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(ecat_channel.clone(),device_address)?;
+            .write_config(ecat_channel.clone(), device_address)?;
         self.pdo_assignment
             .rxpdo_assignment()
-            .write_config(ecat_channel.clone(),device_address)?;
+            .write_config(ecat_channel.clone(), device_address)?;
         Ok(())
     }
 }

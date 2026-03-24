@@ -1,5 +1,6 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::EtherCATThreadChannel;
+use crate::io::analog_input::{AnalogInputDevice, AnalogInputInput};
 use crate::pdo::RxPdo;
 use crate::{
     coe::{ConfigurableDevice, Configuration},
@@ -10,9 +11,6 @@ use crate::{
         analog_input::{AiCompact, AiStandard},
     },
     shared_config::el30xx::{EL30XXChannelConfiguration, EL30XXPresentation},
-};
-use crate::{
-    io::analog_input::{AnalogInputDevice, AnalogInputInput},
 };
 use ethercat_hal_derive::EthercatDevice;
 use units::{electric_potential::volt, f64::ElectricPotential};
@@ -121,10 +119,10 @@ impl ConfigurableDevice<EL3062_0030Configuration> for EL3062_0030 {
     fn write_config(
         &mut self,
         ecat_channel: EtherCATThreadChannel,
-        device_address : u16,        
+        device_address: u16,
         config: &EL3062_0030Configuration,
     ) -> Result<(), anyhow::Error> {
-        config.write_config(ecat_channel,device_address)?;
+        config.write_config(ecat_channel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         Ok(())
@@ -228,8 +226,8 @@ impl crate::coe::Configuration for EL3062_0030RxPdo {
     ///Implemented by the ethercat_hal_derive::RxPdo derive macro
     fn write_config(
         &self,
-        _ecat_channel : EtherCATThreadChannel,
-        _addr : u16,
+        _ecat_channel: EtherCATThreadChannel,
+        _addr: u16,
     ) -> Result<(), anyhow::Error> {
         Ok(())
     }
@@ -243,17 +241,19 @@ impl crate::pdo::RxPdo for EL3062_0030RxPdo {
 impl Configuration for EL3062_0030Configuration {
     fn write_config(
         &self,
-        ecat_channel : EtherCATThreadChannel,
-        device_address : u16,    
-        ) -> Result<(), anyhow::Error> {
-        self.channel_1.write_channel_config(ecat_channel.clone(),device_address, 0x8000)?;
-        self.channel_2.write_channel_config(ecat_channel.clone(),device_address, 0x8010)?;
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
+    ) -> Result<(), anyhow::Error> {
+        self.channel_1
+            .write_channel_config(ecat_channel.clone(), device_address, 0x8000)?;
+        self.channel_2
+            .write_channel_config(ecat_channel.clone(), device_address, 0x8010)?;
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(ecat_channel.clone(),device_address)?;
+            .write_config(ecat_channel.clone(), device_address)?;
         self.pdo_assignment
             .rxpdo_assignment()
-            .write_config(ecat_channel,device_address)?;
+            .write_config(ecat_channel, device_address)?;
         Ok(())
     }
 }

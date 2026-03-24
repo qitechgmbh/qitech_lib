@@ -7,7 +7,7 @@ use crate::{
     devices::{DynamicEthercatDevice, Module},
     helpers::ethercrab_types::EthercrabSubDevicePreoperational,
     io::{
-        digital_input::{DigitalInputDevice},
+        digital_input::DigitalInputDevice,
         digital_output::{DigitalOutputDevice, DigitalOutputOutput},
     },
 };
@@ -260,17 +260,17 @@ impl std::fmt::Debug for IP20EcDi8Do8 {
 
 impl DigitalInputDevice for IP20EcDi8Do8 {
     fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
-        Ok( match port {
-                0 => self.tx_pdo.di1,
-                1 => self.tx_pdo.di2,
-                2 => self.tx_pdo.di3,
-                3 => self.tx_pdo.di4,
-                4 => self.tx_pdo.di5,
-                5 => self.tx_pdo.di6,
-                6 => self.tx_pdo.di7,
-                7 => self.tx_pdo.di8,
-                _ => return Err(anyhow::anyhow!("IP20EcDi8Do8 only has 8 inputs (0-7)")),
-            })
+        Ok(match port {
+            0 => self.tx_pdo.di1,
+            1 => self.tx_pdo.di2,
+            2 => self.tx_pdo.di3,
+            3 => self.tx_pdo.di4,
+            4 => self.tx_pdo.di5,
+            5 => self.tx_pdo.di6,
+            6 => self.tx_pdo.di7,
+            7 => self.tx_pdo.di8,
+            _ => return Err(anyhow::anyhow!("IP20EcDi8Do8 only has 8 inputs (0-7)")),
+        })
     }
 
     fn get_port_count(&self) -> usize {

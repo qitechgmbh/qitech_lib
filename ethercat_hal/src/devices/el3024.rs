@@ -1,9 +1,10 @@
 use super::EthercatDeviceProcessing;
 use super::{NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::EtherCATThreadChannel;
 use crate::io::analog_input::physical::AnalogInputRange;
+use crate::io::analog_input::{AnalogInputDevice, AnalogInputInput};
 use crate::pdo::RxPdo;
 use crate::pdo::TxPdo;
-use crate::{EtherCATThreadChannel};
 use crate::{
     coe::{ConfigurableDevice, Configuration},
     helpers::signing_converter_u16::U16SigningConverter,
@@ -12,9 +13,6 @@ use crate::{
         analog_input::{AiCompact, AiStandard},
     },
     shared_config::el30xx::{EL30XXChannelConfiguration, EL30XXPresentation},
-};
-use crate::{
-    io::analog_input::{AnalogInputDevice, AnalogInputInput},
 };
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 use units::electric_current::milliampere;
@@ -167,7 +165,7 @@ impl ConfigurableDevice<EL3024Configuration> for EL3024 {
     fn write_config(
         &mut self,
         channel: EtherCATThreadChannel,
-        device_address : u16,
+        device_address: u16,
         config: &EL3024Configuration,
     ) -> Result<(), anyhow::Error> {
         config.write_config(channel, device_address);
@@ -217,14 +215,18 @@ impl Configuration for EL3024Configuration {
         channel: EtherCATThreadChannel,
         device_address: u16,
     ) -> Result<(), anyhow::Error> {
-        self.channel1.write_channel_config(channel.clone(),device_address, 0x8000)?;
-        self.channel2.write_channel_config(channel.clone(),device_address, 0x8010)?;
-        self.channel3.write_channel_config(channel.clone(),device_address, 0x8020)?;
-        self.channel4.write_channel_config(channel.clone(),device_address, 0x8030)?;
+        self.channel1
+            .write_channel_config(channel.clone(), device_address, 0x8000)?;
+        self.channel2
+            .write_channel_config(channel.clone(), device_address, 0x8010)?;
+        self.channel3
+            .write_channel_config(channel.clone(), device_address, 0x8020)?;
+        self.channel4
+            .write_channel_config(channel.clone(), device_address, 0x8030)?;
 
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(channel.clone(),device_address)?;
+            .write_config(channel.clone(), device_address)?;
         Ok(())
     }
 }

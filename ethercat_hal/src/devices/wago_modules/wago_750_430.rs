@@ -3,7 +3,7 @@ use crate::devices::{
     SubDeviceProductTuple,
 };
 use crate::devices::{EthercatDeviceProcessing, NewEthercatDevice};
-use crate::io::digital_input::{DigitalInputDevice};
+use crate::io::digital_input::DigitalInputDevice;
 
 #[derive(Clone)]
 pub struct Wago750_430 {

@@ -1,23 +1,19 @@
-use super::{
-    EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed, NewEthercatDevice,
-    SubDeviceIdentityTuple,
-};
+use super::{EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed, NewEthercatDevice};
 use crate::EtherCATThreadChannel;
 use crate::devices::wago_modules::wago_750_430::{
     WAGO_750_430_MODULE_IDENT, WAGO_750_430_PRODUCT_ID,
 };
+use crate::devices::SubDeviceIdentityTuple;
 use crate::devices::wago_modules::*;
-use crate::{
-    devices::{
-        DynamicEthercatDevice, Module,
-        wago_modules::{
-            wago_750_402::{WAGO_750_402_MODULE_IDENT, WAGO_750_402_PRODUCT_ID},
-            wago_750_455::{WAGO_750_455_MODULE_IDENT, WAGO_750_455_PRODUCT_ID},
-            wago_750_501::{WAGO_750_501_MODULE_IDENT, WAGO_750_501_PRODUCT_ID},
-            wago_750_530::{WAGO_750_530_MODULE_IDENT, WAGO_750_530_PRODUCT_ID},
-            wago_750_652::{WAGO_750_652_MODULE_IDENT, WAGO_750_652_PRODUCT_ID},
-            wago_750_1506::{WAGO_750_1506_MODULE_IDENT, WAGO_750_1506_PRODUCT_ID},
-        },
+use crate::devices::{
+    DynamicEthercatDevice, Module,
+    wago_modules::{
+        wago_750_402::{WAGO_750_402_MODULE_IDENT, WAGO_750_402_PRODUCT_ID},
+        wago_750_455::{WAGO_750_455_MODULE_IDENT, WAGO_750_455_PRODUCT_ID},
+        wago_750_501::{WAGO_750_501_MODULE_IDENT, WAGO_750_501_PRODUCT_ID},
+        wago_750_530::{WAGO_750_530_MODULE_IDENT, WAGO_750_530_PRODUCT_ID},
+        wago_750_652::{WAGO_750_652_MODULE_IDENT, WAGO_750_652_PRODUCT_ID},
+        wago_750_1506::{WAGO_750_1506_MODULE_IDENT, WAGO_750_1506_PRODUCT_ID},
     },
 };
 use anyhow::Error;
@@ -158,7 +154,7 @@ impl Wago750_354 {
 
     pub async fn get_pdo_offsets<'a>(
         &mut self,
-        device_address : u16,
+        device_address: u16,
         ecat_channel: EtherCATThreadChannel,
         get_tx: bool,
     ) -> Result<(), Error> {
@@ -173,22 +169,22 @@ impl Wago750_354 {
             false => (RX_MAPPING_INDEX.0, RX_MAPPING_INDEX.1),
         };
 
-        let count_mappings = ecat_channel.sdo_read::<u8>(device_address,index.0, index.1)?;
-        let pdo_index = ecat_channel.sdo_read::<u16>(device_address,index.0, 1)?;
-        let pdo_map_count = ecat_channel.sdo_read::<u8>(device_address,pdo_index, 0)?;
+        let count_mappings = ecat_channel.sdo_read::<u8>(device_address, index.0, index.1)?;
+        let pdo_index = ecat_channel.sdo_read::<u16>(device_address, index.0, 1)?;
+        let pdo_map_count = ecat_channel.sdo_read::<u8>(device_address, pdo_index, 0)?;
 
         for i in 0..pdo_map_count {
-            let pdo_mapping: u32 = ecat_channel.sdo_read(device_address,pdo_index, 1 + i)?;
+            let pdo_mapping: u32 = ecat_channel.sdo_read(device_address, pdo_index, 1 + i)?;
             let bit_length = (pdo_mapping & 0xFF) as u8;
             bit_offset += bit_length as usize;
         }
 
         let mut mappings_without_coupler: Vec<u32> = vec![];
         for i in start_subindex..count_mappings {
-            let pdo_index = ecat_channel.sdo_read(device_address,index.0, i)?;
-            let pdo_map_count = ecat_channel.sdo_read::<u8>(device_address,pdo_index, 0)?;
+            let pdo_index = ecat_channel.sdo_read(device_address, index.0, i)?;
+            let pdo_map_count = ecat_channel.sdo_read::<u8>(device_address, pdo_index, 0)?;
             for j in 0..pdo_map_count {
-                let pdo_mapping: u32 = ecat_channel.sdo_read(device_address,pdo_index, 1 + j)?;
+                let pdo_mapping: u32 = ecat_channel.sdo_read(device_address, pdo_index, 1 + j)?;
                 mappings_without_coupler.push(pdo_mapping);
             }
         }
@@ -219,12 +215,14 @@ impl Wago750_354 {
     }
 
     pub fn get_module_count(
-        ecat_channel : EtherCATThreadChannel,
-        device_address : u16
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
     ) -> Result<usize, Error> {
-        match ecat_channel
-            .sdo_read::<u8>(device_address,MODULE_COUNT_INDEX.0, MODULE_COUNT_INDEX.1)
-        {
+        match ecat_channel.sdo_read::<u8>(
+            device_address,
+            MODULE_COUNT_INDEX.0,
+            MODULE_COUNT_INDEX.1,
+        ) {
             Ok(value) => Ok(value as usize),
             Err(e) => Err(anyhow::anyhow!(
                 "Failed to read Module Count for Wago750_354: {:?}",
@@ -236,7 +234,7 @@ impl Wago750_354 {
     // This should probably be a generic function instead
     pub fn get_modules<'a>(
         ecat_channel: EtherCATThreadChannel,
-        device_address : u16,
+        device_address: u16,
         module_count: usize,
     ) -> Result<Vec<crate::devices::Module>, Error> {
         const MODULES_START_ADDR: u16 = 0x9000;
@@ -244,7 +242,8 @@ impl Wago750_354 {
         let mut modules: Vec<Module> = vec![];
         for i in 0..module_count {
             let module_addr = MODULES_START_ADDR + (i * 0x10) as u16;
-            let ident_iom = ecat_channel.sdo_read::<u32>(device_address,module_addr, MODULE_IDENT_SUBINDEX)?;
+            let ident_iom =
+                ecat_channel.sdo_read::<u32>(device_address, module_addr, MODULE_IDENT_SUBINDEX)?;
             // For Wago the IOM well be the product ID
             let mut module = Module {
                 slot: i as u16,
@@ -306,14 +305,18 @@ impl Wago750_354 {
     }
 
     /// Call after all modules have been added
-    pub fn init_slot_modules<'a>(&mut self,ecat_channel: EtherCATThreadChannel, device_address : u16) {
+    pub fn init_slot_modules<'a>(
+        &mut self,
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
+    ) {
         // Already initialized
         if self.dev_count != 0 {
             return;
         }
         smol::block_on(async {
-            let _ = self.get_pdo_offsets(device_address,ecat_channel.clone(), true);
-            let _ = self.get_pdo_offsets(device_address,ecat_channel.clone(), false);
+            let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), true);
+            let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), false);
         });
         for module in &mut self.slots {
             match module {
@@ -348,31 +351,15 @@ impl Wago750_354 {
             match module {
                 Some(m) => {
                     // Map ModuleIdent's to Terminals
-                    let mut dev: Box<dyn DynamicEthercatDevice> = match (
-                        m.vendor_id,
-                        m.product_id,
-                    ) {
-                        WAGO_750_455_MODULE_IDENT => {
-                            Box::new(wago_750_455::Wago750_455::new())
-                        }
-                        WAGO_750_501_MODULE_IDENT => {
-                            Box::new(wago_750_501::Wago750_501::new())
-                        }
-                        WAGO_750_530_MODULE_IDENT => {
-                            Box::new(wago_750_530::Wago750_530::new())
-                        }
-                        WAGO_750_1506_MODULE_IDENT => {
-                            Box::new(wago_750_1506::Wago750_1506::new())
-                        }
-                        WAGO_750_652_MODULE_IDENT => {
-                            Box::new(wago_750_652::Wago750_652::new())
-                        }
-                        WAGO_750_402_MODULE_IDENT => {
-                            Box::new(wago_750_402::Wago750_402::new())
-                        }
-                        WAGO_750_430_MODULE_IDENT => {
-                            Box::new(wago_750_430::Wago750_430::new())
-                        }
+                    let mut dev: Box<dyn DynamicEthercatDevice> = match (m.vendor_id, m.product_id)
+                    {
+                        WAGO_750_455_MODULE_IDENT => Box::new(wago_750_455::Wago750_455::new()),
+                        WAGO_750_501_MODULE_IDENT => Box::new(wago_750_501::Wago750_501::new()),
+                        WAGO_750_530_MODULE_IDENT => Box::new(wago_750_530::Wago750_530::new()),
+                        WAGO_750_1506_MODULE_IDENT => Box::new(wago_750_1506::Wago750_1506::new()),
+                        WAGO_750_652_MODULE_IDENT => Box::new(wago_750_652::Wago750_652::new()),
+                        WAGO_750_402_MODULE_IDENT => Box::new(wago_750_402::Wago750_402::new()),
+                        WAGO_750_430_MODULE_IDENT => Box::new(wago_750_430::Wago750_430::new()),
 
                         _ => {
                             println!(
@@ -384,7 +371,7 @@ impl Wago750_354 {
                             return;
                         }
                     };
-                    
+
                     dev.set_tx_offset(m.tx_offset);
                     dev.set_rx_offset(m.rx_offset);
                     self.slot_devices[self.dev_count] = Some(dev);
@@ -397,9 +384,9 @@ impl Wago750_354 {
 
     pub fn initialize_modules<'a>(
         ecat_channel: EtherCATThreadChannel,
-        device_address : u16,
+        device_address: u16,
     ) -> Result<Vec<Module>, Error> {
-        let count = match Wago750_354::get_module_count(ecat_channel.clone(),device_address) {
+        let count = match Wago750_354::get_module_count(ecat_channel.clone(), device_address) {
             Ok(count) => count,
             Err(e) => return Err(e),
         };
@@ -414,6 +401,7 @@ impl Wago750_354 {
 pub const WAGO_750_354_VENDOR_ID: u32 = 0x00000021;
 pub const WAGO_750_354_PRODUCT_ID: u32 = 0x07500354;
 pub const WAGO_750_354_REVISION_A: u32 = 0x2;
+
 pub const WAGO_750_354_IDENTITY_A: SubDeviceIdentityTuple = (
     WAGO_750_354_VENDOR_ID,
     WAGO_750_354_PRODUCT_ID,

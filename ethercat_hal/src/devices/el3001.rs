@@ -1,4 +1,6 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::EtherCATThreadChannel;
+use crate::io::analog_input::{AnalogInputDevice, AnalogInputInput};
 use crate::{
     coe::{ConfigurableDevice, Configuration},
     helpers::signing_converter_u16::U16SigningConverter,
@@ -9,10 +11,6 @@ use crate::{
     },
     shared_config::el30xx::{EL30XXChannelConfiguration, EL30XXPresentation},
 };
-use crate::{
-    io::analog_input::{AnalogInputDevice, AnalogInputInput},
-};
-use crate::EtherCATThreadChannel;
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 use units::{electric_potential::volt, f64::ElectricPotential};
 
@@ -96,7 +94,7 @@ impl ConfigurableDevice<EL3001Configuration> for EL3001 {
         device_address: u16,
         config: &EL3001Configuration,
     ) -> Result<(), anyhow::Error> {
-        config.write_config(channel,device_address)?;
+        config.write_config(channel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         Ok(())
@@ -132,17 +130,18 @@ pub struct EL3001Configuration {
 impl Configuration for EL3001Configuration {
     fn write_config(
         &self,
-        channel : EtherCATThreadChannel,
+        channel: EtherCATThreadChannel,
         device_address: u16,
     ) -> Result<(), anyhow::Error> {
-        self.channel_1.write_channel_config(channel.clone(),0, 0x8000)?;
+        self.channel_1
+            .write_channel_config(channel.clone(), 0, 0x8000)?;
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(channel.clone(),device_address)?;
-            
+            .write_config(channel.clone(), device_address)?;
+
         self.pdo_assignment
             .rxpdo_assignment()
-            .write_config(channel,device_address)?;
+            .write_config(channel, device_address)?;
         Ok(())
     }
 }

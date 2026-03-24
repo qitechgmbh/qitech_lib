@@ -115,11 +115,11 @@ impl Default for EL6021Configuration {
 impl ConfigurableDevice<EL6021Configuration> for EL6021 {
     fn write_config<'maindevice>(
         &mut self,
-        channel : EtherCATThreadChannel,
-        device_address : u16, 
+        channel: EtherCATThreadChannel,
+        device_address: u16,
         config: &EL6021Configuration,
     ) -> Result<(), anyhow::Error> {
-        config.write_config(channel,device_address)?;
+        config.write_config(channel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         self.rxpdo = config.pdo_assignment.rxpdo_assignment();
@@ -220,7 +220,7 @@ const fn convert_serial_encoding(encoding: SerialEncoding) -> u8 {
 impl Configuration for EL6021Configuration {
     fn write_config(
         &self,
-        ecat_channel : EtherCATThreadChannel,
+        ecat_channel: EtherCATThreadChannel,
         device_address: u16,
     ) -> Result<(), anyhow::Error> {
         match (self.baud_rate, self.data_frame) {
@@ -237,24 +237,48 @@ impl Configuration for EL6021Configuration {
                 ));
             }
         }
-        ecat_channel.sdo_write(device_address,0x8000, 0x2, self.xon_on_supported_tx)?;
-        ecat_channel.sdo_write(device_address,0x8000, 0x3, self.xon_off_supported_rx)?;
-        ecat_channel.sdo_write(device_address,0x8000, 0x4, self.fifo_continuous_send_enabled)?;
-        ecat_channel.sdo_write(device_address,0x8000, 0x5, self.enable_transfer_rate_optimization)?;
-        ecat_channel.sdo_write(device_address,0x8000, 0x6, self.half_duplex_enabled)?;
-        ecat_channel.sdo_write(device_address,0x8000, 0x7, self.point_to_point_connection_enabled)?;
+        ecat_channel.sdo_write(device_address, 0x8000, 0x2, self.xon_on_supported_tx)?;
+        ecat_channel.sdo_write(device_address, 0x8000, 0x3, self.xon_off_supported_rx)?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8000,
+            0x4,
+            self.fifo_continuous_send_enabled,
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8000,
+            0x5,
+            self.enable_transfer_rate_optimization,
+        )?;
+        ecat_channel.sdo_write(device_address, 0x8000, 0x6, self.half_duplex_enabled)?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8000,
+            0x7,
+            self.point_to_point_connection_enabled,
+        )?;
         let baudrate_coe_value = u8::from(self.baud_rate);
-        ecat_channel.sdo_write(device_address,0x8000, 0x11, baudrate_coe_value)?;
-        ecat_channel.sdo_write(device_address,0x8000, 0x15, convert_serial_encoding(self.data_frame))?;
-        ecat_channel
-            .sdo_write(device_address,0x8000, 0x1a, self.rx_buffer_full_notification)?;
+        ecat_channel.sdo_write(device_address, 0x8000, 0x11, baudrate_coe_value)?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8000,
+            0x15,
+            convert_serial_encoding(self.data_frame),
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            0x8000,
+            0x1a,
+            self.rx_buffer_full_notification,
+        )?;
 
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(ecat_channel.clone(),device_address)?;
+            .write_config(ecat_channel.clone(), device_address)?;
         self.pdo_assignment
             .rxpdo_assignment()
-            .write_config(ecat_channel.clone(),device_address)?;
+            .write_config(ecat_channel.clone(), device_address)?;
 
         Ok(())
     }
