@@ -1,6 +1,5 @@
 use crate::{
-    ChannelRequest, ChannelResponse, EtherCATThreadChannel, EtherCATThreadResponseChannel,
-    MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType, get_async_runtime,
+    ChannelRequest, ChannelResponse, EtherCATState, EtherCATThreadChannel, EtherCATThreadResponseChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType, get_async_runtime
 };
 use ethercrab::{
     EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
@@ -194,6 +193,27 @@ impl EtherCATThreadChannel {
             ChannelResponse::SdoWriteResponse(result) => result,
             _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
         }
+    }
+
+    pub fn request_state_change(&self,state : EtherCATState) -> Result<(), anyhow::Error> {
+        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
+        let req: ChannelRequest = ChannelRequest {
+            channel_request: crate::ChannelRequests::ChangeState(
+                state,
+            ),
+            response_channel: EtherCATThreadResponseChannel(tx),
+        };
+        let _res = self.0.send(req);
+        let _res = rx.recv();
+        Ok(())
+    }
+
+    pub fn is_state(&self, state : EtherCATState){
+        
+    }
+
+    pub fn enable_dc_sync0(&self){
+
     }
 }
 

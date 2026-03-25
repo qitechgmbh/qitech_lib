@@ -143,6 +143,10 @@ impl EthercatDynamicPDO for Wago750_530 {
 }
 
 impl EthercatDevice for Wago750_530 {
+    fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+
     fn input(
         &mut self,
         _input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,

@@ -31,7 +31,7 @@ use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;
 use ek1100::{EK1100, EK1100_IDENTITY_A};
 use el1002::{EL1002, EL1002_IDENTITY_A};
-use el1008::EL1008_IDENTITY_A;
+use el1008::{EL1008_IDENTITY_A, EL1008_IDENTITY_B};
 use el2002::{EL2002, EL2002_IDENTITY_A, EL2002_IDENTITY_B};
 use el2004::{EL2004, EL2004_IDENTITY_A};
 use el2008::{EL2008, EL2008_IDENTITY_A, EL2008_IDENTITY_B};
@@ -51,6 +51,9 @@ use el6021::{EL6021_IDENTITY_A, EL6021_IDENTITY_B, EL6021_IDENTITY_C, EL6021_IDE
 use el7031::{EL7031_IDENTITY_A, EL7031_IDENTITY_B};
 use el7031_0030::EL7031_0030_IDENTITY_A;
 use el7041_0052::EL7041_0052_IDENTITY_A;
+use std::any::TypeId;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::{any::Any, fmt::Debug};
 use wago_750_354::{WAGO_750_354_IDENTITY_A, Wago750_354};
 use wago_modules::ip20_ec_di8_do8::{IP20_EC_DI8_DO8_IDENTITY, IP20EcDi8Do8};
@@ -105,6 +108,7 @@ where
         Ok(())
     }
 
+    fn into_any_boxed(self: Box<Self>) -> Box<dyn Any>;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn is_module(&self) -> bool;
@@ -163,7 +167,7 @@ pub fn device_from_subdevice_identity(
         IP20_EC_DI8_DO8_IDENTITY => Ok(Box::new(IP20EcDi8Do8::new())),
         EK1100_IDENTITY_A => Ok(Box::new(EK1100::new())),
         EL1002_IDENTITY_A => Ok(Box::new(EL1002::new())),
-        EL1008_IDENTITY_A => Ok(Box::new(EL1008::new())),
+        EL1008_IDENTITY_A | EL1008_IDENTITY_B => Ok(Box::new(EL1008::new())),
         EL2002_IDENTITY_A | EL2002_IDENTITY_B => Ok(Box::new(EL2002::new())),
         EL2004_IDENTITY_A => Ok(Box::new(EL2004::new())),
         EL2008_IDENTITY_A | EL2008_IDENTITY_B => Ok(Box::new(EL2008::new())),
@@ -194,13 +198,96 @@ pub fn device_from_subdevice_identity(
     }
 }
 
-pub fn downcast_subdevice<T : 'static>(dev : Box<dyn EthercatDevice>) -> Result<T,anyhow::Error> {
-    match dev.as_any().downcast_ref::<T>() {
-        Some(_) => todo!(),
-        None => Err(anyhow::anyhow!("Downcast failed")),
+
+pub fn device_from_subdevice_identity_rc(
+    dev: MetaSubdevice,
+) -> Result<Rc<RefCell<dyn EthercatDevice>>, anyhow::Error> {
+    let ident_tuple: (u32, u32, u32) = (dev.vendor, dev.product_id, dev.revision);
+
+    match ident_tuple {
+        WAGO_750_354_IDENTITY_A => Ok(Rc::new(RefCell::new(Wago750_354::new()))),
+        IP20_EC_DI8_DO8_IDENTITY => Ok(Rc::new(RefCell::new(IP20EcDi8Do8::new()))),
+        EK1100_IDENTITY_A => Ok(Rc::new(RefCell::new(EK1100::new()))),
+        EL1002_IDENTITY_A => Ok(Rc::new(RefCell::new(EL1002::new()))),
+        
+        EL1008_IDENTITY_A | EL1008_IDENTITY_B => Ok(Rc::new(RefCell::new(EL1008::new()))),
+        
+        EL2002_IDENTITY_A | EL2002_IDENTITY_B => Ok(Rc::new(RefCell::new(EL2002::new()))),
+        EL2004_IDENTITY_A => Ok(Rc::new(RefCell::new(EL2004::new()))),
+        EL2008_IDENTITY_A | EL2008_IDENTITY_B => Ok(Rc::new(RefCell::new(EL2008::new()))),
+        
+        EL2522_IDENTITY_A => Ok(Rc::new(RefCell::new(EL2522::new()))),
+        EL3001_IDENTITY_A => Ok(Rc::new(RefCell::new(el3001::EL3001::new()))),
+        EL3021_IDENTITY_A => Ok(Rc::new(RefCell::new(el3021::EL3021::new()))),
+        EL3024_IDENTITY_A => Ok(Rc::new(RefCell::new(el3024::EL3024::new()))),
+        EL3062_0030_IDENTITY_A => Ok(Rc::new(RefCell::new(el3062_0030::EL3062_0030::new()))),
+        EL4002_IDENTITY_A => Ok(Rc::new(RefCell::new(EL4002::new()))),
+        EL5152_IDENTITY_A => Ok(Rc::new(RefCell::new(EL5152::new()))),
+        
+        EL6021_IDENTITY_A | EL6021_IDENTITY_B | EL6021_IDENTITY_C | EL6021_IDENTITY_D => {
+            Ok(Rc::new(RefCell::new(el6021::EL6021::new())))
+        }
+        
+        EL3204_IDENTITY_A | EL3204_IDENTITY_B => Ok(Rc::new(RefCell::new(el3204::EL3204::new()))),
+        EL7031_IDENTITY_A | EL7031_IDENTITY_B => Ok(Rc::new(RefCell::new(el7031::EL7031::new()))),
+        EL7031_0030_IDENTITY_A => Ok(Rc::new(RefCell::new(el7031_0030::EL7031_0030::new()))),
+        EL7041_0052_IDENTITY_A => Ok(Rc::new(RefCell::new(el7041_0052::EL7041_0052::new()))),
+        
+        EL2521_IDENTITY_0000_A | EL2521_IDENTITY_0000_B | EL2521_IDENTITY_0024_A => {
+            Ok(Rc::new(RefCell::new(EL2521::new())))
+        }
+        
+        _ => Err(anyhow::anyhow!(
+            "[{}::device_from_subdevice] No Driver: vendor_id: 0x{:x}, product_id: 0x{:x}, revision: 0x{:x}",
+            module_path!(),
+            ident_tuple.0,
+            ident_tuple.1,
+            ident_tuple.2,
+        )),
     }
 }
 
+pub fn downcast_subdevice<T: 'static>(dev: Box<dyn EthercatDevice>) -> Result<Box<T>, anyhow::Error>
+where
+    T: EthercatDevice,
+{
+    let any_dev = dev.into_any_boxed();
+    // Attempt to downcast to the concrete type Box<T>
+    match any_dev.downcast::<T>() {
+        Ok(concrete_box) => Ok(concrete_box),
+        Err(_) => Err(anyhow::anyhow!(
+            "Downcast failed: device is not of type {}",
+            std::any::type_name::<T>()
+        )),
+    }
+}
+
+pub fn downcast_rc_refcell<T: 'static>(
+    dev: Rc<RefCell<dyn EthercatDevice>>
+) -> Result<Rc<RefCell<T>>, anyhow::Error> {
+    
+    // Check if the inner type is actually T
+    let is_t = dev.borrow().as_any().is::<T>();
+    if !is_t {
+        return Err(anyhow::anyhow!("Type mismatch in hardware downcast"));
+    }
+    // Since we verified the type above, we can use raw pointers.
+    let raw_trait_ptr = Rc::into_raw(dev);    
+    // We cast the fat pointer to a thin pointer of the concrete RefCell<T>
+    let raw_concrete_ptr = raw_trait_ptr as *const RefCell<T>;
+    unsafe {
+        Ok(Rc::from_raw(raw_concrete_ptr))
+    }
+}
+
+pub fn downcast_subdevice_ref<T: 'static>(
+    dev: &Box<dyn EthercatDevice>,
+) -> Result<Box<&T>, anyhow::Error> {
+    match dev.as_any().downcast_ref::<T>() {
+        Some(dev) => Ok(Box::new(dev)),
+        None => Err(anyhow::anyhow!("Downcast failed")),
+    }
+}
 
 pub type SubDeviceIdentityTuple = (u32, u32, u32);
 

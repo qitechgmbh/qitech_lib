@@ -256,6 +256,12 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
             }
 
             #[doc="Implemented by the ethercat_hal_derive::EthercatDevice derive macro"]
+            fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
+                self
+            }
+
+
+            #[doc="Implemented by the ethercat_hal_derive::EthercatDevice derive macro"]
             fn is_module(&self) -> bool {
                 false
             }

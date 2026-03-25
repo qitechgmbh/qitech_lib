@@ -188,6 +188,9 @@ impl EthercatDeviceUsed for Wago750_1506 {
 impl Wago750_1506 {}
 
 impl EthercatDevice for Wago750_1506 {
+    fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
     // input_len 48 offset: 40
     fn input(
         &mut self,

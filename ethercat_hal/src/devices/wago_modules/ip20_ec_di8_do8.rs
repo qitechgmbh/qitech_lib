@@ -121,6 +121,9 @@ pub struct IP20EcDi8Do8 {
 }
 
 impl EthercatDevice for IP20EcDi8Do8 {
+    fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
     fn input(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,

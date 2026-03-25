@@ -1,9 +1,9 @@
 use super::{EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed, NewEthercatDevice};
 use crate::EtherCATThreadChannel;
+use crate::devices::SubDeviceIdentityTuple;
 use crate::devices::wago_modules::wago_750_430::{
     WAGO_750_430_MODULE_IDENT, WAGO_750_430_PRODUCT_ID,
 };
-use crate::devices::SubDeviceIdentityTuple;
 use crate::devices::wago_modules::*;
 use crate::devices::{
     DynamicEthercatDevice, Module,
@@ -41,6 +41,9 @@ pub struct Wago750_354 {
 }
 
 impl EthercatDevice for Wago750_354 {
+    fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
     fn input(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,

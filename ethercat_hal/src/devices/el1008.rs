@@ -23,10 +23,11 @@ impl std::fmt::Debug for EL1008 {
 
 impl NewEthercatDevice for EL1008 {
     fn new() -> Self {
-        Self {
+        let s = Self {
             txpdo: EL1008TxPdo::default(),
             is_used: false,
-        }
+        };
+        s
     }
 }
 
@@ -126,7 +127,7 @@ impl EL1008Port {
     }
 }
 
-#[derive(Debug, Clone, TxPdo, Default)]
+#[derive(Debug, Clone, TxPdo)]
 pub struct EL1008TxPdo {
     #[pdo_object_index(0x1A00)]
     pub channel1: Option<BoolPdoObject>,
@@ -145,6 +146,22 @@ pub struct EL1008TxPdo {
     #[pdo_object_index(0x1A07)]
     pub channel8: Option<BoolPdoObject>,
 }
+
+impl Default for EL1008TxPdo {
+    fn default() -> Self {
+        Self { 
+            channel1: Some(BoolPdoObject::default()), 
+            channel2: Some(BoolPdoObject::default()), 
+            channel3: Some(BoolPdoObject::default()), 
+            channel4: Some(BoolPdoObject::default()), 
+            channel5: Some(BoolPdoObject::default()), 
+            channel6: Some(BoolPdoObject::default()), 
+            channel7: Some(BoolPdoObject::default()), 
+            channel8: Some(BoolPdoObject::default()) 
+        }
+    }
+}
+
 
 #[derive(Debug, Clone)]
 pub enum EL1008PredefinedPdoAssignment {
@@ -175,5 +192,9 @@ impl PredefinedPdoAssignment<EL1008TxPdo, ()> for EL1008PredefinedPdoAssignment 
 pub const EL1008_VENDOR_ID: u32 = 0x2;
 pub const EL1008_PRODUCT_ID: u32 = 0x03f03052;
 pub const EL1008_REVISION_A: u32 = 0x00120000;
+pub const EL1008_REVISION_B: u32 = 0x00110000;
+
 pub const EL1008_IDENTITY_A: SubDeviceIdentityTuple =
     (EL1008_VENDOR_ID, EL1008_PRODUCT_ID, EL1008_REVISION_A);
+pub const EL1008_IDENTITY_B: SubDeviceIdentityTuple =
+    (EL1008_VENDOR_ID, EL1008_PRODUCT_ID, EL1008_REVISION_B);

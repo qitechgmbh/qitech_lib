@@ -102,9 +102,9 @@ impl EthercatDynamicPDO for Wago750_652 {
 }
 
 impl EthercatDevice for Wago750_652 {
-    /*
-        OK so with ethercrab we receive the bitslice of the current subdevice in our Loop
-    */
+    fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
     fn input(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
