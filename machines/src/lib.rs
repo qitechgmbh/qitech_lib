@@ -48,3 +48,5 @@ pub trait Machine {
     fn react(&mut self, registry: &MachineDataRegistry);
     fn get_identification(&self) -> MachineIdentificationUnique;
 }
+
+
