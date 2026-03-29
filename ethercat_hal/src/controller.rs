@@ -1,11 +1,12 @@
 use crate::{
-    CachePaddedAtomic, ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE,
+    ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE,
     EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType,
     ethercat_helpers::{sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::read_device_identifications,
     send_response,
 };
+use triple_buffer::{Input, Output};
 use ethercrab::{
     DcSync, MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup,
     Timeouts,
@@ -25,18 +26,34 @@ pub struct EtherCATController {
     pub cycle_time_us: u64,
     pub interface: Option<String>,
     pub state: EtherCATState,
-
     pub requested_state: Option<EtherCATState>,
     pub rx_channel: Receiver<ChannelRequest>,
-
-    pub input_buffers: [UnsafeCell<[u8; ETHERCAT_TX_RX_SIZE]>; 2],
-    pub input_read_idx: CachePaddedAtomic,
-
-    pub output_buffers: [UnsafeCell<[u8; ETHERCAT_TX_RX_SIZE]>; 2],
-    pub output_write_idx: CachePaddedAtomic, // Which one the "System" is writing to
+    
+    pub input_producer: Input<[u8; ETHERCAT_TX_RX_SIZE]>,
+    pub output_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
 
     pub subdevices: [MetaSubdevice; 256],
     pub subdevice_count: usize,
+}
+
+
+pub struct EtherCATAppHandle {
+    pub input_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
+    pub output_producer: Input<[u8; ETHERCAT_TX_RX_SIZE]>,
+}
+
+impl EtherCATAppHandle {
+    pub fn get_inputs(&mut self) -> &[u8] {
+        self.input_consumer.read()
+    }
+
+    pub fn write_outputs(&mut self) -> &mut [u8;ETHERCAT_TX_RX_SIZE] {
+        self.output_producer.input_buffer_mut() 
+    }
+
+    pub fn send_outputs(&mut self) {
+        self.output_producer.publish();
+    }
 }
 
 pub fn enable_dc_sync(
@@ -57,30 +74,6 @@ pub fn enable_dc_sync(
 // We handle sync through double buffering and an atomic flag
 unsafe impl Sync for EtherCATController {}
 unsafe impl Send for EtherCATController {}
-
-impl EtherCATController {
-    /// Read latest input blob (App side)
-    pub fn get_inputs(&self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
-        /*
-            let idx = self.input_read_idx.0.load(Ordering::Acquire);
-        */
-        let idx = self.input_read_idx.0.load(Ordering::Relaxed);
-        let ptr = self.input_buffers[idx].get();
-        unsafe { &mut *ptr }
-    }
-
-    pub fn get_outputs(&self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
-        let idx = self.output_write_idx.0.load(Ordering::Relaxed);
-        let ptr = self.output_buffers[1 - idx].get();
-        unsafe { &mut *ptr }
-    }
-
-    /// Write output commands (App side)
-    pub fn finish_write(&self) {
-        let idx = self.output_write_idx.0.load(Ordering::Relaxed);
-        self.output_write_idx.0.store(1 - idx, Ordering::Release);
-    }
-}
 
 impl EtherCATController {
     pub fn ethercat_state_machine(&mut self) {
@@ -466,55 +459,45 @@ impl EtherCATController {
 
                     loop {
                         let now = Instant::now();
-                        let res = rt.block_on(async {
+                        let _res = rt.block_on(async {
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX/RX");
                             let now = tokio::time::Instant::now();
                             (res, now)
                         });
-                        // 1. Determine which buffer is NOT being read by the app right now
-                        let read_idx = self.input_read_idx.0.load(Ordering::Acquire);
-                        let write_idx = 1 - read_idx;
-
-                        // 2. Get a mutable pointer to that buffer and write the data
-                        let dest_ptr = self.input_buffers[write_idx].get();
-                        unsafe {
-                            // We get a mutable slice to the whole buffer to make sub-slicing easier
-                            let full_buffer = &mut *dest_ptr;
-                            let mut current_offset = 0;
-                            for subdevice in group.iter(&maindevice) {
-                                let len = subdevice.io_raw().inputs().len();
-                                if current_offset + len <= ETHERCAT_TX_RX_SIZE {
-                                    full_buffer[current_offset..current_offset + len]
-                                        .copy_from_slice(subdevice.io_raw().inputs());
-                                    current_offset += len;
-                                } else {
-                                    println!("Data exceeds buffer");
-                                    break;
-                                }
+                        
+                        let full_buffer = self.input_producer.input_buffer_mut();
+                        // We get a mutable slice to the whole buffer to make sub-slicing easier
+                        let mut current_offset = 0;
+                        for subdevice in group.iter(&maindevice) {
+                            let len = subdevice.io_raw().inputs().len();
+                            if current_offset + len <= ETHERCAT_TX_RX_SIZE {
+                                full_buffer[current_offset..current_offset + len]
+                                    .copy_from_slice(subdevice.io_raw().inputs());
+                                current_offset += len;
+                            } else {
+                                println!("Data exceeds buffer");
+                                break;
                             }
                         }
-                        // 3. Update the read index so the app sees the fresh buffer
-                        self.input_read_idx.0.store(write_idx, Ordering::Release);
+                        
+
+                        self.input_producer.publish();
+
                         /*rt.block_on(async {
                             tokio::time::sleep_until(res.1 + res.0.extra.next_cycle_wait).await
                         });*/
 
-                        let out_idx = self.output_write_idx.0.load(Ordering::Acquire);
-                        let src_ptr = self.output_buffers[out_idx].get();
-                        unsafe {
-                            // We get a mutable slice to the whole buffer to make sub-slicing easier
-                            let full_buffer = &mut *src_ptr;
-                            let mut current_offset = 0;
-
-                            for subdevice in group.iter(&maindevice) {
-                                let mut output = subdevice.outputs_raw_mut();
-                                let len = output.len();
-                                output.copy_from_slice(
-                                    &full_buffer[current_offset..current_offset + len],
-                                );
-                                current_offset += len;
-                            }
-                        }
+                        let full_buffer = self.output_consumer.read();
+                        // We get a mutable slice to the whole buffer to make sub-slicing easier
+                        let mut current_offset = 0;
+                        for subdevice in group.iter(&maindevice) {
+                            let mut output = subdevice.outputs_raw_mut();
+                            let len = output.len();
+                            output.copy_from_slice(
+                                &full_buffer[current_offset..current_offset + len],
+                            );
+                            current_offset += len;
+                        }                        
                         self.cycle_time_us = now.elapsed().as_micros() as u64;
                     }
                 }

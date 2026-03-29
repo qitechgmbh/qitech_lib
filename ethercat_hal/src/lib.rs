@@ -12,14 +12,14 @@ pub mod shared_config;
 pub mod machine_ident_read;
 
 use crate::controller::EtherCATController;
+use controller::EtherCATAppHandle;
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
 use std::sync::mpsc;
 use std::{
-    cell::UnsafeCell,
     sync::{Arc, OnceLock, mpsc::Sender},
 };
-use std::{sync::atomic::AtomicUsize, thread::JoinHandle};
+use std::{thread::JoinHandle};
 use tokio::runtime::Runtime;
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -75,10 +75,6 @@ pub enum EtherCATState {
     PreopPdi = 4,
     Op = 5,
 }
-
-// TODO: Remove alignmnet test why necessary if it is
-#[repr(align(8))]
-pub struct CachePaddedAtomic(AtomicUsize);
 
 #[derive(Debug)]
 pub enum SdoType {
@@ -145,29 +141,31 @@ pub fn send_response(response_channel: EtherCATThreadResponseChannel, response: 
 pub fn start_ethercat_thread(
     interface_name: &str,
 ) -> (
-    (Arc<EtherCATController>, EtherCATThreadChannel),
+    (Arc<EtherCATController>,EtherCATAppHandle, EtherCATThreadChannel),
     JoinHandle<()>,
 ) {
     let (tx, rx) = mpsc::channel();
+
+    let (input_producer, input_consumer) = triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
+    let (output_producer, output_consumer) = triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
+    
     let controller = Arc::new(EtherCATController {
         interface: Some(interface_name.to_owned()),
         cycle_time_us: 0,
         state: EtherCATState::NoInterface,
         requested_state: None,
-        rx_channel: rx,
-        input_buffers: [
-            UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
-            UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
-        ],
-        input_read_idx: CachePaddedAtomic(AtomicUsize::new(0)),
-        output_buffers: [
-            UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
-            UnsafeCell::new([0u8; ETHERCAT_TX_RX_SIZE]),
-        ],
-        output_write_idx: CachePaddedAtomic(AtomicUsize::new(0)),
+        rx_channel: rx,        
         subdevices: [MetaSubdevice::default(); 256],
         subdevice_count: 0,
+        input_producer,
+        output_consumer,
     });
+
+    let app_handle = EtherCATAppHandle {
+        input_consumer,
+        output_producer,
+    };
+    
     let controller_for_thread = Arc::clone(&controller);
 
     let handle = std::thread::Builder::new()
@@ -181,5 +179,5 @@ pub fn start_ethercat_thread(
         })
         .expect("Failed to spawn thread");
 
-    ((controller, EtherCATThreadChannel(tx)), handle)
+    ((controller, app_handle ,EtherCATThreadChannel(tx)), handle)
 }
