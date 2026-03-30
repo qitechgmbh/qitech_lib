@@ -1,7 +1,7 @@
 use crate::{
     ChannelRequest, ChannelResponse, EtherCATState, EtherCATThreadChannel,
     EtherCATThreadResponseChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType,
-    get_async_runtime,
+    get_async_runtime, machine_ident_read::MachineDeviceInfo,
 };
 use ethercrab::{
     EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
@@ -157,6 +157,30 @@ impl EtherCATThreadChannel {
         return res;
     }
 
+    pub fn read_device_identifications(&self) ->  Result<Vec<MachineDeviceInfo>, anyhow::Error> {
+        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
+        let req: ChannelRequest = ChannelRequest { 
+            channel_request: crate::ChannelRequests::ReadMachineIdent(), 
+            response_channel: EtherCATThreadResponseChannel(tx), 
+        };
+        
+        let res = self.0.send(req);                
+        match res {
+            Ok(response) => response,
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+        
+        let res = rx.recv_timeout(Duration::from_millis(5000));
+        let response: ChannelResponse = match res {
+            Ok(res) => res,
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+        match response {
+            ChannelResponse::MachineDeviceInfoResponse(machine_device_infos) => machine_device_infos,
+            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+        }
+    }
+
     pub fn sdo_write<T: 'static>(
         &self,
         device_address: u16,
@@ -207,8 +231,6 @@ impl EtherCATThreadChannel {
         let _res = rx.recv();
         Ok(())
     }
-
-    pub fn is_state(&self, state: EtherCATState) {}
 
     pub fn enable_dc_sync0(&self) {}
 }
