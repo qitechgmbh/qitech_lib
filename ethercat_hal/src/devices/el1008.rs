@@ -149,19 +149,18 @@ pub struct EL1008TxPdo {
 
 impl Default for EL1008TxPdo {
     fn default() -> Self {
-        Self { 
-            channel1: Some(BoolPdoObject::default()), 
-            channel2: Some(BoolPdoObject::default()), 
-            channel3: Some(BoolPdoObject::default()), 
-            channel4: Some(BoolPdoObject::default()), 
-            channel5: Some(BoolPdoObject::default()), 
-            channel6: Some(BoolPdoObject::default()), 
-            channel7: Some(BoolPdoObject::default()), 
-            channel8: Some(BoolPdoObject::default()) 
+        Self {
+            channel1: Some(BoolPdoObject::default()),
+            channel2: Some(BoolPdoObject::default()),
+            channel3: Some(BoolPdoObject::default()),
+            channel4: Some(BoolPdoObject::default()),
+            channel5: Some(BoolPdoObject::default()),
+            channel6: Some(BoolPdoObject::default()),
+            channel7: Some(BoolPdoObject::default()),
+            channel8: Some(BoolPdoObject::default()),
         }
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub enum EL1008PredefinedPdoAssignment {

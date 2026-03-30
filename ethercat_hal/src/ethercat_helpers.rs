@@ -1,5 +1,7 @@
 use crate::{
-    ChannelRequest, ChannelResponse, EtherCATState, EtherCATThreadChannel, EtherCATThreadResponseChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType, get_async_runtime
+    ChannelRequest, ChannelResponse, EtherCATState, EtherCATThreadChannel,
+    EtherCATThreadResponseChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType,
+    get_async_runtime,
 };
 use ethercrab::{
     EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
@@ -195,12 +197,10 @@ impl EtherCATThreadChannel {
         }
     }
 
-    pub fn request_state_change(&self,state : EtherCATState) -> Result<(), anyhow::Error> {
+    pub fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
-            channel_request: crate::ChannelRequests::ChangeState(
-                state,
-            ),
+            channel_request: crate::ChannelRequests::ChangeState(state),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
         let _res = self.0.send(req);
@@ -208,13 +208,9 @@ impl EtherCATThreadChannel {
         Ok(())
     }
 
-    pub fn is_state(&self, state : EtherCATState){
-        
-    }
+    pub fn is_state(&self, state: EtherCATState) {}
 
-    pub fn enable_dc_sync0(&self){
-
-    }
+    pub fn enable_dc_sync0(&self) {}
 }
 
 pub fn type_id_to_sdo_type<T: 'static>() -> Result<SdoType, anyhow::Error> {

@@ -16,10 +16,8 @@ use controller::EtherCATAppHandle;
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
 use std::sync::mpsc;
-use std::{
-    sync::{Arc, OnceLock, mpsc::Sender},
-};
-use std::{thread::JoinHandle};
+use std::sync::{Arc, OnceLock, mpsc::Sender};
+use std::thread::JoinHandle;
 use tokio::runtime::Runtime;
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -46,12 +44,20 @@ pub struct EtherCATThreadChannel(pub Sender<ChannelRequest>);
 #[derive(Clone)]
 pub struct EtherCATThreadResponseChannel(pub Sender<ChannelResponse>);
 
+pub struct EtherCATControl {
+    pub controller : Arc<EtherCATController>,
+    pub channel : EtherCATThreadChannel,
+    pub app_handle : EtherCATAppHandle,
+    pub join_handle : JoinHandle<()>,
+}
+
 /*
     Metadata for a Subdevice
     Contains start and end of the given subdevices pdu
 */
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Clone,Copy,Debug)]
 pub struct MetaSubdevice {
+    pub name : [u8;128],
     pub product_id: u32,
     pub revision: u32,
     pub vendor: u32,
@@ -65,6 +71,26 @@ pub struct MetaSubdevice {
     pub device_address: u16,
     pub initialized: bool,
 }
+
+
+impl MetaSubdevice {
+    pub fn get_name(&self) -> Result<String,anyhow::Error> {
+        let trimmed = self.name.iter()
+            .take_while(|&&b| b != 0)
+            .cloned()
+            .collect::<Vec<u8>>();
+        Ok(String::from_utf8(trimmed)?)          
+    }
+} 
+
+
+impl Default for MetaSubdevice {
+    fn default() -> Self {
+        Self { 
+            name: [0u8;128], product_id: Default::default(), revision: Default::default(), vendor: Default::default(), start_tx: Default::default(), end_tx: Default::default(), start_rx: Default::default(), end_rx: Default::default(), device_address: Default::default(), initialized: Default::default() }
+    }
+}
+
 
 #[derive(Debug)]
 pub enum EtherCATState {
@@ -140,35 +166,28 @@ pub fn send_response(response_channel: EtherCATThreadResponseChannel, response: 
 
 pub fn start_ethercat_thread(
     interface_name: &str,
-) -> (
-    (Arc<EtherCATController>,EtherCATAppHandle, EtherCATThreadChannel),
-    JoinHandle<()>,
-) {
+) -> EtherCATControl {
     let (tx, rx) = mpsc::channel();
 
-    let (input_producer, input_consumer) = triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
-    let (output_producer, output_consumer) = triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
-    
-    let controller = Arc::new(EtherCATController {
-        interface: Some(interface_name.to_owned()),
-        cycle_time_us: 0,
-        state: EtherCATState::NoInterface,
-        requested_state: None,
-        rx_channel: rx,        
-        subdevices: [MetaSubdevice::default(); 256],
-        subdevice_count: 0,
-        input_producer,
-        output_consumer,
-    });
+    let (input_producer, input_consumer) =
+        triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
+    let (output_producer, output_consumer) =
+        triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
+
+    let controller = Arc::new(
+        EtherCATController::new(input_producer,output_consumer,rx,Some(interface_name.to_string()))
+    );
 
     let app_handle = EtherCATAppHandle {
         input_consumer,
         output_producer,
     };
-    
+
+    let channel : EtherCATThreadChannel = EtherCATThreadChannel(tx); 
+
     let controller_for_thread = Arc::clone(&controller);
 
-    let handle = std::thread::Builder::new()
+    let join_handle = std::thread::Builder::new()
         .name("EthercatStateMachine".into())
         .spawn(move || {
             // We need &mut self for the state machine.
@@ -178,6 +197,5 @@ pub fn start_ethercat_thread(
             }
         })
         .expect("Failed to spawn thread");
-
-    ((controller, app_handle ,EtherCATThreadChannel(tx)), handle)
+    EtherCATControl { controller:controller, channel, app_handle, join_handle}    
 }

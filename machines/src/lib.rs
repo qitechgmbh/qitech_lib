@@ -1,13 +1,13 @@
 use std::{any::TypeId, collections::HashMap};
 const MAX_DATA_LEN: usize = 2048; // Adjust to your largest struct size
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone,PartialEq,Eq, Copy, Debug,Hash)]
 pub struct MachineIdentificationUnique {
     pub machine_ident: MachineIdentification,
     pub serial: u32,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone,PartialEq,Eq, Copy, Debug,Hash)]
 pub struct MachineIdentification {
     pub vendor: u16,
     pub machine: u16,
@@ -40,7 +40,19 @@ pub struct MachineData {
 */
 pub struct MachineDataRegistry {
     // Each slot is a fixed-size buffer
-    pub storage: HashMap<MachineIdentificationUnique, [u8; MAX_DATA_LEN]>,
+    pub storage: HashMap<MachineIdentificationUnique, MachineData>,
+}
+
+impl MachineDataRegistry {
+    pub fn zero_entry(&mut self, ident : MachineIdentificationUnique) {
+        match self.storage.get_mut(&ident) {
+            Some(m) => {
+                m.length = 0;
+                m.data.fill(0);
+            },
+            None => (),
+        }   
+    }
 }
 
 pub trait Machine {
@@ -48,5 +60,3 @@ pub trait Machine {
     fn react(&mut self, registry: &MachineDataRegistry);
     fn get_identification(&self) -> MachineIdentificationUnique;
 }
-
-

@@ -1,12 +1,11 @@
 use crate::{
-    ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE,
-    EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType,
+    ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE, EtherCATState,
+    MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType,
     ethercat_helpers::{sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::read_device_identifications,
     send_response,
 };
-use triple_buffer::{Input, Output};
 use ethercrab::{
     DcSync, MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup,
     Timeouts,
@@ -14,28 +13,45 @@ use ethercrab::{
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
 };
 use std::{
-    cell::UnsafeCell,
-    sync::{atomic::Ordering, mpsc::Receiver},
+    sync::{mpsc::Receiver},
     thread::JoinHandle,
     time::{Duration, Instant},
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::time::interval;
+use triple_buffer::{Input, Output};
 
 pub struct EtherCATController {
     pub cycle_time_us: u64,
     pub interface: Option<String>,
-    pub state: EtherCATState,
-    pub requested_state: Option<EtherCATState>,
-    pub rx_channel: Receiver<ChannelRequest>,
     
-    pub input_producer: Input<[u8; ETHERCAT_TX_RX_SIZE]>,
-    pub output_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
-
     pub subdevices: [MetaSubdevice; 256],
     pub subdevice_count: usize,
+
+    state: EtherCATState,
+    requested_state: Option<EtherCATState>,
+    rx_channel: Receiver<ChannelRequest>,
+
+    input_producer: Input<[u8; ETHERCAT_TX_RX_SIZE]>,
+    output_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,   
 }
 
+
+impl EtherCATController {
+    pub fn new(input : Input<[u8; ETHERCAT_TX_RX_SIZE]>, output : Output<[u8; ETHERCAT_TX_RX_SIZE]>, rx : Receiver<ChannelRequest>, interface : Option<String> ) -> Self {
+        Self {
+            cycle_time_us: 0,
+            interface,
+            subdevices: [ MetaSubdevice::default(); 256] ,
+            subdevice_count: 0,
+            state: EtherCATState::NoInterface,
+            requested_state: None,
+            rx_channel: rx,
+            input_producer: input,
+            output_consumer: output,
+        }
+    }
+}
 
 pub struct EtherCATAppHandle {
     pub input_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
@@ -47,8 +63,8 @@ impl EtherCATAppHandle {
         self.input_consumer.read()
     }
 
-    pub fn write_outputs(&mut self) -> &mut [u8;ETHERCAT_TX_RX_SIZE] {
-        self.output_producer.input_buffer_mut() 
+    pub fn write_outputs(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
+        self.output_producer.input_buffer_mut()
     }
 
     pub fn send_outputs(&mut self) {
@@ -172,6 +188,10 @@ impl EtherCATController {
 
                     let mut i = 0;
                     for subdevice in preop_group.iter(&maindev) {
+                        let bytes = subdevice.name().as_bytes();
+                        let len = std::cmp::min(bytes.len(), 128);
+                        // Copy the slice into the array
+                        self.subdevices[i].name[..len].copy_from_slice(&bytes[..len]);
                         self.subdevices[i].product_id = subdevice.identity().product_id;
                         self.subdevices[i].revision = subdevice.identity().revision;
                         self.subdevices[i].vendor = subdevice.identity().vendor_id;
@@ -464,7 +484,7 @@ impl EtherCATController {
                             let now = tokio::time::Instant::now();
                             (res, now)
                         });
-                        
+
                         let full_buffer = self.input_producer.input_buffer_mut();
                         // We get a mutable slice to the whole buffer to make sub-slicing easier
                         let mut current_offset = 0;
@@ -479,7 +499,6 @@ impl EtherCATController {
                                 break;
                             }
                         }
-                        
 
                         self.input_producer.publish();
 
@@ -497,7 +516,7 @@ impl EtherCATController {
                                 &full_buffer[current_offset..current_offset + len],
                             );
                             current_offset += len;
-                        }                        
+                        }
                         self.cycle_time_us = now.elapsed().as_micros() as u64;
                     }
                 }
