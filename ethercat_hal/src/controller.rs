@@ -189,7 +189,7 @@ impl EtherCATController {
                     let mut i = 0;
                     for subdevice in preop_group.iter(&maindev) {
                         let bytes = subdevice.name().as_bytes();
-                        let len = std::cmp::min(bytes.len(), 128);
+                        let len = std::cmp::min(bytes.len(), 127);
                         // Copy the slice into the array
                         self.subdevices[i].name[..len].copy_from_slice(&bytes[..len]);
                         self.subdevices[i].product_id = subdevice.identity().product_id;
@@ -203,6 +203,7 @@ impl EtherCATController {
                         Ok(value) => value,
                         Err(_) => continue,
                     };
+
 
                     match msg.channel_request {
                         ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {

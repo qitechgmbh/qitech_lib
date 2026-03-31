@@ -1,13 +1,13 @@
 use crate::{MAX_SUBDEVICES, PDI_LEN, get_async_runtime};
 use ethercrab::{MainDevice, SubDeviceGroup};
 
-#[derive(Debug)]
+#[derive(Debug,Copy,Clone)]
 pub struct MachineDeviceInfo {
     pub role: u16,
     pub machine_id: u16,
     pub machine_vendor: u16,
     pub machine_serial: u16,
-    pub device_address: usize,
+    pub device_address: u16,
 }
 
 pub struct MachineDeviceAddresses {
@@ -59,7 +59,7 @@ pub fn read_device_identifications(
                 machine_vendor: vendor,
                 machine_serial: serial,
                 machine_id: machine,
-                device_address: subdevice.configured_address() as usize,
+                device_address: subdevice.configured_address(),
             });
         }
         // Return the successfully populated vector wrapped in Ok

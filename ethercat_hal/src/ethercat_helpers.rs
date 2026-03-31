@@ -228,7 +228,6 @@ impl EtherCATThreadChannel {
             response_channel: EtherCATThreadResponseChannel(tx),
         };
         let _res = self.0.send(req);
-        let _res = rx.recv();
         Ok(())
     }
 

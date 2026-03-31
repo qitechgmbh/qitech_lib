@@ -75,10 +75,12 @@ pub struct MetaSubdevice {
 
 impl MetaSubdevice {
     pub fn get_name(&self) -> Result<String,anyhow::Error> {
+        
         let trimmed = self.name.iter()
-            .take_while(|&&b| b != 0)
+            .take_while(|&&b| b != b'\0')
             .cloned()
             .collect::<Vec<u8>>();
+        
         Ok(String::from_utf8(trimmed)?)          
     }
 } 
@@ -87,7 +89,17 @@ impl MetaSubdevice {
 impl Default for MetaSubdevice {
     fn default() -> Self {
         Self { 
-            name: [0u8;128], product_id: Default::default(), revision: Default::default(), vendor: Default::default(), start_tx: Default::default(), end_tx: Default::default(), start_rx: Default::default(), end_rx: Default::default(), device_address: Default::default(), initialized: Default::default() }
+            name: [0u8;128], 
+            product_id: Default::default(), 
+            revision: Default::default(), 
+            vendor: Default::default(), 
+            start_tx: Default::default(), 
+            end_tx: Default::default(), 
+            start_rx: Default::default(), 
+            end_rx: Default::default(), 
+            device_address: Default::default(), 
+            initialized: Default::default() 
+        }
     }
 }
 
