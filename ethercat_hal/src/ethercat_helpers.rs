@@ -222,7 +222,7 @@ impl EtherCATThreadChannel {
     }
 
     pub fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error> {
-        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
+        let (tx, _rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::ChangeState(state),
             response_channel: EtherCATThreadResponseChannel(tx),

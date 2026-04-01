@@ -264,6 +264,11 @@ where
 pub fn downcast_rc_refcell<T: 'static>(
     dev: Rc<RefCell<dyn EthercatDevice>>,
 ) -> Result<Rc<RefCell<T>>, anyhow::Error> {
+    
+    {
+        println!("type: {:?}",dev.borrow().as_any().type_id());
+    }
+
     // Check if the inner type is actually T
     let is_t = dev.borrow().as_any().is::<T>();
     if !is_t {

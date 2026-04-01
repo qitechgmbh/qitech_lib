@@ -75,12 +75,10 @@ pub struct MetaSubdevice {
 
 impl MetaSubdevice {
     pub fn get_name(&self) -> Result<String,anyhow::Error> {
-        
         let trimmed = self.name.iter()
             .take_while(|&&b| b != b'\0')
             .cloned()
-            .collect::<Vec<u8>>();
-        
+            .collect::<Vec<u8>>();        
         Ok(String::from_utf8(trimmed)?)          
     }
 } 

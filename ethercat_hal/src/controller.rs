@@ -24,7 +24,7 @@ use triple_buffer::{Input, Output};
 pub struct EtherCATController {
     pub cycle_time_us: u64,
     pub interface: Option<String>,
-    
+
     pub subdevices: [MetaSubdevice; 256],
     pub subdevice_count: usize,
 
@@ -87,18 +87,14 @@ pub fn enable_dc_sync(
     });
 }
 
-// We handle sync through double buffering and an atomic flag
 unsafe impl Sync for EtherCATController {}
-unsafe impl Send for EtherCATController {}
 
 impl EtherCATController {
     pub fn ethercat_state_machine(&mut self) {
         let mut ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>> = None;
         let mut group_preop_pdi: SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, NoDc>;
-        let mut group_preop_pdi_dc: Option<
-            SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, HasDc>,
-        > = None;
+        let mut group_preop_pdi_dc: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, HasDc>> = None;
         let mut group_op: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, Op, HasDc>> = None;
         let mut maindevice: Option<MainDevice> = None;
         loop {
@@ -198,7 +194,7 @@ impl EtherCATController {
                         self.subdevices[i].device_address = subdevice.configured_address();
                         i += 1;
                     }
-
+                    self.subdevice_count = i;
                     let msg = match self.rx_channel.try_recv() {
                         Ok(value) => value,
                         Err(_) => continue,
@@ -472,7 +468,6 @@ impl EtherCATController {
                                 tx_offset += length_tx;
                                 i += 1;
                             }
-                            self.subdevice_count = i;
                             println!("ALL OP");
                             break;
                         }
