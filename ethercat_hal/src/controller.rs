@@ -13,7 +13,7 @@ use ethercrab::{
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
 };
 use std::{
-    sync::{mpsc::Receiver},
+    sync::mpsc::Receiver,
     thread::JoinHandle,
     time::{Duration, Instant},
 };
@@ -33,16 +33,20 @@ pub struct EtherCATController {
     rx_channel: Receiver<ChannelRequest>,
 
     input_producer: Input<[u8; ETHERCAT_TX_RX_SIZE]>,
-    output_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,   
+    output_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
 }
 
-
 impl EtherCATController {
-    pub fn new(input : Input<[u8; ETHERCAT_TX_RX_SIZE]>, output : Output<[u8; ETHERCAT_TX_RX_SIZE]>, rx : Receiver<ChannelRequest>, interface : Option<String> ) -> Self {
+    pub fn new(
+        input: Input<[u8; ETHERCAT_TX_RX_SIZE]>,
+        output: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
+        rx: Receiver<ChannelRequest>,
+        interface: Option<String>,
+    ) -> Self {
         Self {
             cycle_time_us: 0,
             interface,
-            subdevices: [ MetaSubdevice::default(); 256] ,
+            subdevices: [MetaSubdevice::default(); 256],
             subdevice_count: 0,
             state: EtherCATState::NoInterface,
             requested_state: None,
@@ -94,7 +98,9 @@ impl EtherCATController {
         let mut ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>> = None;
         let mut group_preop_pdi: SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, NoDc>;
-        let mut group_preop_pdi_dc: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, HasDc>> = None;
+        let mut group_preop_pdi_dc: Option<
+            SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, HasDc>,
+        > = None;
         let mut group_op: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, Op, HasDc>> = None;
         let mut maindevice: Option<MainDevice> = None;
         loop {
@@ -199,7 +205,6 @@ impl EtherCATController {
                         Ok(value) => value,
                         Err(_) => continue,
                     };
-
 
                     match msg.channel_request {
                         ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {

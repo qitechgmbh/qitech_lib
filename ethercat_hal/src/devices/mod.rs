@@ -51,7 +51,6 @@ use el6021::{EL6021_IDENTITY_A, EL6021_IDENTITY_B, EL6021_IDENTITY_C, EL6021_IDE
 use el7031::{EL7031_IDENTITY_A, EL7031_IDENTITY_B};
 use el7031_0030::EL7031_0030_IDENTITY_A;
 use el7041_0052::EL7041_0052_IDENTITY_A;
-use std::any::TypeId;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::{any::Any, fmt::Debug};
@@ -264,11 +263,6 @@ where
 pub fn downcast_rc_refcell<T: 'static>(
     dev: Rc<RefCell<dyn EthercatDevice>>,
 ) -> Result<Rc<RefCell<T>>, anyhow::Error> {
-    
-    {
-        println!("type: {:?}",dev.borrow().as_any().type_id());
-    }
-
     // Check if the inner type is actually T
     let is_t = dev.borrow().as_any().is::<T>();
     if !is_t {

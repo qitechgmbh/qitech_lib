@@ -275,7 +275,6 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
             fn set_module(&mut self,module : crate::devices::Module){
                 ()
             }
-
         }
 
         impl crate::devices::EthercatDeviceUsed for #name {

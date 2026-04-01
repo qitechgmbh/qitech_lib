@@ -1,7 +1,7 @@
 use crate::{MAX_SUBDEVICES, PDI_LEN, get_async_runtime};
 use ethercrab::{MainDevice, SubDeviceGroup};
 
-#[derive(Debug,Copy,Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct MachineDeviceInfo {
     pub role: u16,
     pub machine_id: u16,
