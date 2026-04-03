@@ -250,8 +250,8 @@ pub enum Wago750_652Port {
     SI1, // Serial
 }
 
-impl SerialInterfaceDevice<Wago750_652Port> for Wago750_652 {
-    fn serial_interface_read_message(&mut self, port: Wago750_652Port) -> Option<Vec<u8>> {
+impl SerialInterfaceDevice for Wago750_652 {
+    fn serial_interface_read_message(&mut self, port: usize) -> Option<Vec<u8>> {
         if !self.serial_interface_has_messages(port) {
             return None;
         } else {
@@ -271,7 +271,7 @@ impl SerialInterfaceDevice<Wago750_652Port> for Wago750_652 {
 
     fn serial_interface_write_message(
         &mut self,
-        _port: Wago750_652Port,
+        _port: usize,
         message: Vec<u8>,
     ) -> Result<bool, anyhow::Error> {
         if message.len() > WAGO750_652_MAX_BUF_LENGTH {
@@ -292,18 +292,18 @@ impl SerialInterfaceDevice<Wago750_652Port> for Wago750_652 {
         Ok(true)
     }
 
-    fn serial_interface_has_messages(&mut self, _port: Wago750_652Port) -> bool {
+    fn serial_interface_has_messages(&mut self, _port: usize) -> bool {
         return self.tx_pdo.status.receive_request != self.has_messages_last_toggle;
     }
 
     fn get_serial_encoding(
         &self,
-        _port: Wago750_652Port,
+        _port: usize,
     ) -> Option<crate::io::serial_interface::SerialEncoding> {
         None
     }
 
-    fn get_baudrate(&self, _port: Wago750_652Port) -> Option<u32> {
+    fn get_baudrate(&self, _port: usize) -> Option<u32> {
         // Right now we cant change it on the fly because WAGO ONLY supports setting via
         // Codesys OR WAGO I/O Check the way it is set with Codesys is also NOT documented ...
         // My Hunch is that the 0x2010 0x2011 register can be used to configure that with COE its not documented though
@@ -313,9 +313,7 @@ impl SerialInterfaceDevice<Wago750_652Port> for Wago750_652 {
     /*
         Needs to be called multiple times until it returns true, at which point it is ready to be used
     */
-    fn serial_interface_initialize(&mut self, port: Wago750_652Port) -> bool {
-        match port {
-            Wago750_652Port::SI1 => {
+    fn serial_interface_initialize(&mut self, _port: usize) -> bool {
                 if !self.rx_pdo.control.init_request
                     && !self.tx_pdo.status.init_ack
                     && !self.started_init
@@ -342,8 +340,8 @@ impl SerialInterfaceDevice<Wago750_652Port> for Wago750_652 {
                     return true;
                 }
                 false
-            }
-        }
+            
+        
     }
 }
 
