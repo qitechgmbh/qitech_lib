@@ -422,8 +422,8 @@ pub enum EL6021Port {
     SI1, // Serial
 }
 
-impl SerialInterfaceDevice<EL6021Port> for EL6021 {
-    fn serial_interface_has_messages(&mut self, _port: EL6021Port) -> bool {
+impl SerialInterfaceDevice for EL6021 {
+    fn serial_interface_has_messages(&mut self, _port: usize) -> bool {
         if let Some(tx_pdo) = &mut self.txpdo.com_tx_pdo_map_22_byte {
             // Only check if the bit has changed, don't update our state yet
             return tx_pdo.status.receive_request != self.has_messages_last_toggle;
@@ -431,8 +431,8 @@ impl SerialInterfaceDevice<EL6021Port> for EL6021 {
         false
     }
 
-    fn serial_interface_read_message(&mut self, _port: EL6021Port) -> Option<Vec<u8>> {
-        if !self.serial_interface_has_messages(_port) {
+    fn serial_interface_read_message(&mut self, _port: usize) -> Option<Vec<u8>> {
+        if !self.serial_interface_has_messages(0) {
             return None;
         }
 
@@ -464,7 +464,7 @@ impl SerialInterfaceDevice<EL6021Port> for EL6021 {
 
     fn serial_interface_write_message(
         &mut self,
-        _port: EL6021Port,
+        _port: usize,
         message: Vec<u8>,
     ) -> Result<bool, Error> {
         let tx_pdo_opt = &mut self.txpdo.com_tx_pdo_map_22_byte;
@@ -499,32 +499,29 @@ impl SerialInterfaceDevice<EL6021Port> for EL6021 {
         Ok(true)
     }
 
-    fn get_baudrate(&self, _port: EL6021Port) -> Option<u32> {
+    fn get_baudrate(&self, _port: usize) -> Option<u32> {
         let baudrate: u32 = self.configuration.baud_rate.into();
         Some(baudrate)
     }
 
-    fn get_serial_encoding(&self, _port: EL6021Port) -> Option<SerialEncoding> {
+    fn get_serial_encoding(&self, _port: usize) -> Option<SerialEncoding> {
         Some(self.configuration.data_frame)
     }
 
     /// For el6021 this returns false for as long as the Initialization takes
     /// When its finished it returns true    
     /// Every step of the init has to be done in an EtherCatCycle
-    fn serial_interface_initialize(&mut self, port: EL6021Port) -> bool {
-        match port {
-            EL6021Port::SI1 => {
-                let rxpdo_opt = &mut self.rxpdo.com_rx_pdo_map_22_byte;
-
-                let rxpdo = match rxpdo_opt {
-                    Some(rxpdo_opt) => rxpdo_opt,
-                    None => return false,
-                };
-                let txpdo_opt = &mut self.txpdo.com_tx_pdo_map_22_byte;
-                let txpdo = match txpdo_opt {
-                    Some(txpdo_opt) => txpdo_opt,
-                    None => return false,
-                };
+    fn serial_interface_initialize(&mut self, _port: usize) -> bool {
+        let rxpdo_opt = &mut self.rxpdo.com_rx_pdo_map_22_byte;
+        let rxpdo = match rxpdo_opt {
+            Some(rxpdo_opt) => rxpdo_opt,
+            None => return false,
+        };
+        let txpdo_opt = &mut self.txpdo.com_tx_pdo_map_22_byte;
+        let txpdo = match txpdo_opt {
+            Some(txpdo_opt) => txpdo_opt,
+            None => return false,
+        };
 
                 /*
                 Initialization was accepted
@@ -536,10 +533,10 @@ impl SerialInterfaceDevice<EL6021Port> for EL6021 {
                     of the initialization will be acknowledged by the terminal
                     with the ‘Init accepted’ bit.
                 */
-                if rxpdo.control.init_request && txpdo.status.init_accepted {
-                    rxpdo.control.init_request = false;
-                    return false;
-                }
+        if rxpdo.control.init_request && txpdo.status.init_accepted {
+            rxpdo.control.init_request = false;
+            return false;
+        }
 
                 /*
                     This is the initial state
@@ -572,8 +569,8 @@ impl SerialInterfaceDevice<EL6021Port> for EL6021 {
                 }
 
                 false
-            }
-        }
+            
+        
     }
 }
 

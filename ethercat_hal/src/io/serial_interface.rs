@@ -1,147 +1,17 @@
 use anyhow::Error;
-use smol::lock::RwLock;
-use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
-pub struct SerialInterface {
-    pub has_message: Box<dyn Fn() -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync>,
-    pub write_message: Box<
-        dyn Fn(Vec<u8>) -> Pin<Box<dyn Future<Output = Result<bool, Error>> + Send>> + Send + Sync,
-    >,
-    pub read_message:
-        Box<dyn Fn() -> Pin<Box<dyn Future<Output = Option<Vec<u8>>> + Send>> + Send + Sync>,
-
-    pub get_baudrate:
-        Box<dyn Fn() -> Pin<Box<dyn Future<Output = Option<u32>> + Send>> + Send + Sync>,
-
-    pub get_serial_encoding:
-        Box<dyn Fn() -> Pin<Box<dyn Future<Output = Option<SerialEncoding>> + Send>> + Send + Sync>,
-
-    pub initialize: Box<dyn Fn() -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync>,
-}
-
-impl fmt::Debug for SerialInterface {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "SerialInterface")
-    }
-}
-
-impl SerialInterface {
-    pub fn new<PORT>(device: Arc<RwLock<dyn SerialInterfaceDevice<PORT>>>, port: PORT) -> Self
-    where
-        PORT: Clone + Send + Sync + 'static,
-    {
-        let mut port2 = port.clone();
-        let mut device2 = device.clone();
-
-        let read_message = Box::new(
-            move || -> Pin<Box<dyn Future<Output = Option<Vec<u8>>> + Send>> {
-                let device2 = device2.clone();
-                let port_clone = port2.clone();
-
-                Box::pin(async move {
-                    let mut device = device2.write().await;
-                    device.serial_interface_read_message(port_clone)
-                })
-            },
-        );
-
-        port2 = port.clone();
-        device2 = device.clone();
-
-        let write_message = Box::new(
-            move |message: Vec<u8>| -> Pin<Box<dyn Future<Output = Result<bool, Error>> + Send>> {
-                let device2 = device2.clone();
-                let port_clone = port2.clone();
-                let message2 = message;
-
-                Box::pin(async move {
-                    let mut device = device2.write().await;
-                    device.serial_interface_write_message(port_clone, message2)
-                })
-            },
-        );
-
-        port2 = port.clone();
-        device2 = device.clone();
-
-        let has_message = Box::new(move || -> Pin<Box<dyn Future<Output = bool> + Send>> {
-            let device2 = device2.clone();
-            let port_clone = port2.clone();
-
-            Box::pin(async move {
-                let mut device = device2.write().await;
-                device.serial_interface_has_messages(port_clone)
-            })
-        });
-
-        port2 = port.clone();
-        device2 = device.clone();
-
-        let get_baudrate = Box::new(
-            move || -> Pin<Box<dyn Future<Output = Option<u32>> + Send>> {
-                let device2 = device2.clone();
-                let port_clone = port2.clone();
-
-                Box::pin(async move {
-                    let device = device2.write().await;
-                    device.get_baudrate(port_clone)
-                })
-            },
-        );
-
-        port2 = port.clone();
-        device2 = device.clone();
-
-        let get_serial_encoding = Box::new(
-            move || -> Pin<Box<dyn Future<Output = Option<SerialEncoding>> + Send>> {
-                let device2 = device2.clone();
-                let port_clone = port2.clone();
-
-                Box::pin(async move {
-                    let device = device2.write().await;
-                    device.get_serial_encoding(port_clone)
-                })
-            },
-        );
-
-        port2 = port;
-        device2 = device.clone();
-
-        let initialize = Box::new(move || -> Pin<Box<dyn Future<Output = bool> + Send>> {
-            let device2 = device2.clone();
-            let port_clone = port2.clone();
-
-            Box::pin(async move {
-                let mut device = device2.write().await;
-                device.serial_interface_initialize(port_clone)
-            })
-        });
-
-        Self {
-            has_message,
-            write_message,
-            read_message,
-            get_baudrate,
-            get_serial_encoding,
-            initialize,
-        }
-    }
-}
-
-pub trait SerialInterfaceDevice<PORTS>: Send + Sync
-where
-    PORTS: Clone,
+pub trait SerialInterfaceDevice
 {
-    fn serial_interface_read_message(&mut self, port: PORTS) -> Option<Vec<u8>>;
+    fn serial_interface_read_message(&mut self, port: usize) -> Option<Vec<u8>>;
     fn serial_interface_write_message(
         &mut self,
-        port: PORTS,
+        port: usize,
         message: Vec<u8>,
     ) -> Result<bool, Error>;
-    fn serial_interface_has_messages(&mut self, port: PORTS) -> bool;
-    fn get_serial_encoding(&self, port: PORTS) -> Option<SerialEncoding>;
-    fn get_baudrate(&self, port: PORTS) -> Option<u32>;
-    fn serial_interface_initialize(&mut self, port: PORTS) -> bool;
+    fn serial_interface_has_messages(&mut self, port: usize) -> bool;
+    fn get_serial_encoding(&self, port: usize) -> Option<SerialEncoding>;
+    fn get_baudrate(&self, port: usize) -> Option<u32>;
+    fn serial_interface_initialize(&mut self, port: usize) -> bool;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
