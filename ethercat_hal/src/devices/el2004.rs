@@ -1,5 +1,5 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
-use crate::io::digital_output::{DigitalOutputDevice, DigitalOutputOutput};
+use crate::io::digital_output::{DigitalOutputDevice};
 use crate::pdo::{RxPdo, basic::BoolPdoObject};
 use ethercat_hal_derive::{EthercatDevice, RxPdo};
 /// EL2004 4-channel digital output device
@@ -27,34 +27,29 @@ impl NewEthercatDevice for EL2004 {
     }
 }
 
-impl DigitalOutputDevice<EL2004Port> for EL2004 {
-    fn set_output(&mut self, port: EL2004Port, value: DigitalOutputOutput) {
+impl DigitalOutputDevice for EL2004 {
+    fn set_output(&mut self, port: usize, value: bool) {
         let expect_text = "All channels should be Some(_)";
         match port {
-            EL2004Port::DO1 => {
+            0 => {
                 self.rxpdo.channel1.as_mut().expect(expect_text).value = value.into()
             }
-            EL2004Port::DO2 => {
+            1 => {
                 self.rxpdo.channel2.as_mut().expect(expect_text).value = value.into()
             }
-            EL2004Port::DO3 => {
+            2 => {
                 self.rxpdo.channel3.as_mut().expect(expect_text).value = value.into()
             }
-            EL2004Port::DO4 => {
+            3 => {
                 self.rxpdo.channel4.as_mut().expect(expect_text).value = value.into()
             }
+            _ => (),
         }
     }
 
-    fn get_output(&self, port: EL2004Port) -> DigitalOutputOutput {
-        let expect_text = "All channels should be Some(_)";
-        DigitalOutputOutput(match port {
-            EL2004Port::DO1 => self.rxpdo.channel1.as_ref().expect(expect_text).value,
-            EL2004Port::DO2 => self.rxpdo.channel2.as_ref().expect(expect_text).value,
-            EL2004Port::DO3 => self.rxpdo.channel3.as_ref().expect(expect_text).value,
-            EL2004Port::DO4 => self.rxpdo.channel4.as_ref().expect(expect_text).value,
-        })
-    }
+    fn get_port_count(&self) -> usize {
+        4
+    }    
 }
 
 #[derive(Debug, Clone)]

@@ -59,10 +59,10 @@ impl NewEthercatDevice for EL3062_0030 {
     }
 }
 
-impl AnalogInputDevice<EL3062_0030Port> for EL3062_0030 {
-    fn get_input(&self, port: EL3062_0030Port) -> AnalogInputInput {
+impl AnalogInputDevice for EL3062_0030 {
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput,anyhow::Error> {
         let raw_value = match port {
-            EL3062_0030Port::AI1 => match &self.txpdo {
+            0 => match &self.txpdo {
                 EL3062_0030TxPdo {
                     ai_standard_channel1: Some(ai_standard_channel1),
                     ..
@@ -73,7 +73,7 @@ impl AnalogInputDevice<EL3062_0030Port> for EL3062_0030 {
                 } => ai_compact_channel1.value,
                 _ => panic!("Invalid TxPdo assignment"),
             },
-            EL3062_0030Port::AI2 => match &self.txpdo {
+            1 => match &self.txpdo {
                 EL3062_0030TxPdo {
                     ai_standard_channel2: Some(ai_standard_channel2),
                     ..
@@ -84,12 +84,14 @@ impl AnalogInputDevice<EL3062_0030Port> for EL3062_0030 {
                 } => ai_compact_channel2.value,
                 _ => panic!("Invalid TxPdo assignment"),
             },
+            _ => return Err(anyhow::anyhow!("EL3062_0030 only has TWO ports")),
         };
         let raw_value = U16SigningConverter::load_raw(raw_value);
 
         let presentation = match port {
-            EL3062_0030Port::AI1 => &self.configuration.channel_1.presentation,
-            EL3062_0030Port::AI2 => &self.configuration.channel_2.presentation,
+            0 => &self.configuration.channel_1.presentation,
+            1 => &self.configuration.channel_2.presentation,
+            _ => return Err(anyhow::anyhow!("EL3062_0030 only has TWO ports")),
         };
         let value: i16 = match presentation {
             EL30XXPresentation::Unsigned => raw_value.as_unsigned() as i16,
@@ -99,10 +101,14 @@ impl AnalogInputDevice<EL3062_0030Port> for EL3062_0030 {
 
         let normalized = f32::from(value) / f32::from(i16::MAX);
 
-        AnalogInputInput {
+        Ok(AnalogInputInput {
             normalized,
             wiring_error: false,
-        }
+        })
+    }
+
+    fn get_port_count(&self) -> usize {
+        2
     }
 
     fn analog_input_range(&self) -> AnalogInputRange {

@@ -77,10 +77,10 @@ impl NewEthercatDevice for EL3024 {
     }
 }
 
-impl AnalogInputDevice<EL3024Port> for EL3024 {
-    fn get_input(&self, port: EL3024Port) -> AnalogInputInput {
+impl AnalogInputDevice for EL3024 {
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput,anyhow::Error> {
         let raw_value = match port {
-            EL3024Port::AI1 => match &self.txpdo {
+            0 => match &self.txpdo {
                 EL3024TxPdo {
                     ai_standard_channel1: Some(ai_standard_channel1),
                     ..
@@ -91,7 +91,7 @@ impl AnalogInputDevice<EL3024Port> for EL3024 {
                 } => ai_compact_channel1.value,
                 _ => panic!("Invalid TxPdo assignment"),
             },
-            EL3024Port::AI2 => match &self.txpdo {
+            1 => match &self.txpdo {
                 EL3024TxPdo {
                     ai_standard_channel2: Some(ai_standard_channel2),
                     ..
@@ -102,7 +102,7 @@ impl AnalogInputDevice<EL3024Port> for EL3024 {
                 } => ai_compact_channel2.value,
                 _ => panic!("Invalid TxPdo assignment"),
             },
-            EL3024Port::AI3 => match &self.txpdo {
+            2 => match &self.txpdo {
                 EL3024TxPdo {
                     ai_standard_channel3: Some(ai_standard_channel3),
                     ..
@@ -113,7 +113,7 @@ impl AnalogInputDevice<EL3024Port> for EL3024 {
                 } => ai_compact_channel3.value,
                 _ => panic!("Invalid TxPdo assignment"),
             },
-            EL3024Port::AI4 => match &self.txpdo {
+            3 => match &self.txpdo {
                 EL3024TxPdo {
                     ai_standard_channel4: Some(ai_standard_channel4),
                     ..
@@ -124,14 +124,16 @@ impl AnalogInputDevice<EL3024Port> for EL3024 {
                 } => ai_compact_channel4.value,
                 _ => panic!("Invalid TxPdo assignment"),
             },
+            _ => return Err(anyhow::anyhow!("EL3024 only has 4 ports"))
         };
         let raw_value = U16SigningConverter::load_raw(raw_value);
 
         let presentation = match port {
-            EL3024Port::AI1 => self.configuration.channel1.presentation,
-            EL3024Port::AI2 => self.configuration.channel2.presentation,
-            EL3024Port::AI3 => self.configuration.channel3.presentation,
-            EL3024Port::AI4 => self.configuration.channel4.presentation,
+            0 => self.configuration.channel1.presentation,
+            1 => self.configuration.channel2.presentation,
+            2 => self.configuration.channel3.presentation,
+            3 => self.configuration.channel4.presentation,
+            _ => return Err(anyhow::anyhow!("EL3024 only has 4 ports")),
         };
 
         let value: i16 = match presentation {
@@ -141,10 +143,14 @@ impl AnalogInputDevice<EL3024Port> for EL3024 {
         };
 
         let normalized = f32::from(value) / f32::from(i16::MAX);
-        AnalogInputInput {
+        Ok(AnalogInputInput {
             normalized,
             wiring_error: false,
-        }
+        })
+    }
+
+    fn get_port_count(&self) -> usize {
+        4
     }
 
     fn analog_input_range(&self) -> AnalogInputRange {

@@ -1,4 +1,3 @@
-use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::pdo::PredefinedPdoAssignment;
 use crate::pdo::el70x1::{
     EncControl, EncControlCompact, EncStatus, EncStatusCompact, EncTimestampCompact, PosControl,

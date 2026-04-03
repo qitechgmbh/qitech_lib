@@ -3,7 +3,7 @@ use crate::devices::{
     SubDeviceProductTuple,
 };
 use crate::devices::{EthercatDeviceProcessing, NewEthercatDevice};
-use crate::io::digital_output::{DigitalOutputDevice, DigitalOutputOutput};
+use crate::io::digital_output::{DigitalOutputDevice};
 
 #[derive(Clone)]
 pub struct Wago750_530 {
@@ -53,63 +53,52 @@ pub struct Wago750_530RxPdo {
     pub port8: bool,
 }
 
-impl DigitalOutputDevice<Wago750_530Port> for Wago750_530 {
+impl DigitalOutputDevice for Wago750_530 {
     /// Writes the new output value into the device's RXPDO structure (in-memory PDI).
-    fn set_output(&mut self, port: Wago750_530Port, value: DigitalOutputOutput) {
-        // The DigitalOutputOutput is converted to a bool using the From trait
+    fn set_output(&mut self, port: usize, value: bool) {
         let output_value: bool = value.into();
         match port {
-            Wago750_530Port::Port1 => {
+            0 => {
                 // Modify the internal PDO representation
                 self.rxpdo.port1 = output_value;
             }
-            Wago750_530Port::Port2 => {
+            1 => {
                 // Modify the internal PDO representation
                 self.rxpdo.port2 = output_value;
             }
-            Wago750_530Port::Port3 => {
+            2 => {
                 // Modify the internal PDO representation
                 self.rxpdo.port3 = output_value;
             }
-            Wago750_530Port::Port4 => {
+            3 => {
                 // Modify the internal PDO representation
                 self.rxpdo.port4 = output_value;
             }
-            Wago750_530Port::Port5 => {
+            4 => {
                 // Modify the internal PDO representation
                 self.rxpdo.port5 = output_value;
             }
-            Wago750_530Port::Port6 => {
+            5 => {
                 // Modify the internal PDO representation
                 self.rxpdo.port6 = output_value;
             }
-            Wago750_530Port::Port7 => {
+            6 => {
                 // Modify the internal PDO representation
                 self.rxpdo.port7 = output_value;
             }
-            Wago750_530Port::Port8 => {
+            7 => {
                 // Modify the internal PDO representation
                 self.rxpdo.port8 = output_value;
             }
+            _ => (),
         }
     }
 
-    /// Reads the current output value from the device's RXPDO structure (in-memory PDI).
-    fn get_output(&self, port: Wago750_530Port) -> DigitalOutputOutput {
-        let current_value = match port {
-            Wago750_530Port::Port1 => self.rxpdo.port1,
-            Wago750_530Port::Port2 => self.rxpdo.port2,
-            Wago750_530Port::Port3 => self.rxpdo.port3,
-            Wago750_530Port::Port4 => self.rxpdo.port4,
-            Wago750_530Port::Port5 => self.rxpdo.port5,
-            Wago750_530Port::Port6 => self.rxpdo.port6,
-            Wago750_530Port::Port7 => self.rxpdo.port7,
-            Wago750_530Port::Port8 => self.rxpdo.port8,
-        };
-
-        // Wrap the bool back into the type-safe wrapper
-        DigitalOutputOutput(current_value)
+    fn get_port_count(&self) -> usize {
+        8
     }
+
+
 }
 
 impl EthercatDeviceUsed for Wago750_530 {

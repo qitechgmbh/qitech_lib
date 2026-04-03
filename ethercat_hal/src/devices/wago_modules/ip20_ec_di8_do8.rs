@@ -8,7 +8,7 @@ use crate::{
     helpers::ethercrab_types::EthercrabSubDevicePreoperational,
     io::{
         digital_input::DigitalInputDevice,
-        digital_output::{DigitalOutputDevice, DigitalOutputOutput},
+        digital_output::{DigitalOutputDevice,},
     },
 };
 use anyhow::Error;
@@ -281,34 +281,25 @@ impl DigitalInputDevice for IP20EcDi8Do8 {
     }
 }
 
-impl DigitalOutputDevice<IP20EcDi8Do8OutputPort> for IP20EcDi8Do8 {
-    fn set_output(&mut self, port: IP20EcDi8Do8OutputPort, value: DigitalOutputOutput) {
-        let output_value: bool = value.into();
+impl DigitalOutputDevice for IP20EcDi8Do8 {
+    fn set_output(&mut self, port: usize, value: bool) {
         match port {
-            IP20EcDi8Do8OutputPort::DO1 => self.rx_pdo.do1 = output_value,
-            IP20EcDi8Do8OutputPort::DO2 => self.rx_pdo.do2 = output_value,
-            IP20EcDi8Do8OutputPort::DO3 => self.rx_pdo.do3 = output_value,
-            IP20EcDi8Do8OutputPort::DO4 => self.rx_pdo.do4 = output_value,
-            IP20EcDi8Do8OutputPort::DO5 => self.rx_pdo.do5 = output_value,
-            IP20EcDi8Do8OutputPort::DO6 => self.rx_pdo.do6 = output_value,
-            IP20EcDi8Do8OutputPort::DO7 => self.rx_pdo.do7 = output_value,
-            IP20EcDi8Do8OutputPort::DO8 => self.rx_pdo.do8 = output_value,
+            0 => self.rx_pdo.do1 = value,
+            1 => self.rx_pdo.do2 = value,
+            2 => self.rx_pdo.do3 = value,
+            3 => self.rx_pdo.do4 = value,
+            4 => self.rx_pdo.do5 = value,
+            5 => self.rx_pdo.do6 = value,
+            6 => self.rx_pdo.do7 = value,
+            7 => self.rx_pdo.do8 = value,
+            _=>(),
         }
     }
 
-    fn get_output(&self, port: IP20EcDi8Do8OutputPort) -> DigitalOutputOutput {
-        let current_value = match port {
-            IP20EcDi8Do8OutputPort::DO1 => self.rx_pdo.do1,
-            IP20EcDi8Do8OutputPort::DO2 => self.rx_pdo.do2,
-            IP20EcDi8Do8OutputPort::DO3 => self.rx_pdo.do3,
-            IP20EcDi8Do8OutputPort::DO4 => self.rx_pdo.do4,
-            IP20EcDi8Do8OutputPort::DO5 => self.rx_pdo.do5,
-            IP20EcDi8Do8OutputPort::DO6 => self.rx_pdo.do6,
-            IP20EcDi8Do8OutputPort::DO7 => self.rx_pdo.do7,
-            IP20EcDi8Do8OutputPort::DO8 => self.rx_pdo.do8,
-        };
-        DigitalOutputOutput(current_value)
+    fn get_port_count(&self) -> usize {
+        8
     }
+
 }
 
 impl IP20EcDi8Do8 {

@@ -3,7 +3,7 @@ use crate::devices::{
     SubDeviceProductTuple,
 };
 use crate::devices::{EthercatDeviceProcessing, NewEthercatDevice};
-use crate::io::digital_output::{DigitalOutputDevice, DigitalOutputOutput};
+use crate::io::digital_output::{DigitalOutputDevice};
 
 #[derive(Clone)]
 pub struct Wago750_501 {
@@ -35,33 +35,28 @@ pub struct Wago750_501RxPdo {
     pub port2: bool,
 }
 
-impl DigitalOutputDevice<Wago750_501Port> for Wago750_501 {
+impl DigitalOutputDevice for Wago750_501 {
     /// Writes the new output value into the device's RXPDO structure (in-memory PDI).
-    fn set_output(&mut self, port: Wago750_501Port, value: DigitalOutputOutput) {
+    fn set_output(&mut self, port: usize, value: bool) {
         // The DigitalOutputOutput is converted to a bool using the From trait
         let output_value: bool = value.into();
         match port {
-            Wago750_501Port::Port1 => {
+            0 => {
                 // Modify the internal PDO representation
                 self.rxpdo.port1 = output_value;
             }
-            Wago750_501Port::Port2 => {
+            1 => {
                 // Modify the internal PDO representation
                 self.rxpdo.port2 = output_value;
             }
+            _=>(),
         }
     }
 
-    /// Reads the current output value from the device's RXPDO structure (in-memory PDI).
-    fn get_output(&self, port: Wago750_501Port) -> DigitalOutputOutput {
-        let current_value = match port {
-            Wago750_501Port::Port1 => self.rxpdo.port1,
-            Wago750_501Port::Port2 => self.rxpdo.port2,
-        };
-
-        // Wrap the bool back into the type-safe wrapper
-        DigitalOutputOutput(current_value)
+    fn get_port_count(&self) -> usize {
+        2
     }
+
 }
 
 impl EthercatDeviceUsed for Wago750_501 {

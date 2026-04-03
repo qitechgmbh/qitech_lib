@@ -68,38 +68,38 @@ impl NewEthercatDevice for EL3021 {
     }
 }
 
-impl AnalogInputDevice<EL3021Port> for EL3021 {
-    fn get_input(&self, port: EL3021Port) -> AnalogInputInput {
+impl AnalogInputDevice for EL3021 {
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput,anyhow::Error> {
         let raw_value = match port {
-            EL3021Port::AI1 => match &self.txpdo {
+            0 => match &self.txpdo {
                 EL3021TxPdo {
-                    ai_standard_channel1: Some(ai_standard_channel1),
+                    ai_standard_channel1: Some(ai_standard),
                     ..
-                } => ai_standard_channel1.value,
+                } => ai_standard.value,
                 EL3021TxPdo {
-                    ai_compact_channel1: Some(ai_compact_channel1),
+                    ai_compact_channel1: Some(ai_compact),
                     ..
-                } => ai_compact_channel1.value,
-                _ => panic!("Invalid TxPdo assignment"),
+                } => ai_compact.value,
+                _ => panic!("EL3001 only has one port"),
             },
+            _ => return Err(anyhow::anyhow!("EL3001 Only has ONE port")),
         };
+        let channel_config = &self.configuration.channel1;
         let raw_value = U16SigningConverter::load_raw(raw_value);
-
-        let presentation = match port {
-            EL3021Port::AI1 => self.configuration.channel1.presentation,
-        };
-
-        let value: i16 = match presentation {
+        let value: i16 = match channel_config.presentation {
             EL30XXPresentation::Unsigned => raw_value.as_unsigned() as i16,
             EL30XXPresentation::Signed => raw_value.as_signed(),
             EL30XXPresentation::SignedMagnitude => raw_value.as_signed_magnitude(),
         };
-
         let normalized = f32::from(value) / f32::from(i16::MAX);
-        AnalogInputInput {
+        Ok(AnalogInputInput {
             normalized,
             wiring_error: false,
-        }
+        })
+    }
+
+    fn get_port_count(&self) -> usize {
+        1
     }
 
     fn analog_input_range(&self) -> AnalogInputRange {

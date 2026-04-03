@@ -32,16 +32,17 @@ impl NewEthercatDevice for EL3204 {
     }
 }
 
-impl TemperatureInputDevice<EL3204Port> for EL3204 {
-    fn get_input(&self, port: EL3204Port) -> TemperatureInputInput {
+impl TemperatureInputDevice for EL3204 {
+    fn get_input(&self, port: usize) -> Result<TemperatureInputInput, anyhow::Error> {
         let expect_text = "All channels should be Some(_)";
         let channel = match port {
-            EL3204Port::T1 => self.txpdo.channel1.as_ref().expect(expect_text),
-            EL3204Port::T2 => self.txpdo.channel2.as_ref().expect(expect_text),
-            EL3204Port::T3 => self.txpdo.channel3.as_ref().expect(expect_text),
-            EL3204Port::T4 => self.txpdo.channel4.as_ref().expect(expect_text),
+            0 => self.txpdo.channel1.as_ref().expect(expect_text),
+            1 => self.txpdo.channel2.as_ref().expect(expect_text),
+            2 => self.txpdo.channel3.as_ref().expect(expect_text),
+            3 => self.txpdo.channel4.as_ref().expect(expect_text),
+            _ => return Err(anyhow::anyhow!("port {} does not exist on EL3204 !",port)),
         };
-        TemperatureInputInput {
+        Ok(TemperatureInputInput {
             temperature: channel.temperature,
             undervoltage: channel.undervoltage,
             overvoltage: channel.overvoltage,
@@ -50,7 +51,11 @@ impl TemperatureInputDevice<EL3204Port> for EL3204 {
             error: channel.error,
             txpdo_state: channel.txpdo_state,
             txpdo_toggle: channel.txpdo_toggle,
-        }
+        })
+    }
+
+    fn get_port_count(&self) -> usize {
+        4
     }
 }
 

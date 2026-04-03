@@ -7,7 +7,7 @@ use crate::{
     },
     io::{
         digital_input::DigitalInputDevice,
-        digital_output::{DigitalOutputDevice, DigitalOutputOutput},
+        digital_output::{DigitalOutputDevice},
     },
 };
 
@@ -110,38 +110,28 @@ impl DigitalInputDevice for Wago750_1506 {
     }
 }
 
-impl DigitalOutputDevice<Wago750_1506OutputPort> for Wago750_1506 {
+impl DigitalOutputDevice for Wago750_1506 {
     /// Writes the new output value into the device's RXPDO structure (in-memory PDI).
-    fn set_output(&mut self, port: Wago750_1506OutputPort, value: DigitalOutputOutput) {
+    fn set_output(&mut self, port: usize, value: bool) {
         // The DigitalOutputOutput is converted to a bool using the From trait
         let output_value: bool = value.into();
         match port {
-            Wago750_1506OutputPort::DO1 => self.rx_pdo.port1 = output_value,
-            Wago750_1506OutputPort::DO2 => self.rx_pdo.port2 = output_value,
-            Wago750_1506OutputPort::DO3 => self.rx_pdo.port3 = output_value,
-            Wago750_1506OutputPort::DO4 => self.rx_pdo.port4 = output_value,
-            Wago750_1506OutputPort::DO5 => self.rx_pdo.port5 = output_value,
-            Wago750_1506OutputPort::DO6 => self.rx_pdo.port6 = output_value,
-            Wago750_1506OutputPort::DO7 => self.rx_pdo.port7 = output_value,
-            Wago750_1506OutputPort::DO8 => self.rx_pdo.port8 = output_value,
+            0 => self.rx_pdo.port1 = output_value,
+            1 => self.rx_pdo.port2 = output_value,
+            2 => self.rx_pdo.port3 = output_value,
+            3 => self.rx_pdo.port4 = output_value,
+            4 => self.rx_pdo.port5 = output_value,
+            5 => self.rx_pdo.port6 = output_value,
+            6 => self.rx_pdo.port7 = output_value,
+            7 => self.rx_pdo.port8 = output_value,
+            _ => (),
         }
     }
 
-    /// Reads the current output value from the device's RXPDO structure (in-memory PDI).
-    fn get_output(&self, port: Wago750_1506OutputPort) -> DigitalOutputOutput {
-        let current_value = match port {
-            Wago750_1506OutputPort::DO1 => self.rx_pdo.port1,
-            Wago750_1506OutputPort::DO2 => self.rx_pdo.port2,
-            Wago750_1506OutputPort::DO3 => self.rx_pdo.port3,
-            Wago750_1506OutputPort::DO4 => self.rx_pdo.port4,
-            Wago750_1506OutputPort::DO5 => self.rx_pdo.port5,
-            Wago750_1506OutputPort::DO6 => self.rx_pdo.port6,
-            Wago750_1506OutputPort::DO7 => self.rx_pdo.port7,
-            Wago750_1506OutputPort::DO8 => self.rx_pdo.port8,
-        };
-        // Wrap the bool back into the type-safe wrapper
-        DigitalOutputOutput(current_value)
+    fn get_port_count(&self) -> usize {
+        8
     }
+
 }
 
 #[derive(Clone)]

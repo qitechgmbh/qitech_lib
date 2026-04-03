@@ -290,10 +290,10 @@ impl DigitalInputDevice for EL7031_0030 {
     }
 }
 
-impl AnalogInputDevice<EL7031_0030AnalogInputPort> for EL7031_0030 {
-    fn get_input(&self, port: EL7031_0030AnalogInputPort) -> AnalogInputInput {
+impl AnalogInputDevice for EL7031_0030 {
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput,anyhow::Error> {
         let (raw_value, wiring_error) = match port {
-            EL7031_0030AnalogInputPort::AI1 => match &self.txpdo {
+            0 => match &self.txpdo {
                 EL7031_0030TxPdo {
                     ai_standard_channel_1: Some(ai_standard_channel_1),
                     ..
@@ -302,9 +302,9 @@ impl AnalogInputDevice<EL7031_0030AnalogInputPort> for EL7031_0030 {
                     ai_compact_channel_1: Some(ai_compact_channel_1),
                     ..
                 } => (ai_compact_channel_1.value, false),
-                _ => panic!("Invalid TxPdo assignment"),
+                _ => return Err(anyhow::anyhow!("Invalid TxPdo assignment")),
             },
-            EL7031_0030AnalogInputPort::AI2 => match &self.txpdo {
+            1 => match &self.txpdo {
                 EL7031_0030TxPdo {
                     ai_standard_channel_2: Some(ai_standard_channel_2),
                     ..
@@ -313,17 +313,22 @@ impl AnalogInputDevice<EL7031_0030AnalogInputPort> for EL7031_0030 {
                     ai_compact_channel_2: Some(ai_compact_channel_2),
                     ..
                 } => (ai_compact_channel_2.value, false),
-                _ => panic!("Invalid TxPdo assignment"),
+                _ => return Err(anyhow::anyhow!("Invalid TxPdo assignment")),
             },
+            _ => return Err(anyhow::anyhow!("EL7031_0030 only has TWO AnalogInputs")),
         };
         let converted_raw_value = U16SigningConverter::load_raw(raw_value);
         let value: i16 = converted_raw_value.as_signed();
 
         let normalized = f32::from(value) / f32::from(i16::MAX);
-        AnalogInputInput {
+        Ok(AnalogInputInput {
             normalized,
             wiring_error,
-        }
+        })
+    }
+
+    fn get_port_count(&self) -> usize {
+        2
     }
 
     fn analog_input_range(&self) -> AnalogInputRange {

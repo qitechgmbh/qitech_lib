@@ -75,25 +75,26 @@ fn normalize_voltage_to_int(value: f32) -> i16 {
     (normalized * 32767.0) as i16
 }
 
-impl AnalogOutputDevice<EL4002Port> for EL4002 {
-    fn set_output(&mut self, port: EL4002Port, value: AnalogOutputOutput) {
+impl AnalogOutputDevice for EL4002 {
+    fn set_output(&mut self, port: usize, value: AnalogOutputOutput) {
         let value = normalize_voltage_to_int(value.0);
         match port {
-            EL4002Port::AO1 => {
+            0 => {
                 if let Some(channel) = self.rxpdo.ao_channel1.as_mut() {
                     channel.value = value
                 }
             }
-            EL4002Port::AO2 => {
+            1 => {
                 if let Some(channel) = self.rxpdo.ao_channel2.as_mut() {
                     channel.value = value
                 }
             }
+            _ => return (),
         }
     }
 
-    fn get_output(&self, _port: EL4002Port) -> AnalogOutputOutput {
-        AnalogOutputOutput(0.0) // Default value, should not be used
+    fn get_port_count(&self) -> usize {
+        2
     }
 }
 

@@ -46,10 +46,10 @@ impl NewEthercatDevice for EL3001 {
     }
 }
 
-impl AnalogInputDevice<EL3001Port> for EL3001 {
-    fn get_input(&self, port: EL3001Port) -> AnalogInputInput {
+impl AnalogInputDevice for EL3001 {
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput,anyhow::Error> {
         let raw_value = match port {
-            EL3001Port::AI1 => match &self.txpdo {
+            0 => match &self.txpdo {
                 EL3001TxPdo {
                     ai_standard: Some(ai_standard),
                     ..
@@ -58,12 +58,11 @@ impl AnalogInputDevice<EL3001Port> for EL3001 {
                     ai_compact: Some(ai_compact),
                     ..
                 } => ai_compact.value,
-                _ => panic!("Invalid TxPdo assignment"),
+                _ => panic!("EL3001 only has one port"),
             },
+            _ => return Err(anyhow::anyhow!("EL3001 Only has ONE port")),
         };
-        let channel_config = match port {
-            EL3001Port::AI1 => &self.configuration.channel_1,
-        };
+        let channel_config = &self.configuration.channel_1;
         let raw_value = U16SigningConverter::load_raw(raw_value);
         let value: i16 = match channel_config.presentation {
             EL30XXPresentation::Unsigned => raw_value.as_unsigned() as i16,
@@ -71,10 +70,10 @@ impl AnalogInputDevice<EL3001Port> for EL3001 {
             EL30XXPresentation::SignedMagnitude => raw_value.as_signed_magnitude(),
         };
         let normalized = f32::from(value) / f32::from(i16::MAX);
-        AnalogInputInput {
+        Ok(AnalogInputInput {
             normalized,
             wiring_error: false,
-        }
+        })
     }
 
     fn analog_input_range(&self) -> AnalogInputRange {
@@ -84,6 +83,10 @@ impl AnalogInputDevice<EL3001Port> for EL3001 {
             min_raw: i16::MIN,
             max_raw: i16::MAX,
         }
+    }
+
+    fn get_port_count(&self) -> usize {
+        1
     }
 }
 

@@ -1,7 +1,6 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::EtherCATThreadChannel;
 use crate::coe::{ConfigurableDevice, Configuration};
-use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::io::serial_interface::{SerialEncoding, SerialInterfaceDevice};
 use crate::pdo::{PredefinedPdoAssignment, RxPdo, RxPdoObject, TxPdo, TxPdoObject};
 use anyhow::{Error, anyhow};
