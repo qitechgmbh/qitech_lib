@@ -170,7 +170,7 @@ impl ConfigurableDevice<EL3024Configuration> for EL3024 {
         device_address : u16,
         config: &EL3024Configuration,
     ) -> Result<(), anyhow::Error> {
-        config.write_config(channel, device_address);
+        config.write_config(channel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         Ok(())

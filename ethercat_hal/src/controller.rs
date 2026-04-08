@@ -1,4 +1,5 @@
-use std::{cell::UnsafeCell, sync::{atomic::Ordering, mpsc::Receiver}, thread::JoinHandle, time::{Duration, Instant}};
+use std::{cell::UnsafeCell, sync::{atomic::Ordering, mpsc::Receiver}, time::{Duration, Instant}};
+use anyhow::{Context, Result};
 use ethercrab::{MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts, std::ethercat_now, subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp}};
 use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::time::interval;
@@ -20,7 +21,7 @@ pub struct EtherCATController {
     pub output_write_idx: CachePaddedAtomic, // Which one the "System" is writing to
 
     pub subdevices : [MetaSubdevice; 256],
-    pub subdevice_count : usize, 
+    pub subdevice_count : usize,
 }
 
 // We handle sync through double buffering and an atomic flag
@@ -49,8 +50,7 @@ impl EtherCATController {
 }
 
 impl EtherCATController {
-    pub fn ethercat_state_machine(&mut self) {
-        let mut ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
+    pub fn ethercat_state_machine(&mut self) -> Result<()> {
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>> = None;
         let mut group_preop_pdi: SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, NoDc>;
         let mut group_preop_pdi_dc: Option<
@@ -79,7 +79,7 @@ impl EtherCATController {
                             EtherCATState::PreOp => (),
                             _ => continue,
                         },
-                        ChannelRequests::Shutdown() => return, // We CAN safely shutdonw in Init
+                        ChannelRequests::Shutdown() => return Ok(()), // We CAN safely shutdonw in Init
                         _ => continue,
                     }
 
@@ -90,12 +90,13 @@ impl EtherCATController {
                         let pdu_rx = rx;
                         let interface = self.interface.clone().unwrap();
 
-                        ethercat_tx_rx_handle = std::thread::Builder::new()
+                        std::thread::Builder::new()
                             .name("EthercatTxRxThread".to_owned())
                             .spawn(move || {
                                 tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
                                     .expect("Failed to run TX/RX task (io_uring)");
-                            });
+                            })
+                            .context("Failed to spawn EtherCAT TX/RX thread")?;
 
                         maindevice = Some(MainDevice::new(
                             pdu,
@@ -171,7 +172,7 @@ impl EtherCATController {
                             EtherCATState::Op => (),
                             _ => continue,
                         },
-                        ChannelRequests::Shutdown() => return,
+                        ChannelRequests::Shutdown() => return Ok(()),
                         ChannelRequests::SdoWriteRequest(request) => {
                             let res = sdo_write(maindev, preop_group, request);
                             send_response(
@@ -427,10 +428,10 @@ impl EtherCATController {
                             break;
                         }
                     }
-   
+
                     loop {
                         let now = Instant::now();
-                        let res = rt.block_on(async {
+                        rt.block_on(async {
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX/RX");
                             let now = tokio::time::Instant::now();
                             (res, now)

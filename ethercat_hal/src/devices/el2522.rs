@@ -349,10 +349,12 @@ impl Configuration for EL2522Configuration {
         // Write PDO assignments
         self.pdo_assignment
             .txpdo_assignment()
-            .write_config(ecat_channel.clone(),device_address);
+            .write_config(ecat_channel.clone(),device_address)?;
+
         self.pdo_assignment
             .rxpdo_assignment()
-            .write_config(ecat_channel.clone(),device_address);
+            .write_config(ecat_channel.clone(),device_address)?;
+
         Ok(())
     }
 }

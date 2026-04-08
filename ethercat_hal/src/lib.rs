@@ -9,6 +9,7 @@ pub mod helpers;
 pub mod controller;
 
 use crate::controller::EtherCATController;
+use anyhow::Result;
 use ethercrab::{
     PduStorage, SubDeviceGroup, subdevice_group::{HasDc, NoDc, PreOpPdi, SafeOp},
 };
@@ -84,7 +85,7 @@ pub enum EtherCATState {
     Op = 5,
 }
 
-enum GroupState {
+pub enum GroupState {
     PreOpNoDc(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, NoDc>),
     PreOpDc(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, HasDc>),
     SafeOp(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, SafeOp, HasDc>),
@@ -153,8 +154,8 @@ pub fn send_response(response_channel: EtherCATThreadResponseChannel, response: 
 pub fn start_ethercat_thread(
     interface_name: &str,
 ) -> (
-    (Arc<EtherCATController>, EtherCATThreadChannel),
-    JoinHandle<()>,
+(Arc<EtherCATController>, EtherCATThreadChannel),
+JoinHandle<()>,
 ) {
     let (tx, rx) = mpsc::channel();
     let controller = Arc::new(EtherCATController {
@@ -184,7 +185,10 @@ pub fn start_ethercat_thread(
             // We need &mut self for the state machine.
             let ptr = Arc::as_ptr(&controller_for_thread) as *mut EtherCATController;
             unsafe {
-                (&mut *ptr).ethercat_state_machine();
+                let res = (&mut *ptr).ethercat_state_machine();
+                if let Err(e) = res {
+                    tracing::error!("EtherCAT state machine exited with error: {}", e);
+                };
             }
         })
         .expect("Failed to spawn thread");
