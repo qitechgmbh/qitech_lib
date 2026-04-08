@@ -135,6 +135,7 @@ impl EtherCATThreadChannel {
             channel_request: crate::ChannelRequests::SdoReadRequest(sdo_request),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
+
         match self.0.send(req) {
             Ok(_) => (),
             Err(e) => return Err(anyhow::anyhow!(e)),
@@ -207,11 +208,15 @@ impl EtherCATThreadChannel {
             channel_request: crate::ChannelRequests::SdoWriteRequest(sdo_request),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
+
+
         let res = self.0.send(req);
         match res {
             Ok(_) => (),
             Err(e) => return Err(anyhow::anyhow!(e)),
         };
+        println!("sdo_write {:?}",res);
+
         let res = rx.recv_timeout(Duration::from_millis(500));
         let response: ChannelResponse = match res {
             Ok(res) => res,

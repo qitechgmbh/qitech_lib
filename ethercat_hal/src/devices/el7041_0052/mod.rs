@@ -5,10 +5,9 @@ use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple}
 use crate::{
     helpers::counter_wrapper_u16_i128::CounterWrapperU16U128,
     io::{
-        digital_input::DigitalInputDevice,
-        stepper_velocity_el70x1::{
+        analog_input::AnalogInputInput, stepper_velocity_el70x1::{
             StepperVelocityEL70x1Device, StepperVelocityEL70x1Input, StepperVelocityEL70x1Output,
-        },
+        }
     },
     pdo::{PredefinedPdoAssignment, RxPdo, TxPdo},
     shared_config::el70x1::EL70x1OperationMode,
@@ -107,10 +106,10 @@ impl EthercatDeviceProcessing for EL7041_0052 {
     }
 }
 
-impl StepperVelocityEL70x1Device<EL7041_0052Port> for EL7041_0052 {
+impl StepperVelocityEL70x1Device for EL7041_0052 {
     fn set_output(
         &mut self,
-        port: EL7041_0052Port,
+        port: usize,
         value: StepperVelocityEL70x1Output,
     ) -> Result<(), anyhow::Error> {
         // check if operating mode is velocity
@@ -122,7 +121,7 @@ impl StepperVelocityEL70x1Device<EL7041_0052Port> for EL7041_0052 {
         }
 
         match port {
-            EL7041_0052Port::STM1 => {
+            0 => {
                 // set the counter override if provided
                 if let Some(new_counter) = value.set_counter {
                     self.counter_wrapper.push_override(new_counter);
@@ -157,7 +156,7 @@ impl StepperVelocityEL70x1Device<EL7041_0052Port> for EL7041_0052 {
 
     fn get_input(
         &self,
-        port: EL7041_0052Port,
+        port: usize,
     ) -> Result<StepperVelocityEL70x1Input, anyhow::Error> {
         // check if operating mode is velocity
         if self.configuration.stm_features.operation_mode != EL70x1OperationMode::DirectVelocity {
@@ -168,7 +167,7 @@ impl StepperVelocityEL70x1Device<EL7041_0052Port> for EL7041_0052 {
         }
 
         match port {
-            EL7041_0052Port::STM1 => {
+            0 => {
                 let stm_status = match &self.txpdo.stm_status {
                     Some(value) => value,
                     None => return Err(anyhow!("stm_status is None")),
@@ -195,7 +194,7 @@ impl StepperVelocityEL70x1Device<EL7041_0052Port> for EL7041_0052 {
 
     fn get_output(
         &self,
-        port: EL7041_0052Port,
+        port: usize,
     ) -> Result<StepperVelocityEL70x1Output, anyhow::Error> {
         // check if operating mode is velocity
         if self.configuration.stm_features.operation_mode != EL70x1OperationMode::DirectVelocity {
@@ -206,7 +205,7 @@ impl StepperVelocityEL70x1Device<EL7041_0052Port> for EL7041_0052 {
         }
 
         match port {
-            EL7041_0052Port::STM1 => {
+            0 => {
                 let stm_control = match &self.rxpdo.stm_control {
                     Some(value) => value,
                     None => return Err(anyhow!("stm_control is None")),
@@ -234,14 +233,16 @@ impl StepperVelocityEL70x1Device<EL7041_0052Port> for EL7041_0052 {
 
     fn get_speed_range(
         &self,
-        _port: EL7041_0052Port,
+        _port: usize,
     ) -> crate::shared_config::el70x1::EL70x1SpeedRange {
         self.configuration.stm_features.speed_range
     }
-}
 
-impl DigitalInputDevice for EL7041_0052 {
-    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
+    fn get_port_count(&self) -> usize {
+        1
+    }
+
+    fn get_digital_input(&self, port: usize) -> Result<bool, anyhow::Error> {
         let error1 = anyhow::anyhow!("stm_status is None");
         Ok(match port {
             0 => {
@@ -267,10 +268,69 @@ impl DigitalInputDevice for EL7041_0052 {
         })
     }
 
-    fn get_port_count(&self) -> usize {
+    fn get_digital_in_port_count(&self) -> usize {
         2
     }
+
+    fn get_analog_input(&self, _port: usize) -> Result<AnalogInputInput,anyhow::Error> {
+        Err(anyhow!("EL7041_0052 has no analog_input!"))
+    }
+
+    fn get_analog_port_count(&self) -> usize {
+        0
+    }
+
+    fn analog_input_range(&self) -> Option<crate::io::analog_input::physical::AnalogInputRange> {
+        None
+    }
+
+    fn is_enabled(&self,port : usize) -> bool {
+        match self.get_output(port) {
+            Ok(output) => output.enable,
+            Err(_) => false,
+        }
+    }
+
+    fn get_position(&self,port : usize) -> i128 {
+        let input = self.get_input(port).unwrap();
+        input.counter_value
+    }
+
+    fn set_position(&mut self,port : usize, position: i128) {
+        let mut output = self.get_output(port).unwrap();
+        output.set_counter = Some(position);        
+        self.set_output(port,output).unwrap();
+    }
+
+    fn set_enabled(&mut self,port : usize, enabled: bool) {        
+        let mut output = self.get_output(port).unwrap();
+        output.enable = enabled;
+        self.set_output(port, output);
+    }
+
+    fn set_speed(&mut self, port : usize, steps_per_second: f64) -> Result<(), anyhow::Error> {
+        // Get current state to preserve other output values
+        let mut output = self.get_output(port).unwrap();
+
+        // Get speed range from device to convert steps to velocity
+        let speed_range = self.get_speed_range(port);
+        let converter = crate::helpers::el70xx_velocity_converter::EL70x1VelocityConverter::new(&speed_range);
+        let velocity = converter.steps_to_velocity(steps_per_second, true);
+
+        output.velocity = velocity;
+
+        // Write to device
+        self.set_output(port,output)
+    }
+
+    fn get_speed(&self, port : usize) -> i32 {
+        let output = self.get_output(port).unwrap();
+        let speed_range = self.get_speed_range(port);
+        let converter = crate::helpers::el70xx_velocity_converter::EL70x1VelocityConverter::new(&speed_range);
+        converter.velocity_to_steps(output.velocity, true) as i32
+    }
 }
+
 
 #[derive(Debug, Clone, Copy)]
 pub enum EL7041_0052Port {

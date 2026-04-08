@@ -121,6 +121,7 @@ pub enum SdoType {
     I32,
 }
 
+#[derive(Debug)]
 pub struct SdoRequest {
     pub device_address: u16,
     pub index: u16,
@@ -129,6 +130,7 @@ pub struct SdoRequest {
     pub type_flag: SdoType,
 }
 
+#[derive(Debug)]
 pub struct SdoReadRequest {
     pub device_address: u16,
     pub index: u16,
@@ -153,6 +155,7 @@ pub enum ChannelResponse {
     EnableDCSync0Response(Result<(), anyhow::Error>),
 }
 
+#[derive(Debug)]
 pub enum ChannelRequests {
     SdoWriteRequest(SdoRequest),
     SdoReadRequest(SdoReadRequest),
@@ -170,7 +173,7 @@ pub struct ChannelRequest {
 }
 
 pub fn send_response(response_channel: EtherCATThreadResponseChannel, response: ChannelResponse) {
-    let _res = response_channel.0.send(response);
+    let res = response_channel.0.send(response);    
 }
 
 pub fn start_ethercat_thread(interface_name: &str) -> EtherCATControl {

@@ -28,7 +28,7 @@ pub struct EtherCATController {
     pub subdevices: [MetaSubdevice; 256],
     pub subdevice_count: usize,
 
-    state: EtherCATState,
+    pub state: EtherCATState,
     requested_state: Option<EtherCATState>,
     rx_channel: Receiver<ChannelRequest>,
 
@@ -185,6 +185,7 @@ impl EtherCATController {
                     };
                 }
                 EtherCATState::PreOp => {
+                    println!("PreOP");
                     let maindev = maindevice.as_ref().unwrap();
                     let mut preop_group = group.as_mut().unwrap();
 
@@ -203,8 +204,13 @@ impl EtherCATController {
                     self.subdevice_count = i;
                     let msg = match self.rx_channel.try_recv() {
                         Ok(value) => value,
-                        Err(_) => continue,
+                        Err(e) => {                            
+                            continue
+                        },
                     };
+
+                    println!("GOT A MESSAGE: {:?}",msg.channel_request);
+
 
                     match msg.channel_request {
                         ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {
@@ -283,6 +289,7 @@ impl EtherCATController {
                                 msg.response_channel,
                                 ChannelResponse::MachineDeviceInfoResponse(res),
                             );
+                            continue;
                         }
                         ChannelRequests::EnableDCSync0(device_address) => {
                             enable_dc_sync(&mut preop_group, maindev, device_address)

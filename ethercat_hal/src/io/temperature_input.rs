@@ -1,4 +1,4 @@
-use crate::pdo::basic::Limit;
+use crate::{devices::EthercatDevice, pdo::basic::Limit};
 use std::{fmt};
 
 /// Temperature Input (TI) device
@@ -34,7 +34,7 @@ pub struct TemperatureInputInput {
     pub txpdo_toggle: bool,
 }
 
-pub trait TemperatureInputDevice {
+pub trait TemperatureInputDevice : EthercatDevice {
     fn get_input(&self, port: usize) -> Result<TemperatureInputInput,anyhow::Error>;
     fn get_port_count(&self) -> usize;
 }

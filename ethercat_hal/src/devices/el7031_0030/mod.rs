@@ -111,10 +111,10 @@ impl NewEthercatDevice for EL7031_0030 {
     }
 }
 
-impl StepperVelocityEL70x1Device<EL7031_0030StepperPort> for EL7031_0030 {
+impl StepperVelocityEL70x1Device for EL7031_0030 {
     fn set_output(
         &mut self,
-        port: EL7031_0030StepperPort,
+        port: usize,
         value: StepperVelocityEL70x1Output,
     ) -> Result<(), anyhow::Error> {
         // check if operating mode is velocity
@@ -127,7 +127,7 @@ impl StepperVelocityEL70x1Device<EL7031_0030StepperPort> for EL7031_0030 {
         }
 
         match port {
-            EL7031_0030StepperPort::STM1 => {
+            0 => {
                 // set the counter override if provided
                 if let Some(new_counter) = value.set_counter {
                     self.counter_wrapper.push_override(new_counter);
@@ -159,12 +159,18 @@ impl StepperVelocityEL70x1Device<EL7031_0030StepperPort> for EL7031_0030 {
                 }
                 Ok(())
             }
+            _ => {
+                return Err(anyhow!(
+                            "[{}::StepperVelocityEL70x1Device::stepper_velocity_state] Invalid Port",
+                            module_path!()
+                        ));
+                } 
         }
     }
 
     fn get_input(
         &self,
-        port: EL7031_0030StepperPort,
+        port: usize,
     ) -> Result<StepperVelocityEL70x1Input, anyhow::Error> {
         // check if operating mode is velocity
         if self.configuration.stm_features.operation_mode != EL70x1OperationMode::DirectVelocity {
@@ -176,7 +182,7 @@ impl StepperVelocityEL70x1Device<EL7031_0030StepperPort> for EL7031_0030 {
         }
 
         match port {
-            EL7031_0030StepperPort::STM1 => {
+            0 => {
                 let stm_status = match &self.txpdo.stm_status {
                     Some(value) => value,
                     None => {
@@ -198,12 +204,18 @@ impl StepperVelocityEL70x1Device<EL7031_0030StepperPort> for EL7031_0030 {
                     torque_reduced: stm_status.torque_reduced,
                 })
             }
+            _ => {
+                return Err(anyhow!(
+                            "[{}::StepperVelocityEL70x1Device::stepper_velocity_state] Invalid Port",
+                            module_path!()
+                        ));
+                } 
         }
     }
 
     fn get_output(
         &self,
-        port: EL7031_0030StepperPort,
+        port: usize,
     ) -> Result<StepperVelocityEL70x1Output, anyhow::Error> {
         // check if operating mode is velocity
         if self.configuration.stm_features.operation_mode != EL70x1OperationMode::DirectVelocity {
@@ -215,7 +227,7 @@ impl StepperVelocityEL70x1Device<EL7031_0030StepperPort> for EL7031_0030 {
         }
 
         match port {
-            EL7031_0030StepperPort::STM1 => {
+            0 => {
                 let stm_control = match &self.rxpdo.stm_control {
                     Some(value) => value,
                     None => {
@@ -243,55 +255,28 @@ impl StepperVelocityEL70x1Device<EL7031_0030StepperPort> for EL7031_0030 {
                     reset: stm_control.reset,
                     set_counter: self.counter_wrapper.get_override(),
                 })
-            }
+            },
+            _ => {
+                return Err(anyhow!(
+                            "[{}::StepperVelocityEL70x1Device::stepper_velocity_state] Invalid Port",
+                            module_path!()
+                        ));
+                } 
         }
     }
 
     fn get_speed_range(
         &self,
-        _port: EL7031_0030StepperPort,
+        _port: usize,
     ) -> crate::shared_config::el70x1::EL70x1SpeedRange {
         self.configuration.stm_features.speed_range
     }
-}
-
-impl DigitalInputDevice for EL7031_0030 {
-    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
-        let error1 = anyhow::anyhow!(
-            "[{}::DigitalInputDevice::digital_input_state] StmStatus is None",
-            module_path!(),
-        );
-        Ok(match port {
-            0 => {
-                self.txpdo
-                    .stm_status
-                    .as_ref()
-                    .ok_or(error1)?
-                    .digital_input_1
-            }
-            1 => {
-                self.txpdo
-                    .stm_status
-                    .as_ref()
-                    .ok_or(error1)?
-                    .digital_input_2
-            }
-            _ => {
-                return Err(anyhow!(
-                    "Port {:?} is not supported for digital input EL7041_0052",
-                    port
-                ));
-            }
-        })
-    }
 
     fn get_port_count(&self) -> usize {
-        2
+        1
     }
-}
-
-impl AnalogInputDevice for EL7031_0030 {
-    fn get_input(&self, port: usize) -> Result<AnalogInputInput,anyhow::Error> {
+    
+    fn get_analog_input(&self, port: usize) -> Result<AnalogInputInput,anyhow::Error> {
         let (raw_value, wiring_error) = match port {
             0 => match &self.txpdo {
                 EL7031_0030TxPdo {
@@ -327,17 +312,96 @@ impl AnalogInputDevice for EL7031_0030 {
         })
     }
 
-    fn get_port_count(&self) -> usize {
+    fn get_analog_port_count(&self) -> usize {
         2
     }
 
-    fn analog_input_range(&self) -> AnalogInputRange {
-        AnalogInputRange::Potential {
+    fn analog_input_range(&self) -> Option<AnalogInputRange> {
+        Some(AnalogInputRange::Potential {
             min: ElectricPotential::new::<volt>(0.0),
             max: ElectricPotential::new::<volt>(10.0),
             min_raw: 0,
             max_raw: i16::MAX,
+        })
+    }
+
+    fn get_digital_input(&self, port: usize) -> Result<bool, anyhow::Error> {
+        let error1 = anyhow::anyhow!(
+            "[{}::DigitalInputDevice::digital_input_state] StmStatus is None",
+            module_path!(),
+        );
+        Ok(match port {
+            0 => {
+                self.txpdo
+                    .stm_status
+                    .as_ref()
+                    .ok_or(error1)?
+                    .digital_input_1
+            }
+            1 => {
+                self.txpdo
+                    .stm_status
+                    .as_ref()
+                    .ok_or(error1)?
+                    .digital_input_2
+            }
+            _ => {
+                return Err(anyhow!(
+                    "Port {:?} is not supported for digital input EL7041_0052",
+                    port
+                ));
+            }
+        })
+    }
+
+    fn get_digital_in_port_count(&self) -> usize {
+        2
+    }
+
+    fn is_enabled(&self,port : usize) -> bool {
+        match self.get_output(port) {
+            Ok(output) => output.enable,
+            Err(_) => false,
         }
+    }
+
+    fn get_position(&self,port : usize) -> i128 {
+        let input = self.get_input(port).unwrap();
+        input.counter_value
+    }
+
+    fn set_position(&mut self,port : usize, position: i128) {
+        let mut output = self.get_output(port).unwrap();
+        output.set_counter = Some(position);        
+        self.set_output(port,output).unwrap();
+    }
+
+    fn set_enabled(&mut self,port : usize, enabled: bool) {        
+        let mut output = self.get_output(port).unwrap();
+        output.enable = enabled;
+        self.set_output(port, output);
+    }
+
+    fn set_speed(&mut self, port : usize, steps_per_second: f64) -> Result<(), anyhow::Error> {
+        // Get current state to preserve other output values
+        let mut output = self.get_output(port).unwrap();
+
+        // Get speed range from device to convert steps to velocity
+        let speed_range = self.get_speed_range(port);
+        let converter = crate::helpers::el70xx_velocity_converter::EL70x1VelocityConverter::new(&speed_range);
+        let velocity = converter.steps_to_velocity(steps_per_second, true);
+
+        output.velocity = velocity;
+
+        // Write to device
+        self.set_output(port,output)
+    }
+
+    fn get_speed(&self, port : usize) -> i32 {
+        let output = self.get_output(port).unwrap();
+        let speed_range = self.get_speed_range(port);
+        let converter = crate::helpers::el70xx_velocity_converter::EL70x1VelocityConverter::new(&speed_range);
+        converter.velocity_to_steps(output.velocity, true) as i32
     }
 }
 
