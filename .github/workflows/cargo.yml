@@ -64,3 +64,17 @@ jobs:
 
       - name: Format
         run: cargo fmt --check --verbose
+
+  examples:
+    runs-on: ubuntu-latest
+
+    steps:
+      - *checkout
+      - *setup-rust
+      - *setup-rust
+      - *cargo-cache
+
+      - name: Build Examples
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: cargo build --examples --verbose
