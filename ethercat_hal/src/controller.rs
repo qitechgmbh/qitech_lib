@@ -3,7 +3,7 @@ use crate::{
     MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType,
     ethercat_helpers::{sdo_read, sdo_write},
     get_async_runtime,
-    machine_ident_read::read_device_identifications,
+    machine_ident_read::{MachineDeviceInfo, read_device_identifications},
     send_response,
 };
 use ethercrab::{
@@ -21,9 +21,10 @@ use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::time::interval;
 use triple_buffer::{Input, Output};
 
-pub struct EtherCATController {
+pub struct EtherCATController<C,P> where C : Consumer, P: Producer {
     pub cycle_time_us: u64,
     pub interface: Option<String>,
+    pub machine_device_infos: Option<Vec<MachineDeviceInfo>>,
 
     pub subdevices: [MetaSubdevice; 256],
     pub subdevice_count: usize,
@@ -32,14 +33,14 @@ pub struct EtherCATController {
     requested_state: Option<EtherCATState>,
     rx_channel: Receiver<ChannelRequest>,
 
-    input_producer: Input<[u8; ETHERCAT_TX_RX_SIZE]>,
-    output_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
+    input_producer: P,
+    output_consumer: C,
 }
 
-impl EtherCATController {
+impl<C,P> EtherCATController<C,P> where C : Consumer, P : Producer {
     pub fn new(
-        input: Input<[u8; ETHERCAT_TX_RX_SIZE]>,
-        output: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
+        input: P,
+        output: C,
         rx: Receiver<ChannelRequest>,
         interface: Option<String>,
     ) -> Self {
@@ -53,16 +54,77 @@ impl EtherCATController {
             rx_channel: rx,
             input_producer: input,
             output_consumer: output,
+            machine_device_infos: None,
         }
     }
 }
 
-pub struct EtherCATAppHandle {
-    pub input_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
-    pub output_producer: Input<[u8; ETHERCAT_TX_RX_SIZE]>,
+
+pub trait Consumer {
+    fn read(&mut self) -> &[u8];
 }
 
-impl EtherCATAppHandle {
+pub trait Producer {
+    fn input_buffer_mut(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE];
+    fn publish(&mut self);
+}
+
+pub struct MockConsumer {
+    pub(crate) buffer : [u8;ETHERCAT_TX_RX_SIZE]
+}
+
+pub struct MockProducer {
+    pub(crate) buffer : [u8;ETHERCAT_TX_RX_SIZE]
+}
+
+impl Producer for MockProducer {
+    fn input_buffer_mut(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
+        &mut self.buffer
+    }
+
+    fn publish(&mut self) {
+        // does nothing for the mock
+    }
+}
+
+impl Consumer for MockConsumer {
+    fn read(&mut self) -> &[u8] {
+        &self.buffer
+    }
+}
+
+pub struct TripleBufConsumer {
+    pub input_consumer: Output<[u8;ETHERCAT_TX_RX_SIZE]>,
+}
+
+pub struct TripleBufProducer {
+    pub output_producer: Input<[u8;ETHERCAT_TX_RX_SIZE]>,
+}
+
+impl Consumer for TripleBufConsumer {
+    fn read(&mut self) -> &[u8] {
+        self.input_consumer.read()
+    }
+}
+
+impl Producer for TripleBufProducer {
+    fn input_buffer_mut(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
+        self.output_producer.input_buffer_mut()
+    }
+
+    fn publish(&mut self) {
+        self.output_producer.publish();
+    }
+}
+
+
+
+pub struct EtherCATAppHandle<C,P> where C : Consumer, P : Producer {
+    pub input_consumer: C,
+    pub output_producer: P,
+}
+
+impl<C, P> EtherCATAppHandle<C, P> where C: Consumer, P: Producer {
     pub fn get_inputs(&mut self) -> &[u8] {
         self.input_consumer.read()
     }
@@ -91,9 +153,9 @@ pub fn enable_dc_sync(
     });
 }
 
-unsafe impl Sync for EtherCATController {}
+unsafe impl Sync for EtherCATController<TripleBufConsumer,TripleBufProducer> {}
 
-impl EtherCATController {
+impl EtherCATController<TripleBufConsumer,TripleBufProducer> {
     pub fn ethercat_state_machine(&mut self) {
         let mut ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>> = None;

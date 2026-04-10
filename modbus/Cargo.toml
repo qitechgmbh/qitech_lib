@@ -5,11 +5,8 @@ edition     = "2024"
 description = "Modbus subcrate"
 
 [dependencies]
-
-tokio = { version = "1.49.0", features = ["full"] }
-
+tokio = { version = "1.49.0", features = ["sync"] }
 tokio-serial = "5.0"
-
 tokio-modbus = "0.17.0"
 
 [lib]

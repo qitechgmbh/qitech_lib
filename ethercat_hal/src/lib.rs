@@ -7,12 +7,10 @@ pub mod helpers;
 pub mod io;
 pub mod pdo;
 pub mod shared_config;
-
 //#[cfg(feature = "legacy_code")]
 pub mod machine_ident_read;
-
 use crate::controller::EtherCATController;
-use controller::EtherCATAppHandle;
+use controller::{EtherCATAppHandle, MockConsumer, MockProducer, TripleBufConsumer, TripleBufProducer};
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
 use std::sync::mpsc;
@@ -37,24 +35,27 @@ pub const MAX_PDU_DATA: usize = PduStorage::element_size(512);
 pub const MAX_FRAMES: usize = 16;
 pub const PDI_LEN: usize = 1024;
 static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
-
 // Wrapper to easily refactor later on
 #[derive(Clone)]
 pub struct EtherCATThreadChannel(pub Sender<ChannelRequest>);
 #[derive(Clone)]
 pub struct EtherCATThreadResponseChannel(pub Sender<ChannelResponse>);
 
-pub struct EtherCATControl {
-    pub controller: Arc<EtherCATController>,
+pub use controller::Consumer;
+pub use controller::Producer;
+
+pub struct EtherCATControl<C,P> where C : Consumer, P: Producer {
+    pub controller: Arc<EtherCATController<C,P>>,
     pub channel: EtherCATThreadChannel,
-    pub app_handle: EtherCATAppHandle,
-    pub join_handle: JoinHandle<()>,
+    pub app_handle: EtherCATAppHandle<C,P>,
+    pub join_handle: Option<JoinHandle<()>>,
 }
 
-/*
-    Metadata for a Subdevice
-    Contains start and end of the given subdevices pdu
-*/
+pub type StandardEtherCATAppHandle = EtherCATAppHandle<TripleBufConsumer, TripleBufProducer>;
+pub type MockEtherCATAppHandle = EtherCATAppHandle<MockConsumer,MockProducer>;
+pub type StandardEtherCATController = EtherCATController<TripleBufConsumer,TripleBufProducer>;
+
+/*Metadata for a Subdevice Contains start and end of the given subdevices pdu*/
 #[derive(Clone, Copy, Debug)]
 pub struct MetaSubdevice {
     pub name: [u8; 128],
@@ -173,10 +174,43 @@ pub struct ChannelRequest {
 }
 
 pub fn send_response(response_channel: EtherCATThreadResponseChannel, response: ChannelResponse) {
-    let res = response_channel.0.send(response);    
+    let _res = response_channel.0.send(response);    
 }
 
-pub fn start_ethercat_thread(interface_name: &str) -> EtherCATControl {
+
+pub fn init_ethercat_mock(faked_subdevices : Vec<MetaSubdevice>, machine_infos : Option<Vec<MachineDeviceInfo>>) -> EtherCATControl<MockConsumer,MockProducer> {
+    let (tx, rx) = mpsc::channel();
+    let mock_producer = [0u8;ETHERCAT_TX_RX_SIZE];
+    let mock_consumer = [0u8;ETHERCAT_TX_RX_SIZE];
+    let producer = MockProducer{ buffer: mock_producer };
+    let consumer = MockConsumer{ buffer: mock_consumer };
+
+    let producer_c = MockProducer{ buffer: [0u8;ETHERCAT_TX_RX_SIZE] };
+    let consumer_c = MockConsumer{ buffer: [0u8;ETHERCAT_TX_RX_SIZE] };
+
+    let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx);
+    let app_handle = EtherCATAppHandle {
+        input_consumer: consumer,
+        output_producer: producer,
+    };
+
+    let mut controller = EtherCATController::new(
+        producer_c,
+        consumer_c,
+        rx,
+        None,
+    );
+
+    controller.subdevice_count = faked_subdevices.len();    
+    for i in 0..faked_subdevices.len() {
+        controller.subdevices[i] = faked_subdevices[i];
+    }
+
+    let controller = Arc::new(controller);
+    return EtherCATControl { controller, channel, app_handle, join_handle: None }
+}
+
+pub fn init_ethercat(interface_name: &str) -> EtherCATControl<TripleBufConsumer,TripleBufProducer> {
     let (tx, rx) = mpsc::channel();
 
     let (input_producer, input_consumer) =
@@ -185,15 +219,16 @@ pub fn start_ethercat_thread(interface_name: &str) -> EtherCATControl {
         triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
 
     let controller = Arc::new(EtherCATController::new(
-        input_producer,
-        output_consumer,
+        TripleBufProducer{output_producer:  input_producer},
+        TripleBufConsumer{input_consumer: output_consumer } ,
         rx,
         Some(interface_name.to_string()),
     ));
 
     let app_handle = EtherCATAppHandle {
-        input_consumer,
-        output_producer,
+        input_consumer: TripleBufConsumer{ input_consumer },
+        output_producer: TripleBufProducer { output_producer } ,
+ 
     };
 
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx);
@@ -204,7 +239,7 @@ pub fn start_ethercat_thread(interface_name: &str) -> EtherCATControl {
         .name("EthercatStateMachine".into())
         .spawn(move || {
             // We need &mut self for the state machine.
-            let ptr = Arc::as_ptr(&controller_for_thread) as *mut EtherCATController;
+            let ptr = Arc::as_ptr(&controller_for_thread) as *mut EtherCATController<TripleBufConsumer,TripleBufProducer>;
             unsafe {
                 (&mut *ptr).ethercat_state_machine();
             }
@@ -214,6 +249,6 @@ pub fn start_ethercat_thread(interface_name: &str) -> EtherCATControl {
         controller: controller,
         channel,
         app_handle,
-        join_handle,
+        join_handle: Some(join_handle),
     }
 }
