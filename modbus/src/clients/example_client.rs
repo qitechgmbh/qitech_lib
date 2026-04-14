@@ -30,7 +30,7 @@ impl ExampleClient {
             let now = std::time::Instant::now();
             match ctx.call(request).await {
                 Ok(result) => {
-                    println!("took {} {:?}",std::time::Instant::now().duration_since(now).as_millis(),result);
+                    //println!("took {} {:?}",std::time::Instant::now().duration_since(now).as_millis(),result);
                     let res = tx.send(result).await;
                     match res {
                         Ok(r) => r,
