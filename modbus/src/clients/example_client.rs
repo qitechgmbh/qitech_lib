@@ -8,7 +8,7 @@ use tokio_modbus::{
 use crate::{ExceptionCode, Request, Response};
 
 pub type ResponseMessage = Result<Response, ExceptionCode>;
-pub type RequestMessage = (u8, Request, oneshot::Sender<ResponseMessage>);
+pub type RequestMessage = (u8, Request, mpsc::Sender<ResponseMessage>);
 
 pub struct ExampleClient;
 
@@ -19,18 +19,25 @@ impl ExampleClient {
 
     pub async fn run(
         mut ctx: Context,
-        mut rx: mpsc::Receiver<(u8, Request, oneshot::Sender<ResponseMessage>)>,
+        mut rx: mpsc::Receiver<(u8, Request, mpsc::Sender<ResponseMessage>)>,
     ) {
         loop {
             let (slave_id, request, tx) = match rx.recv().await {
                 Some(v) => v,
                 None => break,
             };
-
             ctx.set_slave(Slave(slave_id));
-
-            if let Ok(result) = ctx.call(request).await {
-                _ = tx.send(result);
+            let now = std::time::Instant::now();
+            match ctx.call(request).await {
+                Ok(result) => {
+                    println!("took {} {:?}",std::time::Instant::now().duration_since(now).as_millis(),result);
+                    let res = tx.send(result).await;
+                    match res {
+                        Ok(r) => r,
+                        Err(e) => println!("error:{:?}",e),
+                    }
+                },
+                Err(e) => println!("ex client error {:?}",e),
             }
         }
     }

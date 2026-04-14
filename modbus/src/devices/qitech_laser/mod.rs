@@ -3,7 +3,6 @@ use crate::{Device, HandleResponseError, Priority, Request, Response, Scheduler}
 #[derive(Debug, Clone)]
 pub struct LaserDevice<S: Scheduler> {
     scheduler: S,
-
     // data
     measurement: Option<Measurement>,
 }
@@ -18,7 +17,7 @@ impl<S: Scheduler> LaserDevice<S> {
     }
 }
 
-impl<S: Scheduler> Device<S> for LaserDevice<S> {
+impl<S: Scheduler + 'static> Device<S> for LaserDevice<S> {
     fn new(scheduler: S) -> Self
     where
         Self: Sized,
@@ -50,6 +49,14 @@ impl<S: Scheduler> Device<S> for LaserDevice<S> {
         });
 
         Ok(())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 

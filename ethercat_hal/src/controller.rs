@@ -247,7 +247,6 @@ impl EtherCATController<TripleBufConsumer,TripleBufProducer> {
                     };
                 }
                 EtherCATState::PreOp => {
-                    println!("PreOP");
                     let maindev = maindevice.as_ref().unwrap();
                     let mut preop_group = group.as_mut().unwrap();
 

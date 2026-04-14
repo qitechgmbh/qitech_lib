@@ -157,7 +157,7 @@ impl<S: Scheduler> VfdDevice<S> {
     }
 }
 
-impl<S: Scheduler> Device<S> for VfdDevice<S> {
+impl<S: Scheduler + 'static> Device<S> for VfdDevice<S> {
     fn new(scheduler: S) -> Self
     where
         Self: Sized,
@@ -223,5 +223,13 @@ impl<S: Scheduler> Device<S> for VfdDevice<S> {
             SyncConfig => self.handle_sync_config(response),
             MutateConfig => self.handle_mutate_config(response),
         }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {        
+        self    
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

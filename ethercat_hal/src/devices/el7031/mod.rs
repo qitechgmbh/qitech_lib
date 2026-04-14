@@ -39,7 +39,6 @@ impl EthercatDeviceProcessing for EL7031 {
             enc_status_compact.counter_underflow,
             enc_status_compact.counter_overflow,
         );
-
         Ok(())
     }
 

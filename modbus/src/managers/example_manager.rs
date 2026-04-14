@@ -5,21 +5,21 @@ use std::{
 };
 
 use tokio::sync::{
-    mpsc::{self},
+    mpsc::{self, Sender,Receiver},
     oneshot,
 };
+use tokio_modbus::{ExceptionCode, Response};
 
 use crate::{Device, Priority, Scheduler};
 
-use crate::clients::example_client::{RequestMessage, ResponseMessage};
+use crate::clients::example_client::{RequestMessage};
 
 pub struct ExampleDeviceManager {
     tx: mpsc::Sender<RequestMessage>,
 
-    devices: HashMap<u8, Rc<RefCell<dyn Device<ExampleScheduler>>>>,
-
+    devices: HashMap<u8, (Sender<Result<Response,ExceptionCode>>,Receiver<Result<Response,ExceptionCode>>, Rc<RefCell<dyn Device<ExampleScheduler>>>) >,
     scheduled_devices: VecDeque<u8>,
-    pending_response: Option<(u8, oneshot::Receiver<ResponseMessage>)>,
+    pending_response: Option<u8>,
 }
 
 pub struct ExampleScheduler {
@@ -60,9 +60,8 @@ impl ExampleDeviceManager {
         };
 
         let device = Rc::new(RefCell::new(D::new(scheduler)));
-
-        mgr_rc.borrow_mut().devices.insert(slave_id, device.clone());
-
+        let (tx,rx) = tokio::sync::mpsc::channel(2);
+        mgr_rc.borrow_mut().devices.insert(slave_id,( tx,rx,device.clone()) );
         device
     }
 
@@ -71,9 +70,10 @@ impl ExampleDeviceManager {
         self.try_send();
     }
 
-    fn try_receive(&mut self) {
-        if let Some((id, rx)) = &mut self.pending_response {
-            let result = match rx.try_recv() {
+    pub fn try_receive(&mut self) {
+        if let Some(id) = &mut self.pending_response {
+            let device_tuple = self.devices.get_mut(&id).unwrap();
+            let result = match device_tuple.1.try_recv() {
                 Ok(v) => v,
                 Err(_) => return,
             };
@@ -85,27 +85,26 @@ impl ExampleDeviceManager {
                     return;
                 }
             };
-
-            let mut device = self.devices.get(&id).unwrap().borrow_mut();
-
+            let device_tuple = self.devices.get(&id).unwrap();
+            let mut device = device_tuple.2.borrow_mut();
             if let Err(e) = device.handle_response(response) {
                 println!("Error received while device processed response {:?}", e);
             }
         }
     }
 
-    fn try_send(&mut self) {
+    pub fn try_send(&mut self) {
         if let Some(id) = self.scheduled_devices.pop_front() {
             let device = self.devices.get(&id).unwrap();
 
-            let (request, has_more) = device.borrow_mut().next_request().unwrap();
+            let (request, has_more) = device.2.borrow_mut().next_request().unwrap();
 
-            let (tx, rx) = oneshot::channel();
 
-            self.tx.try_send((id, request, tx)).unwrap();
-
-            self.pending_response = Some((id, rx));
-
+            let res = self.tx.try_send((id, request, device.0.clone()));
+            if res.is_err() {
+                return;
+            }
+            self.pending_response = Some(id);
             if has_more {
                 self.scheduled_devices.push_front(id);
             }
