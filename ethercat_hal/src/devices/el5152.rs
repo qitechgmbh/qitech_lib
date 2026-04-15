@@ -93,29 +93,30 @@ impl ConfigurableDevice<EL5152Configuration> for EL5152 {
     }
 }
 
-impl EncoderInputDevice<EL5152Port> for EL5152 {
-    fn get_counter_value(&self, port: EL5152Port) -> Result<EncoderInputCounter, anyhow::Error> {
+impl EncoderInputDevice for EL5152 {
+    fn get_counter_value(&self, port: usize) -> Result<EncoderInputCounter, anyhow::Error> {
         let value = match port {
-            EL5152Port::ENC1 => self
+            0 => self
                 .txpdo
                 .status_channel1
                 .as_ref()
                 .map_or(0, |status| status.counter_value),
-            EL5152Port::ENC2 => self
+            1 => self
                 .txpdo
                 .status_channel2
                 .as_ref()
                 .map_or(0, |status| status.counter_value),
+            _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!"))
         };
         Ok(EncoderInputCounter { value })
     }
 
     fn get_frequency(
         &self,
-        port: EL5152Port,
+        port: usize,
     ) -> Result<Option<EncoderInputFrequency>, anyhow::Error> {
         let frequency = match port {
-            EL5152Port::ENC1 => {
+            0 => {
                 self.txpdo
                     .frequency_channel1
                     .as_ref()
@@ -123,7 +124,7 @@ impl EncoderInputDevice<EL5152Port> for EL5152 {
                         value: f.frequency_value,
                     })
             }
-            EL5152Port::ENC2 => {
+            1 => {
                 self.txpdo
                     .frequency_channel2
                     .as_ref()
@@ -131,44 +132,47 @@ impl EncoderInputDevice<EL5152Port> for EL5152 {
                         value: f.frequency_value,
                     })
             }
+            _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!"))
         };
         Ok(frequency)
     }
 
-    fn get_period(&self, port: EL5152Port) -> Result<Option<EncoderInputPeriod>, anyhow::Error> {
+    fn get_period(&self, port: usize) -> Result<Option<EncoderInputPeriod>, anyhow::Error> {
         let period = match port {
-            EL5152Port::ENC1 => self
+            0 => self
                 .txpdo
                 .period_channel1
                 .as_ref()
                 .map(|p| EncoderInputPeriod {
                     value: p.period_value,
                 }),
-            EL5152Port::ENC2 => self
+            1 => self
                 .txpdo
                 .period_channel2
                 .as_ref()
                 .map(|p| EncoderInputPeriod {
                     value: p.period_value,
-                }),
+                }),            
+                _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!"))
         };
         Ok(period)
     }
 
-    fn set_counter(&mut self, port: EL5152Port, value: u32) -> Result<(), anyhow::Error> {
+    fn set_counter(&mut self, port: usize, value: u32) -> Result<(), anyhow::Error> {
         match port {
-            EL5152Port::ENC1 => {
+            0 => {
                 if let Some(control) = self.rxpdo.control_channel1.as_mut() {
                     control.set_counter_value = value;
                     control.set_counter = true;
                 }
             }
-            EL5152Port::ENC2 => {
+            1 => {
                 if let Some(control) = self.rxpdo.control_channel2.as_mut() {
                     control.set_counter_value = value;
                     control.set_counter = true;
                 }
             }
+            _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!"))
         }
         Ok(())
     }
