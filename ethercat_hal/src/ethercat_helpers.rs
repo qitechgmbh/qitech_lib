@@ -38,17 +38,16 @@ macro_rules! impl_ethercat_typed_result {
         }
     };
 }
-
 impl_ethercat_typed_result!(bool, from_bool);
 impl_ethercat_typed_result!(u8, from_u8);
 impl_ethercat_typed_result!(u16, from_u16);
 impl_ethercat_typed_result!(i16, from_i16);
 impl_ethercat_typed_result!(u32, from_u32);
 impl_ethercat_typed_result!(i32, from_i32);
-
 pub trait EthercatSdoBytes {
     fn size(&self) -> usize;
     fn to_bytes(&self) -> [u8; 4];
+    fn from_bytes(bytes: [u8; 4]) -> Self where Self: Sized;
 }
 
 impl EthercatSdoBytes for u8 {
@@ -58,6 +57,10 @@ impl EthercatSdoBytes for u8 {
 
     fn to_bytes(&self) -> [u8; 4] {
         [*self, 0, 0, 0]
+    }
+
+    fn from_bytes(bytes: [u8; 4]) -> Self {
+        bytes[0]
     }
 }
 
@@ -70,6 +73,10 @@ impl EthercatSdoBytes for u16 {
         let bytes = u16::to_le_bytes(*self);
         [bytes[0], bytes[1], 0, 0]
     }
+
+    fn from_bytes(bytes: [u8; 4]) -> Self {
+        u16::from_le_bytes([bytes[0], bytes[1]])
+    }
 }
 
 impl EthercatSdoBytes for i16 {
@@ -81,6 +88,10 @@ impl EthercatSdoBytes for i16 {
         let bytes = i16::to_le_bytes(*self);
         [bytes[0], bytes[1], 0, 0]
     }
+
+    fn from_bytes(bytes: [u8; 4]) -> Self {
+        i16::from_le_bytes([bytes[0], bytes[1]])
+    }
 }
 
 impl EthercatSdoBytes for i32 {
@@ -90,6 +101,10 @@ impl EthercatSdoBytes for i32 {
 
     fn to_bytes(&self) -> [u8; 4] {
         i32::to_le_bytes(*self)
+    }
+
+    fn from_bytes(bytes: [u8; 4]) -> Self {
+        i32::from_le_bytes(bytes)
     }
 }
 
@@ -101,6 +116,10 @@ impl EthercatSdoBytes for u32 {
     fn to_bytes(&self) -> [u8; 4] {
         u32::to_le_bytes(*self)
     }
+
+    fn from_bytes(bytes: [u8; 4]) -> Self {
+        u32::from_le_bytes(bytes)
+    }
 }
 
 impl EthercatSdoBytes for bool {
@@ -111,10 +130,99 @@ impl EthercatSdoBytes for bool {
     fn to_bytes(&self) -> [u8; 4] {
         [*self as u8, 0, 0, 0]
     }
+
+    fn from_bytes(bytes: [u8; 4]) -> Self {
+        bytes[0] != 0
+    }
 }
 
-impl EtherCATThreadChannel {
-    pub fn sdo_read<T: 'static>(
+pub trait EtherCatInterface {
+    fn sdo_read<T: 'static>(
+        &self,
+        device_address: u16,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<T, anyhow::Error>
+    where
+        T: EthercatSdoBytes + EthercatResponseTypedResult;
+    fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, anyhow::Error>;
+
+    fn sdo_write<T: 'static>(
+        &self,
+        device_address: u16,
+        index: u16,
+        sub_index: u8,
+        value: T,
+    ) -> Result<(), anyhow::Error>
+    where
+        T: EtherCrabWireWrite + EthercatSdoBytes;
+
+    fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error>;
+    fn enable_dc_sync0(&self, device_address: u16) -> Result<(),anyhow::Error>;
+}
+
+
+#[cfg(feature = "mock")]
+impl EtherCatInterface for EtherCATThreadChannel {
+    fn sdo_read<T: 'static>(
+        &self,
+        device_address: u16,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<T, anyhow::Error> where T : EthercatSdoBytes {
+        use crate::SdoIndex;
+        let index = SdoIndex { index: index as u32, sub_index: sub_index as u16 };
+        let res = self.sdo_map.get(&index);
+        
+        let result = match res {
+            Some(r) => r,
+            None => return Err(anyhow::anyhow!("Sdo Index {}:{} for device {} not found",index.index,index.sub_index,device_address)),
+        };
+
+        if TypeId::of::<T>() == result.type_id {
+            let mut bytes : [u8;4] = [0u8;4];
+            for i in 0..result.value.len() {
+                if i > 3 {
+                    break;
+                } 
+                bytes[i] = result.value.get(i).unwrap().clone();
+            }
+            Ok(T::from_bytes(bytes))
+        }
+        else{
+            use std::any::type_name;
+            Err(anyhow::anyhow!("sdo_read: Unknown TypeId {} or Invalid Size {}!!",type_name::<T>(),result.value.len()))
+        }
+    }
+
+    fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, anyhow::Error> {
+        Ok(self.machine_device_infos.clone())
+    }
+
+    fn sdo_write<T: 'static>(
+        &self,
+        device_address: u16,
+        index: u16,
+        sub_index: u8,
+        value: T,
+    ) -> Result<(), anyhow::Error>
+    where
+        T: EtherCrabWireWrite + EthercatSdoBytes {
+        Ok(())
+    }
+
+    fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    fn enable_dc_sync0(&self, device_address: u16) -> Result<(),anyhow::Error> {
+        Ok(())
+    }
+}
+
+#[cfg(not(feature = "mock"))] 
+impl EtherCatInterface for EtherCATThreadChannel {
+    fn sdo_read<T: 'static>(
         &self,
         device_address: u16,
         index: u16,
@@ -158,7 +266,7 @@ impl EtherCATThreadChannel {
         return res;
     }
 
-    pub fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, anyhow::Error> {
+    fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, anyhow::Error> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::ReadMachineIdent(),
@@ -184,7 +292,7 @@ impl EtherCATThreadChannel {
         }
     }
 
-    pub fn sdo_write<T: 'static>(
+    fn sdo_write<T: 'static>(
         &self,
         device_address: u16,
         index: u16,
@@ -227,7 +335,7 @@ impl EtherCATThreadChannel {
         }
     }
 
-    pub fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error> {
+    fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error> {
         let (tx, _rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::ChangeState(state),
@@ -237,7 +345,9 @@ impl EtherCATThreadChannel {
         Ok(())
     }
 
-    pub fn enable_dc_sync0(&self) {}
+    fn enable_dc_sync0(&self, _device_address: u16) -> Result<(),anyhow::Error> {
+        Ok(())
+    }
 }
 
 pub fn type_id_to_sdo_type<T: 'static>() -> Result<SdoType, anyhow::Error> {

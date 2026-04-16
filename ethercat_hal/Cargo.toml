@@ -20,3 +20,8 @@ triple_buffer = "9.0.0"
 approx = "0.5.1"
 
 [lib]
+
+[features]
+default = ["mock"]
+mock = []
+legacy_code = []
