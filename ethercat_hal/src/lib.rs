@@ -40,13 +40,13 @@ pub const PDI_LEN: usize = 1024;
 static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
 
 #[derive(Hash,Eq,PartialEq,PartialOrd,Clone)]
-struct SdoIndex {
+pub struct SdoIndex {
     index : u32,
     sub_index : u16,
 }
 
 #[derive(Clone)]
-struct TypeErasedValue {
+pub struct TypeErasedValue {
     type_id : TypeId,
     value : Vec<u8>,
 }
@@ -174,6 +174,7 @@ pub enum ChannelResponse {
     SdoWriteResponse(Result<(), anyhow::Error>),
     ChangeState(Result<(), anyhow::Error>),
     MachineDeviceInfoResponse(Result<Vec<MachineDeviceInfo>, anyhow::Error>),
+    WriteMachineInfoResponse(Result<(),anyhow::Error>),
     EnableDCSync0Response(Result<(), anyhow::Error>),
 }
 

@@ -136,35 +136,9 @@ impl EthercatSdoBytes for bool {
     }
 }
 
-pub trait EtherCatInterface {
-    fn sdo_read<T: 'static>(
-        &self,
-        device_address: u16,
-        index: u16,
-        sub_index: u8,
-    ) -> Result<T, anyhow::Error>
-    where
-        T: EthercatSdoBytes + EthercatResponseTypedResult;
-    fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, anyhow::Error>;
-
-    fn sdo_write<T: 'static>(
-        &self,
-        device_address: u16,
-        index: u16,
-        sub_index: u8,
-        value: T,
-    ) -> Result<(), anyhow::Error>
-    where
-        T: EtherCrabWireWrite + EthercatSdoBytes;
-
-    fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error>;
-    fn enable_dc_sync0(&self, device_address: u16) -> Result<(),anyhow::Error>;
-}
-
-
 #[cfg(feature = "mock")]
-impl EtherCatInterface for EtherCATThreadChannel {
-    fn sdo_read<T: 'static>(
+impl EtherCATThreadChannel {
+    pub fn sdo_read<T: 'static>(
         &self,
         device_address: u16,
         index: u16,
@@ -195,11 +169,11 @@ impl EtherCatInterface for EtherCATThreadChannel {
         }
     }
 
-    fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, anyhow::Error> {
+    pub fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, anyhow::Error> {
         Ok(self.machine_device_infos.clone())
     }
 
-    fn sdo_write<T: 'static>(
+    pub fn sdo_write<T: 'static>(
         &self,
         device_address: u16,
         index: u16,
@@ -211,18 +185,18 @@ impl EtherCatInterface for EtherCATThreadChannel {
         Ok(())
     }
 
-    fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error> {
+    pub fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error> {
         Ok(())
     }
 
-    fn enable_dc_sync0(&self, device_address: u16) -> Result<(),anyhow::Error> {
+    pub fn enable_dc_sync0(&self, device_address: u16) -> Result<(),anyhow::Error> {
         Ok(())
     }
 }
 
 #[cfg(not(feature = "mock"))] 
-impl EtherCatInterface for EtherCATThreadChannel {
-    fn sdo_read<T: 'static>(
+impl EtherCATThreadChannel {
+    pub fn sdo_read<T: 'static>(
         &self,
         device_address: u16,
         index: u16,
@@ -266,7 +240,7 @@ impl EtherCatInterface for EtherCATThreadChannel {
         return res;
     }
 
-    fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, anyhow::Error> {
+    pub fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, anyhow::Error> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::ReadMachineIdent(),
@@ -292,7 +266,7 @@ impl EtherCatInterface for EtherCATThreadChannel {
         }
     }
 
-    fn sdo_write<T: 'static>(
+    pub fn sdo_write<T: 'static>(
         &self,
         device_address: u16,
         index: u16,
@@ -335,7 +309,7 @@ impl EtherCatInterface for EtherCATThreadChannel {
         }
     }
 
-    fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error> {
+    pub fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error> {
         let (tx, _rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::ChangeState(state),
@@ -345,7 +319,7 @@ impl EtherCatInterface for EtherCATThreadChannel {
         Ok(())
     }
 
-    fn enable_dc_sync0(&self, _device_address: u16) -> Result<(),anyhow::Error> {
+    pub fn enable_dc_sync0(&self, _device_address: u16) -> Result<(),anyhow::Error> {
         Ok(())
     }
 }

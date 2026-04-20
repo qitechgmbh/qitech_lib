@@ -13,3 +13,7 @@ units = {path = "units"}
 tokio = "1.49.0"
 
 [lib]
+
+[features]
+# This defines 'mock' at the root level and passes it to 'ethercat_hal'
+mock = ["ethercat_hal/mock"]

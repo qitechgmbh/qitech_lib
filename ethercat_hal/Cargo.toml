@@ -22,6 +22,6 @@ approx = "0.5.1"
 [lib]
 
 [features]
-default = ["mock"]
+default = []
 mock = []
 legacy_code = []

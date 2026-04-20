@@ -49,7 +49,6 @@ fn rxpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::
                 channel: crate::EtherCATThreadChannel,
                 device_address : u16,
             ) -> Result<(), anyhow::Error> {
-                use crate::ethercat_helpers::EtherCatInterface;
                 channel.sdo_write(device_address,0x1C12, 0, 0u8)?;
                 let mut len = 0;
                 #(
@@ -100,7 +99,6 @@ fn txpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::
                 channel: crate::EtherCATThreadChannel,
                 device_address : u16,
             ) -> Result<(), anyhow::Error> {
-                use crate::ethercat_helpers::EtherCatInterface;
                 channel.sdo_write(device_address,0x1C13, 0, 0u8)?;
                 let mut len = 0;
                 #(
@@ -148,6 +146,7 @@ fn pdo_object_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_mac
     let mut ast: DeriveInput = syn::parse2(item)?;
 
     let PdoObjectAttribute { bits } = deluxe::extract_attributes(&mut ast)?;
+
     let ident = &ast.ident;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
