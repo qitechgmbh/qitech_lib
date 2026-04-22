@@ -198,7 +198,7 @@ pub fn device_from_subdevice_identity(
 }
 
 pub fn device_from_subdevice_identity_rc(
-    dev: MetaSubdevice,
+    dev: &MetaSubdevice,
 ) -> Result<Rc<RefCell<dyn EthercatDevice>>, anyhow::Error> {
     let ident_tuple: (u32, u32, u32) = (dev.vendor, dev.product_id, dev.revision);
 

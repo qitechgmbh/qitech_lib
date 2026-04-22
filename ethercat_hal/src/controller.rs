@@ -57,6 +57,10 @@ impl<C,P> EtherCATController<C,P> where C : Consumer, P : Producer {
             machine_device_infos: None,
         }
     }
+
+    pub fn get_subdevices(&self) -> &[MetaSubdevice] {
+        &self.subdevices[0..self.subdevice_count]
+    }
 }
 
 
