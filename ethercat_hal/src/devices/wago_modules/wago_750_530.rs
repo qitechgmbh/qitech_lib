@@ -3,7 +3,7 @@ use crate::devices::{
     SubDeviceProductTuple,
 };
 use crate::devices::{EthercatDeviceProcessing, NewEthercatDevice};
-use crate::io::digital_output::{DigitalOutputDevice};
+use crate::io::digital_output::DigitalOutputDevice;
 
 #[derive(Clone)]
 pub struct Wago750_530 {
@@ -97,8 +97,6 @@ impl DigitalOutputDevice for Wago750_530 {
     fn get_port_count(&self) -> usize {
         8
     }
-
-
 }
 
 impl EthercatDeviceUsed for Wago750_530 {

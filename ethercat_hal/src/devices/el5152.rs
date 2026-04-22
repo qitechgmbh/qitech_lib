@@ -106,33 +106,28 @@ impl EncoderInputDevice for EL5152 {
                 .status_channel2
                 .as_ref()
                 .map_or(0, |status| status.counter_value),
-            _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!"))
+            _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!")),
         };
         Ok(EncoderInputCounter { value })
     }
 
-    fn get_frequency(
-        &self,
-        port: usize,
-    ) -> Result<Option<EncoderInputFrequency>, anyhow::Error> {
+    fn get_frequency(&self, port: usize) -> Result<Option<EncoderInputFrequency>, anyhow::Error> {
         let frequency = match port {
-            0 => {
-                self.txpdo
-                    .frequency_channel1
-                    .as_ref()
-                    .map(|f| EncoderInputFrequency {
-                        value: f.frequency_value,
-                    })
-            }
-            1 => {
-                self.txpdo
-                    .frequency_channel2
-                    .as_ref()
-                    .map(|f| EncoderInputFrequency {
-                        value: f.frequency_value,
-                    })
-            }
-            _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!"))
+            0 => self
+                .txpdo
+                .frequency_channel1
+                .as_ref()
+                .map(|f| EncoderInputFrequency {
+                    value: f.frequency_value,
+                }),
+            1 => self
+                .txpdo
+                .frequency_channel2
+                .as_ref()
+                .map(|f| EncoderInputFrequency {
+                    value: f.frequency_value,
+                }),
+            _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!")),
         };
         Ok(frequency)
     }
@@ -152,8 +147,8 @@ impl EncoderInputDevice for EL5152 {
                 .as_ref()
                 .map(|p| EncoderInputPeriod {
                     value: p.period_value,
-                }),            
-                _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!"))
+                }),
+            _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!")),
         };
         Ok(period)
     }
@@ -172,7 +167,7 @@ impl EncoderInputDevice for EL5152 {
                     control.set_counter = true;
                 }
             }
-            _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!"))
+            _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!")),
         }
         Ok(())
     }

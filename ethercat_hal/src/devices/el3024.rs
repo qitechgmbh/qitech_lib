@@ -78,7 +78,7 @@ impl NewEthercatDevice for EL3024 {
 }
 
 impl AnalogInputDevice for EL3024 {
-    fn get_input(&self, port: usize) -> Result<AnalogInputInput,anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput, anyhow::Error> {
         let raw_value = match port {
             0 => match &self.txpdo {
                 EL3024TxPdo {
@@ -124,7 +124,7 @@ impl AnalogInputDevice for EL3024 {
                 } => ai_compact_channel4.value,
                 _ => panic!("Invalid TxPdo assignment"),
             },
-            _ => return Err(anyhow::anyhow!("EL3024 only has 4 ports"))
+            _ => return Err(anyhow::anyhow!("EL3024 only has 4 ports")),
         };
         let raw_value = U16SigningConverter::load_raw(raw_value);
 

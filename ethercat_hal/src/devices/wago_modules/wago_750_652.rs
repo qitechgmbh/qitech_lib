@@ -314,34 +314,26 @@ impl SerialInterfaceDevice for Wago750_652 {
         Needs to be called multiple times until it returns true, at which point it is ready to be used
     */
     fn serial_interface_initialize(&mut self, _port: usize) -> bool {
-                if !self.rx_pdo.control.init_request
-                    && !self.tx_pdo.status.init_ack
-                    && !self.started_init
-                {
-                    self.rx_pdo.control.init_request = true;
-                    self.started_init = true;
-                    return false;
-                }
+        if !self.rx_pdo.control.init_request && !self.tx_pdo.status.init_ack && !self.started_init {
+            self.rx_pdo.control.init_request = true;
+            self.started_init = true;
+            return false;
+        }
 
-                if self.rx_pdo.control.init_request && self.tx_pdo.status.init_ack {
-                    self.rx_pdo.control.init_request = false;
-                    return false;
-                }
+        if self.rx_pdo.control.init_request && self.tx_pdo.status.init_ack {
+            self.rx_pdo.control.init_request = false;
+            return false;
+        }
 
-                if !self.rx_pdo.control.init_request && self.tx_pdo.status.init_ack {
-                    return false;
-                }
+        if !self.rx_pdo.control.init_request && self.tx_pdo.status.init_ack {
+            return false;
+        }
 
-                if !self.rx_pdo.control.init_request
-                    && !self.tx_pdo.status.init_ack
-                    && self.started_init
-                {
-                    self.has_messages_last_toggle = self.tx_pdo.status.receive_request;
-                    return true;
-                }
-                false
-            
-        
+        if !self.rx_pdo.control.init_request && !self.tx_pdo.status.init_ack && self.started_init {
+            self.has_messages_last_toggle = self.tx_pdo.status.receive_request;
+            return true;
+        }
+        false
     }
 }
 

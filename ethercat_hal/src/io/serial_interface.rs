@@ -1,7 +1,6 @@
 use anyhow::Error;
 
-pub trait SerialInterfaceDevice
-{
+pub trait SerialInterfaceDevice {
     fn serial_interface_read_message(&mut self, port: usize) -> Option<Vec<u8>>;
     fn serial_interface_write_message(
         &mut self,

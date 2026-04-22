@@ -1,6 +1,6 @@
+use super::analog_input::{AnalogInputInput, physical::AnalogInputRange};
 use crate::{devices::EthercatDevice, helpers::el70xx_velocity_converter::EL70x1VelocityConverter};
 use anyhow::Error;
-use super::analog_input::{AnalogInputInput, physical::AnalogInputRange};
 
 #[derive(Debug, Clone)]
 pub struct StepperVelocityEL70x1Input {
@@ -47,14 +47,13 @@ pub struct StepperVelocityEL70x1Output {
     pub set_counter: Option<i128>,
 }
 
-pub trait StepperVelocityEL70x1Device : EthercatDevice
-{
+pub trait StepperVelocityEL70x1Device: EthercatDevice {
     fn set_output(&mut self, port: usize, value: StepperVelocityEL70x1Output) -> Result<(), Error>;
     fn get_input(&self, port: usize) -> Result<StepperVelocityEL70x1Input, Error>;
     fn get_output(&self, port: usize) -> Result<StepperVelocityEL70x1Output, Error>;
     fn get_speed_range(&self, port: usize) -> crate::shared_config::el70x1::EL70x1SpeedRange;
     /// Set the speed in steps per second
-    fn set_speed(&mut self, port : usize, steps_per_second: f64) -> Result<(), Error> {
+    fn set_speed(&mut self, port: usize, steps_per_second: f64) -> Result<(), Error> {
         // Get current state to preserve other output values
         let mut output = self.get_output(port).unwrap();
 
@@ -66,11 +65,11 @@ pub trait StepperVelocityEL70x1Device : EthercatDevice
         output.velocity = velocity;
 
         // Write to device
-        self.set_output(port,output)
+        self.set_output(port, output)
     }
 
     /// Get the speed in steps per second
-    fn get_speed(&self, port : usize) -> i32 {
+    fn get_speed(&self, port: usize) -> i32 {
         let output = self.get_output(port).unwrap();
         let speed_range = self.get_speed_range(port);
         let converter = EL70x1VelocityConverter::new(&speed_range);
@@ -78,22 +77,19 @@ pub trait StepperVelocityEL70x1Device : EthercatDevice
     }
 
     fn get_port_count(&self) -> usize;
-    fn is_enabled(&self,port : usize) -> bool;
-    fn set_enabled(&mut self,port : usize, enabled: bool) {        
+    fn is_enabled(&self, port: usize) -> bool;
+    fn set_enabled(&mut self, port: usize, enabled: bool) {
         let mut output = self.get_output(port).unwrap();
         output.enable = enabled;
         self.set_output(port, output);
     }
-    fn get_position(&self,port : usize) -> i128;
-    fn set_position(&mut self,port : usize, position: i128);
+    fn get_position(&self, port: usize) -> i128;
+    fn set_position(&mut self, port: usize, position: i128);
 
     fn get_digital_input(&self, port: usize) -> Result<bool, anyhow::Error>;
     fn get_digital_in_port_count(&self) -> usize;
-    
-    fn get_analog_input(&self, port: usize) -> Result<AnalogInputInput,anyhow::Error>;
+
+    fn get_analog_input(&self, port: usize) -> Result<AnalogInputInput, anyhow::Error>;
     fn get_analog_port_count(&self) -> usize;
     fn analog_input_range(&self) -> Option<AnalogInputRange>;
-    
-
-
 }

@@ -523,54 +523,52 @@ impl SerialInterfaceDevice for EL6021 {
             None => return false,
         };
 
-                /*
-                Initialization was accepted
-                init_accepted 1: Initialization was completed by the terminal.
-                init_request 1: The controller requests terminal for initialization. The
-                    transmit and receive functions will be blocked, the FIFO
-                    pointer will be reset and the interface will be initialized with
-                    the values of the responsible Settings object. The execution
-                    of the initialization will be acknowledged by the terminal
-                    with the ‘Init accepted’ bit.
-                */
+        /*
+        Initialization was accepted
+        init_accepted 1: Initialization was completed by the terminal.
+        init_request 1: The controller requests terminal for initialization. The
+            transmit and receive functions will be blocked, the FIFO
+            pointer will be reset and the interface will be initialized with
+            the values of the responsible Settings object. The execution
+            of the initialization will be acknowledged by the terminal
+            with the ‘Init accepted’ bit.
+        */
         if rxpdo.control.init_request && txpdo.status.init_accepted {
             rxpdo.control.init_request = false;
             return false;
         }
 
-                /*
-                    This is the initial state
-                    init_accepted 0: Initialization was completed by the terminal.
-                    init_request 0: The terminal is ready again for serial data exchange.
-                */
-                if !rxpdo.control.init_request && !txpdo.status.init_accepted && !self.initialized {
-                    rxpdo.control.init_request = true;
-                    self.initialized = true;
-                    return false;
-                }
+        /*
+            This is the initial state
+            init_accepted 0: Initialization was completed by the terminal.
+            init_request 0: The terminal is ready again for serial data exchange.
+        */
+        if !rxpdo.control.init_request && !txpdo.status.init_accepted && !self.initialized {
+            rxpdo.control.init_request = true;
+            self.initialized = true;
+            return false;
+        }
 
-                /*
-                    init_accepted 1: Initialization was completed by the terminal.
-                    init_request 0: The terminal is ready again for serial data exchange.
-                */
-                if !rxpdo.control.init_request && txpdo.status.init_accepted {
-                    return false;
-                }
+        /*
+            init_accepted 1: Initialization was completed by the terminal.
+            init_request 0: The terminal is ready again for serial data exchange.
+        */
+        if !rxpdo.control.init_request && txpdo.status.init_accepted {
+            return false;
+        }
 
-                /*
-                    If both init_request and init_accepted == false, initialization is complete
-                    init_accepted 0: The controller once again requests the terminal to prepare for serial data exchange.
-                    init_request 0: The terminal is ready again for serial data exchange.
-                */
-                if !rxpdo.control.init_request && !txpdo.status.init_accepted && self.initialized {
-                    // set inital state of the toggle
-                    self.has_messages_last_toggle = txpdo.status.receive_request;
-                    return true;
-                }
+        /*
+            If both init_request and init_accepted == false, initialization is complete
+            init_accepted 0: The controller once again requests the terminal to prepare for serial data exchange.
+            init_request 0: The terminal is ready again for serial data exchange.
+        */
+        if !rxpdo.control.init_request && !txpdo.status.init_accepted && self.initialized {
+            // set inital state of the toggle
+            self.has_messages_last_toggle = txpdo.status.receive_request;
+            return true;
+        }
 
-                false
-            
-        
+        false
     }
 }
 

@@ -34,10 +34,10 @@ impl ExampleClient {
                     let res = tx.send(result).await;
                     match res {
                         Ok(r) => r,
-                        Err(e) => println!("error:{:?}",e),
+                        Err(e) => println!("error:{:?}", e),
                     }
-                },
-                Err(e) => println!("ex client error {:?}",e),
+                }
+                Err(e) => println!("ex client error {:?}", e),
             }
         }
     }

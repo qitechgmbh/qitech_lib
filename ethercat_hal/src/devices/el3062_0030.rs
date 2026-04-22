@@ -60,7 +60,7 @@ impl NewEthercatDevice for EL3062_0030 {
 }
 
 impl AnalogInputDevice for EL3062_0030 {
-    fn get_input(&self, port: usize) -> Result<AnalogInputInput,anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput, anyhow::Error> {
         let raw_value = match port {
             0 => match &self.txpdo {
                 EL3062_0030TxPdo {

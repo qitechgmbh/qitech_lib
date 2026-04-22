@@ -2,19 +2,18 @@ pub mod clients;
 pub mod devices;
 pub mod managers;
 
-use std::{any::Any};
+use std::any::Any;
 
 use clients::example_client::{ExampleClient, RequestMessage};
 use tokio::sync::mpsc::Receiver;
-use tokio_modbus::{Slave, client::rtu};
 pub use tokio_modbus as protocol;
+use tokio_modbus::{Slave, client::rtu};
 use tokio_serial::SerialStream;
 
 pub type Request = protocol::Request<'static>;
 pub type Response = protocol::Response;
 pub type ExceptionCode = protocol::ExceptionCode;
 pub type FunctionCode = protocol::FunctionCode;
-
 
 pub fn start_modbus_async_task(
     tty_path: String,

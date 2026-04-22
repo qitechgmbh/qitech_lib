@@ -209,13 +209,12 @@ impl EtherCATThreadChannel {
             response_channel: EtherCATThreadResponseChannel(tx),
         };
 
-
         let res = self.0.send(req);
         match res {
             Ok(_) => (),
             Err(e) => return Err(anyhow::anyhow!(e)),
         };
-        println!("sdo_write {:?}",res);
+        println!("sdo_write {:?}", res);
 
         let res = rx.recv_timeout(Duration::from_millis(500));
         let response: ChannelResponse = match res {
