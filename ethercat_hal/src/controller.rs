@@ -1,6 +1,7 @@
 use crate::{
     ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE, EtherCATState,
     MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType,
+    devices::panasonic_modules::minas_a6::{EncoderResolution, MinasA6BMotor},
     ethercat_helpers::{sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::{MachineDeviceInfo, read_device_identifications},
@@ -21,7 +22,11 @@ use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::time::interval;
 use triple_buffer::{Input, Output};
 
-pub struct EtherCATController<C,P> where C : Consumer, P: Producer {
+pub struct EtherCATController<C, P>
+where
+    C: Consumer,
+    P: Producer,
+{
     pub cycle_time_us: u64,
     pub interface: Option<String>,
     pub machine_device_infos: Option<Vec<MachineDeviceInfo>>,
@@ -37,7 +42,11 @@ pub struct EtherCATController<C,P> where C : Consumer, P: Producer {
     output_consumer: C,
 }
 
-impl<C,P> EtherCATController<C,P> where C : Consumer, P : Producer {
+impl<C, P> EtherCATController<C, P>
+where
+    C: Consumer,
+    P: Producer,
+{
     pub fn new(
         input: P,
         output: C,
@@ -63,7 +72,6 @@ impl<C,P> EtherCATController<C,P> where C : Consumer, P : Producer {
     }
 }
 
-
 pub trait Consumer {
     fn read(&mut self) -> &[u8];
 }
@@ -74,11 +82,11 @@ pub trait Producer {
 }
 
 pub struct MockConsumer {
-    pub(crate) buffer : [u8;ETHERCAT_TX_RX_SIZE]
+    pub(crate) buffer: [u8; ETHERCAT_TX_RX_SIZE],
 }
 
 pub struct MockProducer {
-    pub(crate) buffer : [u8;ETHERCAT_TX_RX_SIZE]
+    pub(crate) buffer: [u8; ETHERCAT_TX_RX_SIZE],
 }
 
 impl Producer for MockProducer {
@@ -98,11 +106,11 @@ impl Consumer for MockConsumer {
 }
 
 pub struct TripleBufConsumer {
-    pub input_consumer: Output<[u8;ETHERCAT_TX_RX_SIZE]>,
+    pub input_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
 }
 
 pub struct TripleBufProducer {
-    pub output_producer: Input<[u8;ETHERCAT_TX_RX_SIZE]>,
+    pub output_producer: Input<[u8; ETHERCAT_TX_RX_SIZE]>,
 }
 
 impl Consumer for TripleBufConsumer {
@@ -121,14 +129,20 @@ impl Producer for TripleBufProducer {
     }
 }
 
-
-
-pub struct EtherCATAppHandle<C,P> where C : Consumer, P : Producer {
+pub struct EtherCATAppHandle<C, P>
+where
+    C: Consumer,
+    P: Producer,
+{
     pub input_consumer: C,
     pub output_producer: P,
 }
 
-impl<C, P> EtherCATAppHandle<C, P> where C: Consumer, P: Producer {
+impl<C, P> EtherCATAppHandle<C, P>
+where
+    C: Consumer,
+    P: Producer,
+{
     pub fn get_inputs(&mut self) -> &[u8] {
         self.input_consumer.read()
     }
@@ -157,9 +171,9 @@ pub fn enable_dc_sync(
     });
 }
 
-unsafe impl Sync for EtherCATController<TripleBufConsumer,TripleBufProducer> {}
+unsafe impl Sync for EtherCATController<TripleBufConsumer, TripleBufProducer> {}
 
-impl EtherCATController<TripleBufConsumer,TripleBufProducer> {
+impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
     pub fn ethercat_state_machine(&mut self) {
         let mut ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>> = None;
@@ -269,13 +283,10 @@ impl EtherCATController<TripleBufConsumer,TripleBufProducer> {
                     self.subdevice_count = i;
                     let msg = match self.rx_channel.try_recv() {
                         Ok(value) => value,
-                        Err(e) => {                            
-                            continue
-                        },
+                        Err(e) => continue,
                     };
 
-                    println!("GOT A MESSAGE: {:?}",msg.channel_request);
-
+                    println!("GOT A MESSAGE: {:?}", msg.channel_request);
 
                     match msg.channel_request {
                         ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {
@@ -353,6 +364,36 @@ impl EtherCATController<TripleBufConsumer,TripleBufProducer> {
                             send_response(
                                 msg.response_channel,
                                 ChannelResponse::MachineDeviceInfoResponse(res),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::ConfigureMinasA6B {
+                            device_address,
+                            homing_config,
+                        } => {
+                            let rt = get_async_runtime();
+                            let result: Result<EncoderResolution, anyhow::Error> =
+                                rt.block_on(async {
+                                    for subdevice in preop_group.iter(maindev) {
+                                        if subdevice.configured_address() == device_address {
+                                            let mut temp_motor = MinasA6BMotor::default();
+                                            temp_motor.homing_config = homing_config.clone();
+                                            temp_motor.configure(&subdevice).await?;
+                                            let enc = temp_motor
+                                                .read_encoder_resolution(&subdevice)
+                                                .await?;
+                                            temp_motor.setup_homing(&subdevice).await?;
+                                            return Ok(enc);
+                                        }
+                                    }
+                                    Err(anyhow::anyhow!(
+                                        "ConfigureMinasA6B: no subdevice found at address {:#06x}",
+                                        device_address
+                                    ))
+                                });
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::ConfigureMinasA6BResponse(result),
                             );
                             continue;
                         }
