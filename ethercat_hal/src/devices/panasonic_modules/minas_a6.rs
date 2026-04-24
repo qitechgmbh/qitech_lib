@@ -11,6 +11,7 @@ use crate::devices::{
 use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::helpers::minas_a6_subdevice_wrapper::{EtherCATSlaveWrapper, PdoMapping};
 use crate::io::servo_velocity_minasa6::{MinasA6BDevice, MinasA6BInput, MinasA6BOutput};
+use crate::EncoderResolution;
 use anyhow::{Error, anyhow};
 use bitvec::field::BitField;
 use bitvec::prelude::{BitSlice, Lsb0};
@@ -286,12 +287,6 @@ impl Default for MotorHomingConfig {
             acceleration_rps_squared: 10.0,
         }
     }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct EncoderResolution {
-    pub increments: u32,
-    pub revolutions: u32,
 }
 
 impl EncoderResolution {

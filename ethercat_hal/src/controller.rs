@@ -1,7 +1,7 @@
 use crate::{
-    ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE, EtherCATState,
-    MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType,
-    devices::panasonic_modules::minas_a6::{EncoderResolution, MinasA6BMotor},
+    ChannelRequest, ChannelRequests, ChannelResponse, EncoderResolution, ETHERCAT_TX_RX_SIZE,
+    EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType,
+    devices::panasonic_modules::minas_a6::MinasA6BMotor,
     ethercat_helpers::{sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::{MachineDeviceInfo, read_device_identifications},

@@ -10,7 +10,6 @@ pub mod shared_config;
 //#[cfg(feature = "legacy_code")]
 pub mod machine_ident_read;
 use crate::controller::EtherCATController;
-use crate::devices::panasonic_modules::minas_a6::EncoderResolution;
 use controller::{
     EtherCATAppHandle, MockConsumer, MockProducer, TripleBufConsumer, TripleBufProducer,
 };
@@ -148,6 +147,13 @@ pub struct SdoReadRequest {
 
 // LEGACY CODE HIDE BEHIND FLAG
 pub struct MachineIdent {}
+
+/// Driver-agnostic encoder resolution returned from device configuration.
+#[derive(Clone, Copy, Debug)]
+pub struct EncoderResolution {
+    pub increments: u32,
+    pub revolutions: u32,
+}
 
 #[derive(Debug)]
 pub enum ChannelResponse {
