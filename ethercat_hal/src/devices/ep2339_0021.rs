@@ -63,122 +63,35 @@ impl DigitalOutputDevice for EP2339_0021 {
 
 impl DigitalInputDevice for EP2339_0021 {
     fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
-        let val = match port {
-            0 => {
-                self.txpdo
-                    .channel1
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 1 not found")
-                    .value
-            }
-            1 => {
-                self.txpdo
-                    .channel2
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 2 not found")
-                    .value
-            }
-            2 => {
-                self.txpdo
-                    .channel3
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 3 not found")
-                    .value
-            }
-            3 => {
-                self.txpdo
-                    .channel4
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 4 not found")
-                    .value
-            }
-            4 => {
-                self.txpdo
-                    .channel5
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 5 not found")
-                    .value
-            }
-            5 => {
-                self.txpdo
-                    .channel6
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 6 not found")
-                    .value
-            }
-            6 => {
-                self.txpdo
-                    .channel7
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 7 not found")
-                    .value
-            }
-            7 => {
-                self.txpdo
-                    .channel8
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 8 not found")
-                    .value
-            }
-            8 => {
-                self.txpdo
-                    .channel9
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 9 not found")
-                    .value
-            }
-            9 => {
-                self.txpdo
-                    .channel10
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 10 not found")
-                    .value
-            }
-            10 => {
-                self.txpdo
-                    .channel11
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 11 not found")
-                    .value
-            }
-            11 => {
-                self.txpdo
-                    .channel12
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 12 not found")
-                    .value
-            }
-            12 => {
-                self.txpdo
-                    .channel13
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 13 not found")
-                    .value
-            }
-            13 => {
-                self.txpdo
-                    .channel14
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 14 not found")
-                    .value
-            }
-            14 => {
-                self.txpdo
-                    .channel15
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 15 not found")
-                    .value
-            }
-            15 => {
-                self.txpdo
-                    .channel16
-                    .as_ref()
-                    .expect("EP2339_0021 Channel 16 not found")
-                    .value
-            }
-            _ => return Err(anyhow::anyhow!("EP2339_0021 has 16 ports! (0-15)")),
-        };
-        Ok(val)
+                let error = anyhow::anyhow!(
+            "[{}::Device::digital_input_state] Port index {} is not available",
+            module_path!(),
+            port
+        );
+
+        match port {
+            0 => Ok(self.txpdo.channel1.as_ref().ok_or(error)?.value),
+            1 => Ok(self.txpdo.channel2.as_ref().ok_or(error)?.value),
+            2 => Ok(self.txpdo.channel3.as_ref().ok_or(error)?.value),
+            3 => Ok(self.txpdo.channel4.as_ref().ok_or(error)?.value),
+            4 => Ok(self.txpdo.channel5.as_ref().ok_or(error)?.value),
+            5 => Ok(self.txpdo.channel6.as_ref().ok_or(error)?.value),
+            6 => Ok(self.txpdo.channel7.as_ref().ok_or(error)?.value),
+            7 => Ok(self.txpdo.channel8.as_ref().ok_or(error)?.value),
+            8 => Ok(self.txpdo.channel9.as_ref().ok_or(error)?.value),
+            9 => Ok(self.txpdo.channel10.as_ref().ok_or(error)?.value),
+            10 => Ok(self.txpdo.channel11.as_ref().ok_or(error)?.value),
+            11 => Ok(self.txpdo.channel12.as_ref().ok_or(error)?.value),
+            12 => Ok(self.txpdo.channel13.as_ref().ok_or(error)?.value),
+            13 => Ok(self.txpdo.channel14.as_ref().ok_or(error)?.value),
+            14 => Ok(self.txpdo.channel15.as_ref().ok_or(error)?.value),
+            15 => Ok(self.txpdo.channel16.as_ref().ok_or(error)?.value),
+            _ => Err(anyhow::anyhow!(
+                "EL1002 has 2 ports (0-1), requested index {}",
+                port
+            )),
+        }
+
     }
 
     fn get_port_count(&self) -> usize {

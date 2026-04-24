@@ -1,4 +1,4 @@
-use crate::devices::panasonic_modules::minas_a6::{EncoderResolution, MotorHomingConfig};
+use crate::devices::panasonic_modules::minas_a6::MotorHomingConfig;
 use crate::{
     ChannelRequest, ChannelRequests, ChannelResponse, EtherCATThreadChannel,
     EtherCATThreadResponseChannel,

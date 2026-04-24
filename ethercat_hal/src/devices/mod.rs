@@ -27,6 +27,8 @@ pub mod wago_750_354;
 pub mod wago_modules;
 
 use crate::MetaSubdevice;
+use crate::devices::ep2339_0021::EP2339_0021_IDENTITY_A;
+use crate::devices::panasonic_modules::minas_a6::{self, MINAS_A6_IDENTITY_A};
 
 use super::devices::el1008::EL1008;
 use bitvec::order::Lsb0;
@@ -189,6 +191,8 @@ pub fn device_from_subdevice_identity(
         EL2521_IDENTITY_0000_A | EL2521_IDENTITY_0000_B | EL2521_IDENTITY_0024_A => {
             Ok(Box::new(EL2521::new()))
         }
+        EP2339_0021_IDENTITY_A => Ok(Box::new(ep2339_0021::EP2339_0021::new())),
+        MINAS_A6_IDENTITY_A => Ok(Box::new(minas_a6::MinasA6BMotor::new())),
         _ => Err(anyhow::anyhow!(
             "[{}::device_from_subdevice] No Driver: vendor_id: 0x{:x}, product_id: 0x{:x}, revision: 0x{:x}",
             module_path!(),
@@ -236,6 +240,8 @@ pub fn device_from_subdevice_identity_rc(
         EL2521_IDENTITY_0000_A | EL2521_IDENTITY_0000_B | EL2521_IDENTITY_0024_A => {
             Ok(Rc::new(RefCell::new(EL2521::new())))
         }
+        EP2339_0021_IDENTITY_A => Ok(Rc::new(RefCell::new(ep2339_0021::EP2339_0021::new()))),
+        MINAS_A6_IDENTITY_A => Ok(Rc::new(RefCell::new(minas_a6::MinasA6BMotor::new()))),
 
         _ => Err(anyhow::anyhow!(
             "[{}::device_from_subdevice] No Driver: vendor_id: 0x{:x}, product_id: 0x{:x}, revision: 0x{:x}",

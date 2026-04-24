@@ -4,7 +4,6 @@
 //!   - `input()`: unpack raw bytes from a `BitSlice` via `load_le` into a `TxPdo` struct.
 //!   - `output()`: pack a `RxPdo` struct into raw bytes and write them via `store_le`.
 
-use crate::coe::ConfigurableDevice;
 use crate::devices::{
     EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed, EthercatDynamicPDO, Module,
     NewEthercatDevice, SubDeviceIdentityTuple,
@@ -28,7 +27,7 @@ impl Reg {
     pub const CONTROL_INPUT_SI_FUNCTION_ASSIGNMENT: u16 = 0x3400;
     pub const ENCODER_MULTI_TURN_DATA_CLEAR_TRIGGER: u16 = 0x4D00; // set from 0->1->0 after the register below has been set to 0x31
     pub const ENCODER_MULTI_TURN_DATA_CLEAR: u16 = 0x4D01; // set to 0x31 to clear the encoder data
-    pub const SET_MODE_OF_OPERATION: u16 = 0x6060; // set tot 1 for pp mode
+    pub const SET_MODE_OF_OPERATION: u16 = 0x6060; // set to 1 for pp mode
     pub const GET_MODE_OF_OPERATION: u16 = 0x6061;
     pub const POSITION_TARGET: u16 = 0x607A; // encoder-pulses
     pub const POSITION_ACTUAL: u16 = 0x6064; // encoder-pulses
@@ -36,9 +35,9 @@ impl Reg {
     pub const MAX_VELOCITY: u16 = 0x607F; // encoder-pulses/s
     pub const MAX_SPEED: u16 = 0x6080; // 1/min
     pub const TARGET_ACCELERATION: u16 = 0x6083; // encoder-pulses/s²
-    pub const TARGET_DECELERATION: u16 = 0x6084; // encoder-pulses/s
+    pub const TARGET_DECELERATION: u16 = 0x6084; // encoder-pulses/s²
     pub const ENCODER_RESOLUTION: u16 = 0x608F;
-    pub const MAX_ACCELERATION: u16 = 0x60C5; // encoder-pulses/s
+    pub const MAX_ACCELERATION: u16 = 0x60C5; // encoder-pulses/s²
 
     pub const ERROR_CODE: u16 = 0x603F;
     pub const MAX_TORQUE: u16 = 0x6072; // in 0.1%
