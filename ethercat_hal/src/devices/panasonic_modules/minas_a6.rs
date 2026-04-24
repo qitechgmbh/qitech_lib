@@ -760,6 +760,10 @@ impl MinasA6BMotor {
             .map(|enc| enc.to_revolutions(self.txpdo.position_actual))
     }
 
+    pub fn set_encoder_resolution(&mut self, resolution: EncoderResolution) {
+        self.encoder_resolution = Some(resolution);
+    }
+
     pub fn is_enabled(&self) -> bool {
         self.state.is_run()
     }
