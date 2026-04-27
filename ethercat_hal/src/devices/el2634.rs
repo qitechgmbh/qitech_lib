@@ -1,5 +1,5 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice};
-use crate::io::digital_output::{DigitalOutputDevice};
+use crate::io::digital_output::DigitalOutputDevice;
 use crate::pdo::{RxPdo, basic::BoolPdoObject};
 use ethercat_hal_derive::{EthercatDevice, RxPdo};
 
@@ -44,7 +44,6 @@ impl DigitalOutputDevice for EL2634 {
     fn get_port_count(&self) -> usize {
         4
     }
-
 }
 
 #[derive(Debug, Clone)]

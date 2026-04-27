@@ -40,7 +40,7 @@ impl TemperatureInputDevice for EL3204 {
             1 => self.txpdo.channel2.as_ref().expect(expect_text),
             2 => self.txpdo.channel3.as_ref().expect(expect_text),
             3 => self.txpdo.channel4.as_ref().expect(expect_text),
-            _ => return Err(anyhow::anyhow!("port {} does not exist on EL3204 !",port)),
+            _ => return Err(anyhow::anyhow!("port {} does not exist on EL3204 !", port)),
         };
         Ok(TemperatureInputInput {
             temperature: channel.temperature,

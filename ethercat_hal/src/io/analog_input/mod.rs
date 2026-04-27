@@ -1,7 +1,6 @@
 use physical::{AnalogInputRange, AnalogInputValue};
 pub mod physical;
 
-
 #[derive(Debug, Clone)]
 pub struct AnalogInputInput {
     /// from -1.0 to 1.0
@@ -18,7 +17,7 @@ impl AnalogInputInput {
 }
 
 pub trait AnalogInputDevice {
-    fn get_input(&self, port: usize) -> Result<AnalogInputInput,anyhow::Error>;
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput, anyhow::Error>;
     fn analog_input_range(&self) -> AnalogInputRange;
     fn get_port_count(&self) -> usize;
 }

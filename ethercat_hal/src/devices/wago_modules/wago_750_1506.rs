@@ -5,10 +5,7 @@ use crate::{
         DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed,
         EthercatDynamicPDO, Module, NewEthercatDevice, SubDeviceProductTuple,
     },
-    io::{
-        digital_input::DigitalInputDevice,
-        digital_output::{DigitalOutputDevice},
-    },
+    io::{digital_input::DigitalInputDevice, digital_output::DigitalOutputDevice},
 };
 
 #[derive(Debug, Clone)]
@@ -131,7 +128,6 @@ impl DigitalOutputDevice for Wago750_1506 {
     fn get_port_count(&self) -> usize {
         8
     }
-
 }
 
 #[derive(Clone)]

@@ -46,18 +46,18 @@ pub struct Wago750_455 {
 }
 
 impl AnalogInputDevice for Wago750_455 {
-    fn get_input(&self, port: usize ) ->  Result<AnalogInputInput,anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput, anyhow::Error> {
         let raw = match port {
             0 => self.tx_pdo.ai1,
             1 => self.tx_pdo.ai2,
             2 => self.tx_pdo.ai3,
             3 => self.tx_pdo.ai4,
-            _ => return Err( anyhow::anyhow!("port {} doesnt exist on Wago750_455",port)) ,
+            _ => return Err(anyhow::anyhow!("port {} doesnt exist on Wago750_455", port)),
         };
         let wiring_error = (raw & 0x0003) == 0x0003;
         let raw_value = (raw & 0x7FF0) as i16;
         let normalized = self.analog_input_range().raw_to_normalized(raw_value) as f32;
-        
+
         Ok(AnalogInputInput {
             normalized,
             wiring_error,

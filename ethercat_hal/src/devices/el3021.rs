@@ -69,7 +69,7 @@ impl NewEthercatDevice for EL3021 {
 }
 
 impl AnalogInputDevice for EL3021 {
-    fn get_input(&self, port: usize) -> Result<AnalogInputInput,anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput, anyhow::Error> {
         let raw_value = match port {
             0 => match &self.txpdo {
                 EL3021TxPdo {

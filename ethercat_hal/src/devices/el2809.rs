@@ -1,5 +1,5 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice};
-use crate::io::digital_output::{DigitalOutputDevice};
+use crate::io::digital_output::DigitalOutputDevice;
 use crate::pdo::{RxPdo, basic::BoolPdoObject};
 use ethercat_hal_derive::{EthercatDevice, RxPdo};
 
@@ -33,62 +33,29 @@ impl DigitalOutputDevice for EL2809 {
     fn set_output(&mut self, port: usize, value: bool) {
         let expect_text = "All channels should be Some(_)";
         match port {
-            0 => {
-                self.rxpdo.channel1.as_mut().expect(expect_text).value = value.into()
-            }
-            1 => {
-                self.rxpdo.channel2.as_mut().expect(expect_text).value = value.into()
-            }
-            2 => {
-                self.rxpdo.channel3.as_mut().expect(expect_text).value = value.into()
-            }
-            3 => {
-                self.rxpdo.channel4.as_mut().expect(expect_text).value = value.into()
-            }
-            4 => {
-                self.rxpdo.channel5.as_mut().expect(expect_text).value = value.into()
-            }
-            5 => {
-                self.rxpdo.channel6.as_mut().expect(expect_text).value = value.into()
-            }
-            6 => {
-                self.rxpdo.channel7.as_mut().expect(expect_text).value = value.into()
-            }
-            7 => {
-                self.rxpdo.channel8.as_mut().expect(expect_text).value = value.into()
-            }
-            8 => {
-                self.rxpdo.channel9.as_mut().expect(expect_text).value = value.into()
-            }
-            9 => {
-                self.rxpdo.channel10.as_mut().expect(expect_text).value = value.into()
-            }
-            10 => {
-                self.rxpdo.channel11.as_mut().expect(expect_text).value = value.into()
-            }
-            11 => {
-                self.rxpdo.channel12.as_mut().expect(expect_text).value = value.into()
-            }
-            12 => {
-                self.rxpdo.channel13.as_mut().expect(expect_text).value = value.into()
-            }
-            13 => {
-                self.rxpdo.channel14.as_mut().expect(expect_text).value = value.into()
-            }
-            14 => {
-                self.rxpdo.channel15.as_mut().expect(expect_text).value = value.into()
-            }
-            15 => {
-                self.rxpdo.channel16.as_mut().expect(expect_text).value = value.into()
-            }
-            _=>(),
+            0 => self.rxpdo.channel1.as_mut().expect(expect_text).value = value.into(),
+            1 => self.rxpdo.channel2.as_mut().expect(expect_text).value = value.into(),
+            2 => self.rxpdo.channel3.as_mut().expect(expect_text).value = value.into(),
+            3 => self.rxpdo.channel4.as_mut().expect(expect_text).value = value.into(),
+            4 => self.rxpdo.channel5.as_mut().expect(expect_text).value = value.into(),
+            5 => self.rxpdo.channel6.as_mut().expect(expect_text).value = value.into(),
+            6 => self.rxpdo.channel7.as_mut().expect(expect_text).value = value.into(),
+            7 => self.rxpdo.channel8.as_mut().expect(expect_text).value = value.into(),
+            8 => self.rxpdo.channel9.as_mut().expect(expect_text).value = value.into(),
+            9 => self.rxpdo.channel10.as_mut().expect(expect_text).value = value.into(),
+            10 => self.rxpdo.channel11.as_mut().expect(expect_text).value = value.into(),
+            11 => self.rxpdo.channel12.as_mut().expect(expect_text).value = value.into(),
+            12 => self.rxpdo.channel13.as_mut().expect(expect_text).value = value.into(),
+            13 => self.rxpdo.channel14.as_mut().expect(expect_text).value = value.into(),
+            14 => self.rxpdo.channel15.as_mut().expect(expect_text).value = value.into(),
+            15 => self.rxpdo.channel16.as_mut().expect(expect_text).value = value.into(),
+            _ => (),
         }
     }
 
     fn get_port_count(&self) -> usize {
         16
     }
-
 }
 
 #[derive(Debug, Clone)]

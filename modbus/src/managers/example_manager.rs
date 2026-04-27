@@ -5,19 +5,26 @@ use std::{
 };
 
 use tokio::sync::{
-    mpsc::{self, Sender,Receiver},
+    mpsc::{self, Receiver, Sender},
     oneshot,
 };
 use tokio_modbus::{ExceptionCode, Response};
 
 use crate::{Device, Priority, Scheduler};
 
-use crate::clients::example_client::{RequestMessage};
+use crate::clients::example_client::RequestMessage;
 
 pub struct ExampleDeviceManager {
     tx: mpsc::Sender<RequestMessage>,
 
-    devices: HashMap<u8, (Sender<Result<Response,ExceptionCode>>,Receiver<Result<Response,ExceptionCode>>, Rc<RefCell<dyn Device<ExampleScheduler>>>) >,
+    devices: HashMap<
+        u8,
+        (
+            Sender<Result<Response, ExceptionCode>>,
+            Receiver<Result<Response, ExceptionCode>>,
+            Rc<RefCell<dyn Device<ExampleScheduler>>>,
+        ),
+    >,
     scheduled_devices: VecDeque<u8>,
     pending_response: Option<u8>,
 }
@@ -60,8 +67,11 @@ impl ExampleDeviceManager {
         };
 
         let device = Rc::new(RefCell::new(D::new(scheduler)));
-        let (tx,rx) = tokio::sync::mpsc::channel(2);
-        mgr_rc.borrow_mut().devices.insert(slave_id,( tx,rx,device.clone()) );
+        let (tx, rx) = tokio::sync::mpsc::channel(2);
+        mgr_rc
+            .borrow_mut()
+            .devices
+            .insert(slave_id, (tx, rx, device.clone()));
         device
     }
 
@@ -98,7 +108,6 @@ impl ExampleDeviceManager {
             let device = self.devices.get(&id).unwrap();
 
             let (request, has_more) = device.2.borrow_mut().next_request().unwrap();
-
 
             let res = self.tx.try_send((id, request, device.0.clone()));
             if res.is_err() {

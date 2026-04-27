@@ -5,5 +5,6 @@ pub mod digital_output;
 pub mod encoder_input;
 pub mod pulse_train_output;
 pub mod serial_interface;
+pub mod servo_velocity_minasa6;
 pub mod stepper_velocity_el70x1;
 pub mod temperature_input;

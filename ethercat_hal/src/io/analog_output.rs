@@ -13,7 +13,7 @@ impl From<AnalogOutputOutput> for f32 {
     }
 }
 
-pub trait AnalogOutputDevice  {
+pub trait AnalogOutputDevice {
     fn set_output(&mut self, port: usize, value: AnalogOutputOutput);
     fn get_port_count(&self) -> usize;
 }

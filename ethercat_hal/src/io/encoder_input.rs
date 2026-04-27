@@ -15,8 +15,7 @@ pub struct EncoderInputPeriod {
     pub value: u32,
 }
 
-pub trait EncoderInputDevice : EthercatDevice
-{
+pub trait EncoderInputDevice: EthercatDevice {
     fn get_counter_value(&self, port: usize) -> Result<EncoderInputCounter, anyhow::Error>;
     fn get_frequency(&self, port: usize) -> Result<Option<EncoderInputFrequency>, anyhow::Error>;
     fn get_period(&self, port: usize) -> Result<Option<EncoderInputPeriod>, anyhow::Error>;

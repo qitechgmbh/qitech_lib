@@ -6,10 +6,7 @@ use crate::devices::{
 use crate::{
     devices::{DynamicEthercatDevice, Module},
     helpers::ethercrab_types::EthercrabSubDevicePreoperational,
-    io::{
-        digital_input::DigitalInputDevice,
-        digital_output::{DigitalOutputDevice,},
-    },
+    io::{digital_input::DigitalInputDevice, digital_output::DigitalOutputDevice},
 };
 use anyhow::Error;
 use smol::lock::RwLock;
@@ -292,14 +289,13 @@ impl DigitalOutputDevice for IP20EcDi8Do8 {
             5 => self.rx_pdo.do6 = value,
             6 => self.rx_pdo.do7 = value,
             7 => self.rx_pdo.do8 = value,
-            _=>(),
+            _ => (),
         }
     }
 
     fn get_port_count(&self) -> usize {
         8
     }
-
 }
 
 impl IP20EcDi8Do8 {

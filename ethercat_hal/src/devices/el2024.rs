@@ -1,4 +1,4 @@
-use crate::io::digital_output::{DigitalOutputDevice};
+use crate::io::digital_output::DigitalOutputDevice;
 use crate::pdo::{RxPdo, basic::BoolPdoObject};
 use ethercat_hal_derive::{EthercatDevice, RxPdo};
 
@@ -34,27 +34,17 @@ impl DigitalOutputDevice for EL2024 {
     fn set_output(&mut self, port: usize, value: bool) {
         let expect_text = "All channels should be Some(_)";
         match port {
-            0 => {
-                self.rxpdo.channel1.as_mut().expect(expect_text).value = value.into()
-            }
-            1 => {
-                self.rxpdo.channel2.as_mut().expect(expect_text).value = value.into()
-            }
-            2 => {
-                self.rxpdo.channel3.as_mut().expect(expect_text).value = value.into()
-            }
-            3 => {
-                self.rxpdo.channel4.as_mut().expect(expect_text).value = value.into()
-            }
-            _=>(),
+            0 => self.rxpdo.channel1.as_mut().expect(expect_text).value = value.into(),
+            1 => self.rxpdo.channel2.as_mut().expect(expect_text).value = value.into(),
+            2 => self.rxpdo.channel3.as_mut().expect(expect_text).value = value.into(),
+            3 => self.rxpdo.channel4.as_mut().expect(expect_text).value = value.into(),
+            _ => (),
         }
     }
 
     fn get_port_count(&self) -> usize {
         4
     }
-
-
 }
 
 #[derive(Debug, Clone)]
