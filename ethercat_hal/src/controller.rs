@@ -1,7 +1,6 @@
 use crate::{
-    ChannelRequest, ChannelRequests, ChannelResponse, EncoderResolution, ETHERCAT_TX_RX_SIZE,
+    ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE,
     EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType,
-    devices::panasonic_modules::minas_a6::MinasA6BMotor,
     ethercat_helpers::{sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::{MachineDeviceInfo, read_device_identifications},
@@ -364,36 +363,6 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                             send_response(
                                 msg.response_channel,
                                 ChannelResponse::MachineDeviceInfoResponse(res),
-                            );
-                            continue;
-                        }
-                        ChannelRequests::ConfigureMinasA6B {
-                            device_address,
-                            homing_config,
-                        } => {
-                            let rt = get_async_runtime();
-                            let result: Result<EncoderResolution, anyhow::Error> =
-                                rt.block_on(async {
-                                    for subdevice in preop_group.iter(maindev) {
-                                        if subdevice.configured_address() == device_address {
-                                            let mut temp_motor = MinasA6BMotor::default();
-                                            temp_motor.homing_config = homing_config.clone();
-                                            temp_motor.configure(&subdevice).await?;
-                                            let enc = temp_motor
-                                                .read_encoder_resolution(&subdevice)
-                                                .await?;
-                                            temp_motor.setup_homing(&subdevice).await?;
-                                            return Ok(enc);
-                                        }
-                                    }
-                                    Err(anyhow::anyhow!(
-                                        "ConfigureMinasA6B: no subdevice found at address {:#06x}",
-                                        device_address
-                                    ))
-                                });
-                            send_response(
-                                msg.response_channel,
-                                ChannelResponse::ConfigureMinasA6BResponse(result),
                             );
                             continue;
                         }
