@@ -1,5 +1,8 @@
 use crate::EncoderResolution;
-use crate::devices::panasonic_modules::minas_a6::{MinasA6BMotor, MotorHomingConfig, Reg};
+use crate::devices::panasonic_modules::minas_a6::{
+    GET_DATA_MAPPING, MinasA6BMotor, MotorHomingConfig, Reg, SET_DATA_MAPPING,
+};
+use crate::helpers::minas_a6_subdevice_wrapper::PdoMapping;
 use crate::{
     EtherCATThreadChannel,
     coe::{ConfigurableDevice, Configuration},
@@ -22,14 +25,13 @@ fn write_pdo_mapping(
     ch: &EtherCATThreadChannel,
     addr: u16,
     pdo_index: u16,
-    entries: &[(u16, u8, u8)], // (object_index, sub_index, bit_length)
+    entries: &[PdoMapping],
 ) -> Result<(), anyhow::Error> {
     // 1. Clear mapping count
     ch.sdo_write(addr, pdo_index, 0, 0u8)?;
     // 2. Write each mapping entry
-    for (i, &(obj, sub, bits)) in entries.iter().enumerate() {
-        let packed: u32 = (obj as u32) << 16 | (sub as u32) << 8 | bits as u32;
-        ch.sdo_write(addr, pdo_index, (i + 1) as u8, packed)?;
+    for (i, mapping) in entries.iter().enumerate() {
+        ch.sdo_write(addr, pdo_index, (i + 1) as u8, mapping.to_u32())?;
     }
     // 3. Set mapping count
     ch.sdo_write(addr, pdo_index, 0, entries.len() as u8)?;
@@ -51,28 +53,10 @@ fn assign_pdos(
     Ok(())
 }
 
-/// RxPDO mapping entries (master -> slave): matches SET_DATA_MAPPING in minas_a6.rs
-const RX_PDO_ENTRIES: [(u16, u8, u8); 6] = [
-    (Reg::CONTROL_WORD, 0, 16),
-    (Reg::SET_MODE_OF_OPERATION, 0, 8),
-    (Reg::POSITION_TARGET, 0, 32),
-    (Reg::TARGET_VELOCITY, 0, 32),
-    (Reg::TARGET_ACCELERATION, 0, 32),
-    (Reg::TARGET_DECELERATION, 0, 32),
-];
-
-/// TxPDO mapping entries (slave -> master): matches GET_DATA_MAPPING in minas_a6.rs
-const TX_PDO_ENTRIES: [(u16, u8, u8); 4] = [
-    (Reg::STATUS_WORD, 0, 16),
-    (Reg::GET_MODE_OF_OPERATION, 0, 8),
-    (Reg::ERROR_CODE, 0, 16),
-    (Reg::POSITION_ACTUAL, 0, 32),
-];
-
 fn configure_drive(ch: &EtherCATThreadChannel, addr: u16) -> Result<(), anyhow::Error> {
     // PDO mapping
-    write_pdo_mapping(ch, addr, Reg::RX_PDO, &RX_PDO_ENTRIES)?;
-    write_pdo_mapping(ch, addr, Reg::TX_PDO, &TX_PDO_ENTRIES)?;
+    write_pdo_mapping(ch, addr, Reg::RX_PDO, &SET_DATA_MAPPING)?;
+    write_pdo_mapping(ch, addr, Reg::TX_PDO, &GET_DATA_MAPPING)?;
     assign_pdos(ch, addr, Reg::RX_PDO_ASSIGN_ADDRESS, &[Reg::RX_PDO])?;
     assign_pdos(ch, addr, Reg::TX_PDO_ASSIGN_ADDRESS, &[Reg::TX_PDO])?;
 
