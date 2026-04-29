@@ -1,13 +1,14 @@
 use crate::{
     ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE,
     EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType,
-    ethercat_helpers::{sdo_read, sdo_write},
+    ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::{MachineDeviceInfo, read_device_identifications},
     send_response,
 };
+
 use ethercrab::{
-    DcSync, MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup,
+    MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup,
     Timeouts,
     std::ethercat_now,
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
@@ -155,20 +156,6 @@ where
     }
 }
 
-pub fn enable_dc_sync(
-    group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
-    maindevice: &MainDevice,
-    device_address: usize,
-) {
-    let rt = get_async_runtime();
-    rt.block_on(async {
-        for mut subdevice in group.iter_mut(maindevice) {
-            if subdevice.configured_address() == device_address as u16 {
-                subdevice.set_dc_sync(DcSync::Sync0);
-            }
-        }
-    });
-}
 
 unsafe impl Sync for EtherCATController<TripleBufConsumer, TripleBufProducer> {}
 
@@ -367,7 +354,12 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                             continue;
                         }
                         ChannelRequests::EnableDCSync0(device_address) => {
-                            enable_dc_sync(&mut preop_group, maindev, device_address)
+                            let res = enable_dc_sync(&mut preop_group, maindev, device_address);
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::EnableDCSync0Response(res),
+                            );
+                            continue;
                         }
                     }
                     let mut now = Instant::now();

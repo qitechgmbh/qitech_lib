@@ -4,7 +4,7 @@ use crate::{
     get_async_runtime, machine_ident_read::MachineDeviceInfo,
 };
 use ethercrab::{
-    EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
+    DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup
 };
 use std::{any::TypeId, time::Duration};
 
@@ -286,6 +286,7 @@ impl EtherCATThreadChannel {
             data: bytes,
             type_flag: sdo_type,
         };
+
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::SdoWriteRequest(sdo_request),
             response_channel: EtherCATThreadResponseChannel(tx),
@@ -319,8 +320,29 @@ impl EtherCATThreadChannel {
         Ok(())
     }
 
-    pub fn enable_dc_sync0(&self, _device_address: u16) -> Result<(),anyhow::Error> {
-        Ok(())
+    pub fn enable_dc_sync0(&self, device_address: u16) -> Result<(),anyhow::Error> {
+        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
+        let req: ChannelRequest = ChannelRequest {
+            channel_request: crate::ChannelRequests::EnableDCSync0(device_address.into()),
+            response_channel: EtherCATThreadResponseChannel(tx),
+        };
+        
+        let res = self.0.send(req);
+        match res {
+            Ok(_) => (),
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+
+        let res = rx.recv_timeout(Duration::from_millis(500));
+        let response: ChannelResponse = match res {
+            Ok(res) => res,
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+
+        match response {
+            ChannelResponse::EnableDCSync0Response(result) => result,
+            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+        }
     }
 }
 
@@ -413,3 +435,52 @@ where
     }
     Err(anyhow::anyhow!("Unknown Subdevice"))
 }
+
+pub fn enable_dc_sync(
+    group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
+    maindevice: &MainDevice,
+    device_address: usize,
+) -> Result<(),anyhow::Error> {
+    let rt = get_async_runtime();
+    
+    rt.block_on(async {
+        for mut subdevice in group.iter_mut(maindevice) {
+            if subdevice.configured_address() == device_address as u16 {
+                subdevice.set_dc_sync(DcSync::Sync0);
+                return Ok(());
+            }
+        }
+        return Err(anyhow::anyhow!("Unknown Subdevice"));
+    })
+}
+
+/*pub async fn set_mut_beckhoff_eeprom_lock_active<'a>(
+    subdevice: &SubDeviceRef<'a, &mut SubDevice>,
+) -> Result<(), anyhow::Error> {
+    let code_word = match subdevice.sdo_read::<u32>(BECKHOFF_CODEWORD_INDEX, 0).await {
+        Ok(code_word) => code_word,
+        // This happens when the subdevice has no mailbox
+        // There is NO check in ethercrab for Mailbox presence, so we just have to pray that it has one and send a request
+        // If there is no Mailbox to write Coe Request to, then there is also no EEPROM meaning we achieved our goal in a sense
+        // This is why it returns OK on an error for sdo_read
+        Err(_) => return Ok(()),
+    };
+
+    let eeprom_lock_toggled = match code_word {
+        BECKHOFF_EEPROM_LOCK_CODEWORD => true,
+        _ => false,
+    };
+
+    if !eeprom_lock_toggled {
+        subdevice
+            .sdo_write(BECKHOFF_CODEWORD_INDEX, 0, BECKHOFF_EEPROM_LOCK_CODEWORD)
+            .await?;
+        tracing::info!(
+            "Activated EEPROM Lock for {} {}",
+            subdevice.name(),
+            subdevice.name()
+        );
+    }
+
+    Ok(())
+}*/

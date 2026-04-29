@@ -292,16 +292,6 @@ pub fn downcast_rc_refcell<T: 'static>(
     unsafe { Ok(Rc::from_raw(raw_concrete_ptr)) }
 }
 
-pub fn downcast_subdevice_ref<T: 'static>(
-    dev: &Box<dyn EthercatDevice>,
-) -> Result<Box<&T>, anyhow::Error> {
-    match dev.as_any().downcast_ref::<T>() {
-        Some(dev) => Ok(Box::new(dev)),
-        None => Err(anyhow::anyhow!("Downcast failed")),
-    }
-}
-
 pub type SubDeviceIdentityTuple = (u32, u32, u32);
-
-// Is vendor id at 0, and prodid at 1
+// vendor id at 0, and prod id at 1 
 pub type SubDeviceProductTuple = (u32, u32);
