@@ -55,7 +55,9 @@ use el6021::{EL6021_IDENTITY_A, EL6021_IDENTITY_B, EL6021_IDENTITY_C, EL6021_IDE
 use el7031::{EL7031_IDENTITY_A, EL7031_IDENTITY_B};
 use el7031_0030::EL7031_0030_IDENTITY_A;
 use el7041_0052::EL7041_0052_IDENTITY_A;
+use std::any::TypeId;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::{any::Any, fmt::Debug};
 use wago_750_354::{WAGO_750_354_IDENTITY_A, Wago750_354};
@@ -73,6 +75,16 @@ pub struct Module {
     pub tx_offset: usize,
     pub rx_offset: usize,
 }
+
+pub trait MockEtherCatSdos {
+    fn get_sdo_map() -> HashMap<Index, TypeErasedValue>;
+}
+
+#[derive(Debug)]
+pub struct TypeErasedValue { pub id: TypeId, pub value: Vec<u8> }
+
+#[derive(Debug, Hash, PartialEq, Eq)]
+pub struct Index { pub index: u32, pub sub_index: u16 }
 
 /// A trait for all devices
 ///

@@ -1,6 +1,10 @@
+use std::any::TypeId;
+use std::collections::HashMap;
+
 use super::EthercatDeviceProcessing;
 use super::{NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::EtherCATThreadChannel;
+use crate::devices::{Index, MockEtherCatSdos, TypeErasedValue};
 use crate::io::analog_input::physical::AnalogInputRange;
 use crate::io::analog_input::{AnalogInputDevice, AnalogInputInput};
 use crate::pdo::RxPdo;
@@ -192,6 +196,7 @@ impl PredefinedPdoAssignment<EL3021TxPdo, EL3021RxPdo> for EL3021PredefinedPdoAs
         }
     }
 }
+
 
 pub const EL3021_VENDOR_ID: u32 = 2;
 pub const EL3021_PRODUCT_ID: u32 = 197996626;
