@@ -195,6 +195,13 @@ pub struct ChannelRequest {
     pub response_channel: EtherCATThreadResponseChannel,
 }
 
+/// Driver-agnostic encoder resolution returned from device configuration.
+#[derive(Clone, Copy, Debug)]
+pub struct EncoderResolution {
+    pub increments: u32,
+    pub revolutions: u32,
+}
+
 pub fn send_response(response_channel: EtherCATThreadResponseChannel, response: ChannelResponse) {
     let _res = response_channel.0.send(response);    
 }

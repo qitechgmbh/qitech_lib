@@ -21,15 +21,12 @@ pub mod el7031;
 pub mod el7031_0030;
 pub mod el7041_0052;
 pub mod ep2339_0021;
-
 pub mod panasonic_modules;
 pub mod wago_750_354;
 pub mod wago_modules;
-
 use crate::MetaSubdevice;
 use crate::devices::ep2339_0021::EP2339_0021_IDENTITY_A;
 use crate::devices::panasonic_modules::minas_a6::{self, MINAS_A6_IDENTITY_A};
-
 use super::devices::el1008::EL1008;
 use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;
