@@ -112,12 +112,11 @@ pub trait ConvertMachineData: Sized + 'static {
         if machine_data.type_id != TypeId::of::<Self>() {
             return Err("TypeId mismatch");
         }
+
         if machine_data.length != std::mem::size_of::<Self>() {
             return Err("Length mismatch");
         }
 
-        unsafe {
-            Ok(std::ptr::read(machine_data.data.as_ptr() as *const Self))
-        }
+        unsafe { Ok(std::ptr::read(machine_data.data.as_ptr() as *const Self)) }
     }
 }
