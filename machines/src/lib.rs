@@ -53,6 +53,24 @@ impl MachineDataRegistry {
             None => (),
         }
     }
+
+    pub fn store<T: ConvertMachineData>(
+        &mut self,
+        ident: MachineIdentificationUnique,
+        value: &T,
+    ) -> Result<(), &'static str> {
+        let machine_data = value.to_machine_data()?;
+        self.storage.insert(ident, machine_data);
+        Ok(())
+    }
+
+    pub fn load<T: ConvertMachineData>(
+        &self,
+        ident: &MachineIdentificationUnique,
+    ) -> Result<T, &'static str> {
+        let machine_data = self.storage.get(ident).ok_or("No entry for ident")?;
+        T::from_machine_data(machine_data)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -65,4 +83,41 @@ pub trait Machine {
     fn act(&mut self, machine_data: Option<&mut MachineDataRegistry>) -> Result<(), MachineError>;
     fn react(&mut self, registry: &MachineDataRegistry);
     fn get_identification(&self) -> MachineIdentificationUnique;
+}
+
+pub trait ConvertMachineData: Sized + 'static {
+    fn to_machine_data(&self) -> Result<MachineData, &'static str> {
+        let size = std::mem::size_of::<Self>();
+        if size > MAX_DATA_LEN {
+            return Err("Data exceeds MAX_DATA_LEN");
+        }
+        let mut data = MachineData {
+            type_id: TypeId::of::<Self>(),
+            length: size,
+            data: [0u8; MAX_DATA_LEN],
+        };
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                self as *const Self as *const u8,
+                data.data.as_mut_ptr(),
+                size,
+            );
+        }
+
+        Ok(data)
+    }
+
+    fn from_machine_data(machine_data: &MachineData) -> Result<Self, &'static str> {
+        if machine_data.type_id != TypeId::of::<Self>() {
+            return Err("TypeId mismatch");
+        }
+        if machine_data.length != std::mem::size_of::<Self>() {
+            return Err("Length mismatch");
+        }
+
+        unsafe {
+            Ok(std::ptr::read(machine_data.data.as_ptr() as *const Self))
+        }
+    }
 }
