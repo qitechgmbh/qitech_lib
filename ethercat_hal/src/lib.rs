@@ -167,7 +167,6 @@ pub enum ChannelResponse {
     ChangeState(Result<(), anyhow::Error>),
     MachineDeviceInfoResponse(Result<Vec<MachineDeviceInfo>, anyhow::Error>),
     EnableDCSync0Response(Result<(), anyhow::Error>),
-    ConfigureMinasA6BResponse(Result<EncoderResolution, anyhow::Error>),
 }
 
 #[derive(Debug)]
@@ -180,10 +179,6 @@ pub enum ChannelRequests {
     Shutdown(),
     // Legacy code, only usable when feature enable_legacy_code is set
     ReadMachineIdent(),
-    ConfigureMinasA6B {
-        device_address: u16,
-        homing_config: crate::devices::panasonic_modules::minas_a6::MotorHomingConfig,
-    },
 }
 
 pub struct ChannelRequest {
