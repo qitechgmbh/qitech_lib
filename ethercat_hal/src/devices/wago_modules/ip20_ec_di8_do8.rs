@@ -1,4 +1,5 @@
 use super::*;
+use crate::EtherCATThreadChannel;
 use crate::devices::{
     EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed, NewEthercatDevice,
     SubDeviceIdentityTuple,
@@ -336,37 +337,41 @@ impl IP20EcDi8Do8 {
         Ok(())
     }
 
-    pub async fn get_module_count<'a>(
-        device: &EthercrabSubDevicePreoperational<'a>,
+    pub fn get_module_count<'a>(
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
     ) -> Result<usize, Error> {
-        match device
-            .sdo_read::<u8>(MODULE_COUNT_INDEX.0, MODULE_COUNT_INDEX.1)
-            .await
-        {
+        match ecat_channel.sdo_read::<u8>(
+            device_address,
+            MODULE_COUNT_INDEX.0,
+            MODULE_COUNT_INDEX.1,
+        ) {
             Ok(value) => Ok(value as usize),
-            Err(_e) => Ok(0),
+            Err(e) => Err(anyhow::anyhow!(
+                "Failed to read Module Count for ip20_ec_di8_do8: {:?}",
+                e
+            )),
         }
     }
 
-    pub async fn get_modules<'a>(
-        device: &EthercrabSubDevicePreoperational<'a>,
+    pub fn get_modules<'a>(
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
         module_count: usize,
     ) -> Result<Vec<crate::devices::Module>, Error> {
         const MODULES_START_ADDR: u16 = 0x9000;
         const MODULE_IDENT_SUBINDEX: u8 = 0x0a;
         let mut modules: Vec<Module> = vec![];
-
         for i in 0..module_count {
             let module_addr = MODULES_START_ADDR + (i * 0x10) as u16;
-            let ident_iom = device
-                .sdo_read::<u32>(module_addr, MODULE_IDENT_SUBINDEX)
-                .await?;
+            let ident_iom =
+                ecat_channel.sdo_read::<u32>(device_address, module_addr, MODULE_IDENT_SUBINDEX)?;
 
             // For Wago the IOM will be the product ID
             let mut module = Module {
                 slot: i as u16,
-                belongs_to_addr: device.configured_address(),
-                vendor_id: device.identity().vendor_id,
+                belongs_to_addr: device_address,
+                vendor_id: IP20_EC_DI8_DO8_VENDOR_ID,
                 product_id: ident_iom,
                 has_tx: false,
                 has_rx: false,
@@ -462,17 +467,18 @@ impl IP20EcDi8Do8 {
         }
     }
 
-    pub async fn initialize_modules<'a>(
-        device: &EthercrabSubDevicePreoperational<'a>,
+    pub fn initialize_modules<'a>(
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
     ) -> Result<Vec<Module>, Error> {
-        let count = match IP20EcDi8Do8::get_module_count(device).await {
+        let count = match IP20EcDi8Do8::get_module_count(ecat_channel.clone(), device_address) {
             Ok(count) => count,
             Err(e) => return Err(e),
         };
         if count == 0 {
             return Ok(vec![]);
         }
-        let modules = IP20EcDi8Do8::get_modules(device, count).await?;
+        let modules = IP20EcDi8Do8::get_modules(ecat_channel, device_address, count)?;
         Ok(modules)
     }
 }
