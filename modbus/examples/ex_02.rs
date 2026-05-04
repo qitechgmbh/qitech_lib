@@ -18,8 +18,6 @@ pub async fn main() {
         let tty_path = "/dev/ttyUSB0";
         let slave = Slave(0x17);
         let builder = tokio_serial::new(tty_path, 38400);
-        let mgr = ExampleDeviceManager::new(tx);
-
         let port = SerialStream::open(&builder).unwrap();
         let ctx = rtu::attach_slave(port, slave);
 
