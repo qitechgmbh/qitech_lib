@@ -14,7 +14,6 @@ use controller::{EtherCATAppHandle, MockConsumer, MockProducer, TripleBufConsume
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
 use std::any::TypeId;
-use std::collections::HashMap;
 use std::sync::mpsc;
 use std::sync::{Arc, OnceLock, mpsc::Sender};
 use std::thread::JoinHandle;
@@ -187,7 +186,7 @@ pub enum ChannelRequests {
     EnableDCSync0(usize),
     Shutdown(),
     // Legacy code, only usable when feature enable_legacy_code is set
-    ReadMachineIdent(),
+    ReadMachineIdent(),    
 }
 
 pub struct ChannelRequest {

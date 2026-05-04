@@ -1,10 +1,7 @@
-use std::any::TypeId;
-use std::collections::HashMap;
-
 use super::EthercatDeviceProcessing;
 use super::{NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::EtherCATThreadChannel;
-use crate::devices::{Index, MockEtherCatSdos, TypeErasedValue};
+use crate::devices::{MockEtherCatSdos, TypeErasedValue};
 use crate::io::analog_input::physical::AnalogInputRange;
 use crate::io::analog_input::{AnalogInputDevice, AnalogInputInput};
 use crate::pdo::RxPdo;

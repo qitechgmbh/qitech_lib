@@ -1,13 +1,14 @@
 use crate::{
     ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE,
     EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType,
-    ethercat_helpers::{sdo_read, sdo_write},
+    ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::{MachineDeviceInfo, read_device_identifications},
     send_response,
 };
+
 use ethercrab::{
-    DcSync, MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup,
+    MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup,
     Timeouts,
     std::ethercat_now,
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
@@ -81,11 +82,11 @@ pub trait Producer {
 }
 
 pub struct MockConsumer {
-    pub(crate) buffer: [u8; ETHERCAT_TX_RX_SIZE],
+    pub buffer: [u8; ETHERCAT_TX_RX_SIZE],
 }
 
 pub struct MockProducer {
-    pub(crate) buffer: [u8; ETHERCAT_TX_RX_SIZE],
+    pub buffer: [u8; ETHERCAT_TX_RX_SIZE],
 }
 
 impl Producer for MockProducer {
@@ -155,23 +156,8 @@ where
     }
 }
 
-pub fn enable_dc_sync(
-    group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
-    maindevice: &MainDevice,
-    device_address: usize,
-) {
-    let rt = get_async_runtime();
-    rt.block_on(async {
-        for mut subdevice in group.iter_mut(maindevice) {
-            if subdevice.configured_address() == device_address as u16 {
-                subdevice.set_dc_sync(DcSync::Sync0);
-            }
-        }
-    });
-}
 
 unsafe impl Sync for EtherCATController<TripleBufConsumer, TripleBufProducer> {}
-
 impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
     pub fn ethercat_state_machine(&mut self) {
         let mut ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
@@ -285,7 +271,7 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                         Err(e) => continue,
                     };
 
-                    println!("GOT A MESSAGE: {:?}", msg.channel_request);
+                    //println!("GOT A MESSAGE: {:?}", msg.channel_request);
 
                     match msg.channel_request {
                         ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {
@@ -367,7 +353,12 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                             continue;
                         }
                         ChannelRequests::EnableDCSync0(device_address) => {
-                            enable_dc_sync(&mut preop_group, maindev, device_address)
+                            let res = enable_dc_sync(&mut preop_group, maindev, device_address);
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::EnableDCSync0Response(res),
+                            );
+                            continue;
                         }
                     }
                     let mut now = Instant::now();
@@ -582,9 +573,7 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                 break;
                             }
                         }
-
                         self.input_producer.publish();
-
                         /*rt.block_on(async {
                             tokio::time::sleep_until(res.1 + res.0.extra.next_cycle_wait).await
                         });*/
