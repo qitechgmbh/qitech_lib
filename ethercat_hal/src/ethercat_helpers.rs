@@ -3,10 +3,11 @@ use crate::{
     EtherCATThreadResponseChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType,
     get_async_runtime, machine_ident_read::MachineDeviceInfo,
 };
+use std::{any::TypeId, time::Duration};
 use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup
 };
-use std::{any::TypeId, time::Duration};
+
 
 pub trait EthercatResponseTypedResult: Sized {
     fn from_bool(_v: bool) -> anyhow::Result<Self> {
@@ -279,6 +280,7 @@ impl EtherCATThreadChannel {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let bytes: [u8; 4] = T::to_bytes(&value);
         let sdo_type = type_id_to_sdo_type::<T>()?;
+
         let sdo_request: SdoRequest = SdoRequest {
             device_address,
             index,
@@ -297,7 +299,6 @@ impl EtherCATThreadChannel {
             Ok(_) => (),
             Err(e) => return Err(anyhow::anyhow!(e)),
         };
-        println!("sdo_write {:?}", res);
 
         let res = rx.recv_timeout(Duration::from_millis(500));
         let response: ChannelResponse = match res {
@@ -343,6 +344,33 @@ impl EtherCATThreadChannel {
             ChannelResponse::EnableDCSync0Response(result) => result,
             _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
         }
+    }
+
+    pub fn set_mut_beckhoff_eeprom_lock_active(
+        &self, device_address: u16
+    ) -> Result<(), anyhow::Error> {        
+        const BECKHOFF_EEPROM_LOCK_CODEWORD: u32 = 0x12345678;
+        const BECKHOFF_CODEWORD_INDEX: u16 = 0xF008;
+
+        let code_word = match self.sdo_read::<u32>(device_address,BECKHOFF_CODEWORD_INDEX, 0) {
+            Ok(code_word) => code_word,
+            // This happens when the subdevice has no mailbox
+            // There is NO check in ethercrab for Mailbox presence, so we just have to pray that it has one and send a request
+            // If there is no Mailbox to write Coe Request to, then there is also no EEPROM meaning we achieved our goal in a sense
+            // This is why it returns OK on an error for sdo_read
+            Err(_) => return Ok(()),
+        };
+
+        let eeprom_lock_toggled = match code_word {
+            BECKHOFF_EEPROM_LOCK_CODEWORD => true,
+            _ => false,
+        };
+
+        if !eeprom_lock_toggled {
+            self.sdo_write(device_address,BECKHOFF_CODEWORD_INDEX, 0, BECKHOFF_EEPROM_LOCK_CODEWORD)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -453,34 +481,3 @@ pub fn enable_dc_sync(
         return Err(anyhow::anyhow!("Unknown Subdevice"));
     })
 }
-
-/*pub async fn set_mut_beckhoff_eeprom_lock_active<'a>(
-    subdevice: &SubDeviceRef<'a, &mut SubDevice>,
-) -> Result<(), anyhow::Error> {
-    let code_word = match subdevice.sdo_read::<u32>(BECKHOFF_CODEWORD_INDEX, 0).await {
-        Ok(code_word) => code_word,
-        // This happens when the subdevice has no mailbox
-        // There is NO check in ethercrab for Mailbox presence, so we just have to pray that it has one and send a request
-        // If there is no Mailbox to write Coe Request to, then there is also no EEPROM meaning we achieved our goal in a sense
-        // This is why it returns OK on an error for sdo_read
-        Err(_) => return Ok(()),
-    };
-
-    let eeprom_lock_toggled = match code_word {
-        BECKHOFF_EEPROM_LOCK_CODEWORD => true,
-        _ => false,
-    };
-
-    if !eeprom_lock_toggled {
-        subdevice
-            .sdo_write(BECKHOFF_CODEWORD_INDEX, 0, BECKHOFF_EEPROM_LOCK_CODEWORD)
-            .await?;
-        tracing::info!(
-            "Activated EEPROM Lock for {} {}",
-            subdevice.name(),
-            subdevice.name()
-        );
-    }
-
-    Ok(())
-}*/

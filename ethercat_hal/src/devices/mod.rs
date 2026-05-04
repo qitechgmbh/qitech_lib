@@ -24,7 +24,7 @@ pub mod ep2339_0021;
 pub mod panasonic_modules;
 pub mod wago_750_354;
 pub mod wago_modules;
-use crate::MetaSubdevice;
+use crate::{MetaSubdevice, SdoIndex, TypeErasedValue};
 use crate::devices::ep2339_0021::EP2339_0021_IDENTITY_A;
 use crate::devices::panasonic_modules::minas_a6::{self, MINAS_A6_IDENTITY_A};
 use super::devices::el1008::EL1008;
@@ -52,7 +52,6 @@ use el6021::{EL6021_IDENTITY_A, EL6021_IDENTITY_B, EL6021_IDENTITY_C, EL6021_IDE
 use el7031::{EL7031_IDENTITY_A, EL7031_IDENTITY_B};
 use el7031_0030::EL7031_0030_IDENTITY_A;
 use el7041_0052::EL7041_0052_IDENTITY_A;
-use std::any::TypeId;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -74,14 +73,8 @@ pub struct Module {
 }
 
 pub trait MockEtherCatSdos {
-    fn get_sdo_map() -> HashMap<Index, TypeErasedValue>;
+    fn get_sdo_map() -> HashMap<SdoIndex, TypeErasedValue>;
 }
-
-#[derive(Debug)]
-pub struct TypeErasedValue { pub id: TypeId, pub value: Vec<u8> }
-
-#[derive(Debug, Hash, PartialEq, Eq)]
-pub struct Index { pub index: u32, pub sub_index: u16 }
 
 /// A trait for all devices
 ///
