@@ -2,11 +2,15 @@
 name        = "modbus"
 version     = "0.1.0"
 edition     = "2024"
-description = "Modbus subcrate"
+description = "Modbus RTU/TCP building blocks for QiTech machines"
+license     = "LGPL-2.1"
+repository  = "https://github.com/qitechgmbh/qitech_lib"
+keywords    = ["modbus", "serial", "automation"]
+categories  = ["embedded", "hardware-support", "network-programming"]
 
 [dependencies]
-tokio = { version = "1.49.0", features = ["sync","rt-multi-thread","macros"] }
-tokio-serial = "5.0"
-tokio-modbus = "0.17.0"
+tokio         = { version = "1.49.0", features = ["sync", "rt-multi-thread", "macros"] }
+tokio-serial  = "5.0"
+tokio-modbus  = "0.17.0"
 
 [lib]

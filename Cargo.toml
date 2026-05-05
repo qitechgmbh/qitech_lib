@@ -1,19 +1,25 @@
 [package]
-name = "qitech_lib"
-version = "0.1.0"
-edition = "2024"
+name        = "qitech_lib"
+version     = "0.1.0"
+edition     = "2024"
+description = "Building blocks for creating machines with EtherCAT, Serial, Modbus-RTU, Modbus-TCP"
+license     = "LGPL-2.1"
+repository  = "https://github.com/qitechgmbh/qitech_lib"
+readme      = "README.md"
+keywords    = ["ethercat", "modbus", "serial", "automation"]
+categories  = ["embedded", "hardware-support"]
 
 [dependencies]
-bitvec = "1.0.1"
-ethercat_hal = { path = "ethercat_hal" }
-ethercat_hal_derive = { path = "ethercat_hal_derive" }
-modbus = { path = "modbus"}
-machines = { path = "machines" }
-units = {path = "units"}
-tokio = "1.49.0"
+bitvec           = "1.0.1"
+tokio            = "1.49.0"
+ethercat_hal     = { version = "0.1.0", path = "ethercat_hal" }
+ethercat_hal_derive = { version = "0.1.0", path = "ethercat_hal_derive" }
+modbus           = { version = "0.1.0", path = "modbus" }
+machines         = { version = "0.1.0", path = "machines" }
+units            = { version = "0.1.0", path = "units" }
 
 [lib]
 
 [features]
-# This defines 'mock' at the root level and passes it to 'ethercat_hal'
+# Passes 'mock' feature down to ethercat_hal
 mock = ["ethercat_hal/mock"]

@@ -1,13 +1,18 @@
 [package]
-name = "ethercat_hal_derive"
-version = "0.1.0"
-edition = "2024"
+name        = "ethercat_hal_derive"
+version     = "0.1.0"
+edition     = "2024"
+description = "Procedural macros for ethercat_hal"
+license     = "LGPL-2.1"
+repository  = "https://github.com/qitechgmbh/qitech_lib"
+keywords    = ["ethercat", "derive", "proc-macro"]
+categories  = ["embedded", "development-tools::procedural-macro-helpers"]
 
 [lib]
 proc-macro = true
 
 [dependencies]
-syn = { version = "2.0", features = ["full"] }
-quote = "1.0"
+syn       = { version = "2.0", features = ["full"] }
+quote     = "1.0"
 proc-macro2 = "1.0"
-deluxe = "0.5.0"
+deluxe    = "0.5.0"

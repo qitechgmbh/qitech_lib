@@ -1,20 +1,29 @@
 [package]
-name = "ethercat_hal"
-version = "0.1.0"
-edition = "2024"
+name        = "ethercat_hal"
+version     = "0.1.0"
+edition     = "2024"
+description = "EtherCAT HAL building blocks for QiTech machines"
+license     = "LGPL-2.1"
+repository  = "https://github.com/qitechgmbh/qitech_lib"
+keywords    = ["ethercat", "hal", "automation"]
+categories  = ["embedded", "hardware-support"]
 
 [dependencies]
-anyhow = "1.0.100"
-ethercrab = { git = "https://github.com/v-morlock/ethercrab", branch = "main" }
+anyhow           = "1.0.100"
+#   Publish fork (v-morlock/ethercrab) to crates.io first,
+#             then reference it here by version.
+# Uncomment the correct line below before publishing:
+# ethercrab = "0.1.0"
+ethercrab        = { git = "https://github.com/v-morlock/ethercrab", branch = "main" }
 ethercat_hal_derive = { version = "0.1.0", path = "../ethercat_hal_derive" }
-units = { path = "../units" }
-bitvec = { version = "1.0.1", features = ["alloc"] }
-smol = "2.0.2"
-rand = "0.9.2"
-tracing = "0.1.44"
-tokio = { version = "1.50.0", features = ["rt", "rt-multi-thread", "macros", "time"] }
-ta = "0.5.0"
-triple_buffer = "9.0.0"
+units            = { version = "0.1.0", path = "../units" }
+bitvec           = { version = "1.0.1", features = ["alloc"] }
+smol             = "2.0.2"
+rand             = "0.9.2"
+tracing          = "0.1.44"
+tokio            = { version = "1.50.0", features = ["rt", "rt-multi-thread", "macros", "time"] }
+ta               = "0.5.0"
+triple_buffer    = "9.0.0"
 
 [dev-dependencies]
 approx = "0.5.1"
@@ -22,6 +31,6 @@ approx = "0.5.1"
 [lib]
 
 [features]
-default = []
-mock = []
+default     = []
+mock        = []
 legacy_code = []

@@ -1,10 +1,15 @@
 [package]
-name = "units"
-version = "0.1.0"
-edition = "2024"
+name        = "units"
+version     = "0.1.0"
+edition     = "2024"
 rust-version = "1.86"
+description = "Physical units for QiTech machine building blocks"
+license     = "LGPL-2.1"
+repository  = "https://github.com/qitechgmbh/qitech_lib"
+keywords    = ["units", "ethercat", "machines"]
+categories  = ["embedded", "science"]
 
 [dependencies]
-uom = { version = "0.37.0", default-features = false, features = [ "f64" ] }
+uom = { version = "0.37.0", default-features = false, features = ["f64"] }
 
 [lib]

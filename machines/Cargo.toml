@@ -1,6 +1,11 @@
 [package]
-name = "machines"
-version = "0.1.0"
-edition = "2024"
+name        = "machines"
+version     = "0.1.0"
+edition     = "2024"
+description = "Machine abstractions for QiTech machine building blocks"
+license     = "LGPL-2.1"
+repository  = "https://github.com/qitechgmbh/qitech_lib"
+keywords    = ["machines", "ethercat", "automation"]
+categories  = ["embedded", "hardware-support"]
 
 [lib]
