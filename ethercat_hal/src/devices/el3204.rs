@@ -1,8 +1,3 @@
-use std::any::TypeId;
-use std::collections::HashMap;
-
-use crate::SdoIndex;
-use crate::devices::{MockEtherCatSdos, TypeErasedValue};
 use crate::pdo::TxPdo;
 use crate::{
     io::temperature_input::{TemperatureInputDevice, TemperatureInputInput},
@@ -118,15 +113,17 @@ pub const EL3204_IDENTITY_A: SubDeviceIdentityTuple =
 pub const EL3204_IDENTITY_B: SubDeviceIdentityTuple =
     (EL3204_VENDOR_ID, EL3204_PRODUCT_ID, EL3204_REVISION_B);
 
-impl MockEtherCatSdos for EL3204 {
-    fn get_sdo_map() -> HashMap<SdoIndex, TypeErasedValue> {
+
+#[cfg(feature = "mock")]
+impl crate::devices::MockEtherCatSdos for EL3204 {
+    fn get_sdo_map() -> std::collections::HashMap<crate::SdoIndex, crate::devices::TypeErasedValue> {
         let mut map = HashMap::new();
         // Helper to insert values into the map
         let mut insert_sdo = |idx: u32, sub: u16, val: u64, size: usize, tid: TypeId| {
             let bytes = val.to_le_bytes()[..size].to_vec();
             map.insert(
                 SdoIndex { index: idx, sub_index: sub },
-                TypeErasedValue { type_id: tid, value: bytes }
+                crate::devices::TypeErasedValue { type_id: tid, value: bytes }
             );
         };
 
