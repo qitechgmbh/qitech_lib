@@ -1,7 +1,6 @@
 use super::EthercatDeviceProcessing;
 use super::{NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::EtherCATThreadChannel;
-use crate::devices::{MockEtherCatSdos, TypeErasedValue};
 use crate::io::analog_input::physical::AnalogInputRange;
 use crate::io::analog_input::{AnalogInputDevice, AnalogInputInput};
 use crate::pdo::RxPdo;
