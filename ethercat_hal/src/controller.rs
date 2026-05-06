@@ -37,7 +37,7 @@ where
 fn set_current_thread_rt_priority(priority: i32) {
     unsafe {
         let thread_id = libc::pthread_self();
-        let mut param = libc::sched_param {
+        let param = libc::sched_param {
             sched_priority: priority, // 1 to 99
         };
         
