@@ -7,29 +7,32 @@ pub mod helpers;
 pub mod io;
 pub mod pdo;
 pub mod shared_config;
+pub mod interface_discovery;
 //#[cfg(feature = "legacy_code")]
 pub mod machine_ident_read;
 use crate::controller::EtherCATController;
-use controller::{EtherCATAppHandle, MockConsumer, MockProducer, TripleBufConsumer, TripleBufProducer};
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
-use std::any::TypeId;
+use triple_buffer::{Input, Output};
 use std::sync::mpsc;
 use std::sync::{Arc, OnceLock, mpsc::Sender};
 use std::thread::JoinHandle;
-use tokio::runtime::Runtime;
-pub use controller::Consumer;
-pub use controller::Producer;
+use std::time::Duration;
+use tokio::runtime::{Builder, Runtime};
+
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 fn get_async_runtime() -> &'static Runtime {
     RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
+            Builder::new_current_thread() // Use single-threaded for determinism
             .enable_all()
+            // Optional: Limit how many events tokio processes before checking IO
+            // .max_event_per_tick(64) 
             .build()
             .expect("Failed to create Tokio Runtime")
     })
 }
+
 
 pub const ETHERCAT_TX_RX_SIZE: usize = 4096;
 pub const MAX_SUBDEVICES: usize = 16;
@@ -38,15 +41,102 @@ pub const MAX_FRAMES: usize = 16;
 pub const PDI_LEN: usize = 1024;
 static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
 
+
+
+pub trait Consumer {
+    fn read(&mut self) -> &[u8];
+}
+
+pub trait Producer {
+    fn input_buffer_mut(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE];
+    fn publish(&mut self);
+}
+
+pub struct MockConsumer {
+    pub buffer: [u8; ETHERCAT_TX_RX_SIZE],
+}
+
+pub struct MockProducer {
+    pub buffer: [u8; ETHERCAT_TX_RX_SIZE],
+}
+
+impl Producer for MockProducer {
+    fn input_buffer_mut(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
+        &mut self.buffer
+    }
+
+    fn publish(&mut self) {
+        // does nothing for the mock
+    }
+}
+
+impl Consumer for MockConsumer {
+    fn read(&mut self) -> &[u8] {
+        &self.buffer
+    }
+}
+
+pub struct TripleBufConsumer {
+    pub input_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
+}
+
+pub struct TripleBufProducer {
+    pub output_producer: Input<[u8; ETHERCAT_TX_RX_SIZE]>,
+}
+
+impl Consumer for TripleBufConsumer {
+    fn read(&mut self) -> &[u8] {
+        self.input_consumer.read()
+    }
+}
+
+impl Producer for TripleBufProducer {
+    fn input_buffer_mut(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
+        self.output_producer.input_buffer_mut()
+    }
+
+    fn publish(&mut self) {
+        self.output_producer.publish();
+    }
+}
+
+pub struct EtherCATAppHandle<C, P>
+where
+    C: Consumer,
+    P: Producer,
+{
+    pub input_consumer: C,
+    pub output_producer: P,
+}
+
+impl<C, P> EtherCATAppHandle<C, P>
+where
+    C: Consumer,
+    P: Producer,
+{
+    pub fn get_inputs(&mut self) -> &[u8] {
+        self.input_consumer.read()
+    }
+
+    pub fn write_outputs(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
+        self.output_producer.input_buffer_mut()
+    }
+
+    pub fn send_outputs(&mut self) {
+        self.output_producer.publish();
+    }
+}
+
 #[derive(Hash,Eq,PartialEq,PartialOrd,Clone)]
 pub struct SdoIndex {
     index : u32,
     sub_index : u16,
 }
 
+#[cfg(feature = "mock")]
 #[derive(Clone)]
 pub struct TypeErasedValue {
-    type_id : TypeId,
+    type_id : std::any::TypeId,
     value : Vec<u8>,
 }
 
@@ -240,8 +330,56 @@ pub fn init_ethercat_mock(faked_subdevices : Vec<MetaSubdevice>, machine_infos :
     return EtherCATControl { controller, channel, app_handle, join_handle: None }
 }
 
+// Currently ignored by controller, but should be used to select driver for txrx
+// XDP should in theory be most performant
+// While tx_rx_blocking is supported on most platforms
+// Which of these actually work depend on the controller.rs used (ethercrab supports xdp io_uring and the standard one)
+#[derive(Clone,Debug)]
+pub enum MasterTxRxConfig {
+    TxRxBlocking,
+    TxRxIoUring,
+    //TX_RX_XDP 
+}
+
+#[derive(Clone,Debug)]
+pub struct DcConfiguration {
+    pub start_delay: Duration,
+    pub sync0_period: Duration,
+    pub sync0_shift: Duration,
+    pub target_dc_tick : usize,
+}
+
+impl Default for DcConfiguration {
+    fn default() -> Self {
+        Self { 
+            start_delay: Duration::from_millis(100),
+            sync0_period: Duration::from_micros(1000),
+            sync0_shift: Duration::from_micros(500),
+            target_dc_tick: 300,
+        }
+    }
+}
+
+#[derive(Clone,Debug)]
+pub struct MasterConfiguration {
+    /// target cycle time in Microseconds
+    pub target_cycle_time_us : usize,
+    pub tx_rx_config : MasterTxRxConfig,
+    pub dc_config : DcConfiguration,
+}
+
+impl Default for MasterConfiguration {
+    fn default() -> Self { 
+        Self { 
+            target_cycle_time_us: 500,
+            tx_rx_config: MasterTxRxConfig::TxRxIoUring,
+            dc_config:DcConfiguration::default()
+        }
+    }
+}
+
 #[cfg(not(feature = "mock"))]
-pub fn init_ethercat(interface_name: &str) -> EtherCATControl<TripleBufConsumer,TripleBufProducer> {
+pub fn init_ethercat(interface_name: &str, config : Option<MasterConfiguration> ) -> EtherCATControl<TripleBufConsumer,TripleBufProducer> {
     let (tx, rx) = mpsc::channel();
 
     let (input_producer, input_consumer) =
@@ -249,29 +387,40 @@ pub fn init_ethercat(interface_name: &str) -> EtherCATControl<TripleBufConsumer,
     let (output_producer, output_consumer) =
         triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
 
-    let controller = Arc::new(EtherCATController::new(
-        TripleBufProducer{output_producer:  input_producer},
-        TripleBufConsumer{input_consumer: output_consumer } ,
-        rx,
-        Some(interface_name.to_string()),
-    ));
+    let controller = match config {
+        Some(conf) => Arc::new(EtherCATController::new(
+            TripleBufProducer{output_producer:  input_producer},
+            TripleBufConsumer{input_consumer: output_consumer } ,
+            rx,
+            Some(interface_name.to_string()),
+            conf
+        )),
+        None => Arc::new(EtherCATController::new(
+            TripleBufProducer{output_producer:  input_producer},
+            TripleBufConsumer{input_consumer: output_consumer } ,
+            rx,
+            Some(interface_name.to_string()),
+            MasterConfiguration::default(),
+        ))
+    };
 
     let app_handle = EtherCATAppHandle {
         input_consumer: TripleBufConsumer{ input_consumer },
         output_producer: TripleBufProducer { output_producer } ,
- 
     };
-        let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx);
-        let controller_for_thread = Arc::clone(&controller);
-        let join_handle = std::thread::Builder::new()
-            .name("EthercatStateMachine".into())
-            .spawn(move || {
-                // We need &mut self for the state machine.
-                let ptr = Arc::as_ptr(&controller_for_thread) as *mut EtherCATController<TripleBufConsumer,TripleBufProducer>;
-                unsafe {
-                    (&mut *ptr).ethercat_state_machine();
-                }
-            })
+
+    let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx);
+    let controller_for_thread = Arc::clone(&controller);
+
+    let join_handle = std::thread::Builder::new()
+        .name("EthercatStateMachine".into())
+        .spawn(move || {
+            // We need &mut self for the state machine.
+            let ptr = Arc::as_ptr(&controller_for_thread) as *mut EtherCATController<TripleBufConsumer,TripleBufProducer>;
+            unsafe {
+                (&mut *ptr).ethercat_state_machine();
+            }
+        })
         .expect("Failed to spawn thread");
         EtherCATControl {
             controller: controller,

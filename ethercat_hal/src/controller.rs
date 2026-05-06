@@ -1,10 +1,5 @@
 use crate::{
-    ChannelRequest, ChannelRequests, ChannelResponse, ETHERCAT_TX_RX_SIZE,
-    EtherCATState, MAX_SUBDEVICES, MetaSubdevice, PDI_LEN, PDU_STORAGE, SdoType,
-    ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
-    get_async_runtime,
-    machine_ident_read::{MachineDeviceInfo, read_device_identifications},
-    send_response,
+    ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES, MasterConfiguration, MetaSubdevice, PDI_LEN, PDU_STORAGE, Producer, SdoType, TripleBufConsumer, TripleBufProducer, ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write}, get_async_runtime, machine_ident_read::{MachineDeviceInfo, read_device_identifications}, send_response
 };
 
 use ethercrab::{
@@ -20,7 +15,6 @@ use std::{
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::time::interval;
-use triple_buffer::{Input, Output};
 
 pub struct EtherCATController<C, P>
 where
@@ -29,17 +23,39 @@ where
 {
     pub cycle_time_us: u64,
     pub interface: Option<String>,
-    pub machine_device_infos: Option<Vec<MachineDeviceInfo>>,
-
     pub subdevices: [MetaSubdevice; 256],
     pub subdevice_count: usize,
-
     pub state: EtherCATState,
+    pub current_config : MasterConfiguration,
     requested_state: Option<EtherCATState>,
     rx_channel: Receiver<ChannelRequest>,
-
+    machine_device_infos: Option<Vec<MachineDeviceInfo>>,
     input_producer: P,
     output_consumer: C,
+}
+
+fn set_current_thread_rt_priority(priority: i32) {
+    unsafe {
+        let thread_id = libc::pthread_self();
+        let mut param = libc::sched_param {
+            sched_priority: priority, // 1 to 99
+        };
+        
+        // SCHED_FIFO is the standard for real-time control loops.
+        // It will run until it finishes or is preempted by a higher-priority RT thread.
+        let result = libc::pthread_setschedparam(
+            thread_id,
+            libc::SCHED_FIFO,
+            &param as *const libc::sched_param,
+        );
+
+        if result != 0 {
+            let err = std::io::Error::last_os_error();
+            eprintln!("Failed to set RT priority: {}. (Are you root / using sudo?)", err);
+        } else {
+            println!("Thread priority set to SCHED_FIFO with level {}", priority);
+        }
+    }
 }
 
 impl<C, P> EtherCATController<C, P>
@@ -52,6 +68,7 @@ where
         output: C,
         rx: Receiver<ChannelRequest>,
         interface: Option<String>,
+        config: MasterConfiguration,
     ) -> Self {
         Self {
             cycle_time_us: 0,
@@ -64,6 +81,7 @@ where
             input_producer: input,
             output_consumer: output,
             machine_device_infos: None,
+            current_config:config,
         }
     }
 
@@ -71,91 +89,6 @@ where
         &self.subdevices[0..self.subdevice_count]
     }
 }
-
-pub trait Consumer {
-    fn read(&mut self) -> &[u8];
-}
-
-pub trait Producer {
-    fn input_buffer_mut(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE];
-    fn publish(&mut self);
-}
-
-pub struct MockConsumer {
-    pub buffer: [u8; ETHERCAT_TX_RX_SIZE],
-}
-
-pub struct MockProducer {
-    pub buffer: [u8; ETHERCAT_TX_RX_SIZE],
-}
-
-impl Producer for MockProducer {
-    fn input_buffer_mut(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
-        &mut self.buffer
-    }
-
-    fn publish(&mut self) {
-        // does nothing for the mock
-    }
-}
-
-impl Consumer for MockConsumer {
-    fn read(&mut self) -> &[u8] {
-        &self.buffer
-    }
-}
-
-pub struct TripleBufConsumer {
-    pub input_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
-}
-
-pub struct TripleBufProducer {
-    pub output_producer: Input<[u8; ETHERCAT_TX_RX_SIZE]>,
-}
-
-impl Consumer for TripleBufConsumer {
-    fn read(&mut self) -> &[u8] {
-        self.input_consumer.read()
-    }
-}
-
-impl Producer for TripleBufProducer {
-    fn input_buffer_mut(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
-        self.output_producer.input_buffer_mut()
-    }
-
-    fn publish(&mut self) {
-        self.output_producer.publish();
-    }
-}
-
-pub struct EtherCATAppHandle<C, P>
-where
-    C: Consumer,
-    P: Producer,
-{
-    pub input_consumer: C,
-    pub output_producer: P,
-}
-
-impl<C, P> EtherCATAppHandle<C, P>
-where
-    C: Consumer,
-    P: Producer,
-{
-    pub fn get_inputs(&mut self) -> &[u8] {
-        self.input_consumer.read()
-    }
-
-    pub fn write_outputs(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
-        self.output_producer.input_buffer_mut()
-    }
-
-    pub fn send_outputs(&mut self) {
-        self.output_producer.publish();
-    }
-}
-
 
 unsafe impl Sync for EtherCATController<TripleBufConsumer, TripleBufProducer> {}
 impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
@@ -203,7 +136,10 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                         ethercat_tx_rx_handle = std::thread::Builder::new()
                             .name("EthercatTxRxThread".to_owned())
                             .spawn(move || {
-                                tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
+				  let id = core_affinity::CoreId{ id: 3 };
+				  set_current_thread_rt_priority(80);
+                                   core_affinity::set_for_current(id);
+				   tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
                                     .expect("Failed to run TX/RX task (io_uring)");
                             });
 
@@ -268,10 +204,8 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                     self.subdevice_count = i;
                     let msg = match self.rx_channel.try_recv() {
                         Ok(value) => value,
-                        Err(e) => continue,
+                        Err(_e) => continue,
                     };
-
-                    //println!("GOT A MESSAGE: {:?}", msg.channel_request);
 
                     match msg.channel_request {
                         ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {
@@ -373,9 +307,8 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
 
                     let rt = get_async_runtime();
                     let mut tick_interval =
-                        rt.block_on(async { interval(Duration::from_micros(1000)) });
+                        rt.block_on(async { interval(Duration::from_micros(self.current_config.target_cycle_time_us as u64)) });
 
-                    // println!("Moving into PRE-OP with PDI");
                     let group_to_transition = group.take().expect("Group missing in PreOp");
                     let device_ref = maindevice.as_ref().expect("MainDevice missing");
                     let rt = get_async_runtime();
@@ -435,9 +368,9 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                         rt.block_on(group_preop_pdi.configure_dc_sync(
                             device,
                             DcConfiguration {
-                                start_delay: Duration::from_millis(100),
-                                sync0_period: Duration::from_micros(1000),
-                                sync0_shift: Duration::from_micros(500),
+                                start_delay: self.current_config.dc_config.start_delay,
+                                sync0_period: self.current_config.dc_config.sync0_period,
+                                sync0_shift: self.current_config.dc_config.sync0_shift,
                             },
                         ))
                         .unwrap(),
@@ -466,16 +399,16 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                 let _res = rt.block_on(async {
                                     let now = tokio::time::Instant::now(); // Moved inside
                                     let res = group.tx_rx_dc(device).await.expect("TX/RX");
-                                    if tick <= 300 {
+                                    if tick <= self.current_config.dc_config.target_dc_tick {
                                         tokio::time::sleep_until(now + res.extra.next_cycle_wait)
                                             .await;
                                     }
                                     res
                                 });
 
-                                if tick > 300 {
+                                if tick > self.current_config.dc_config.target_dc_tick  {
                                     let group_res = rt.block_on(group.request_into_safe_op(device));
-                                    let group = group_res.expect("Fail SafeOp");
+                                    let group = group_res.expect("Failed SafeOp");
                                     group_container = Some(GroupState::SafeOp(group));
                                     println!("Requested SAFE-OP");
                                 } else {
@@ -484,13 +417,11 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                             }
                             GroupState::SafeOp(group) => {
                                 let device = maindevice.as_ref().unwrap();
-
                                 // Apply the same logic here
                                 let (is_all_safe, group_back, _) = rt.block_on(async {
                                     let now = tokio::time::Instant::now();
                                     let res = group.tx_rx_dc(device).await.expect("TX/RX");
                                     let ready = res.all_safe_op();
-
                                     if !ready {
                                         tokio::time::sleep_until(now + res.extra.next_cycle_wait)
                                             .await;
@@ -521,7 +452,6 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                     let rt = get_async_runtime();
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
-
                     loop {
                         let response = rt
                             .block_on(group_op.as_ref().unwrap().tx_rx_dc(&maindevice))
@@ -550,47 +480,51 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                             break;
                         }
                     }
+                    rt.block_on(async {
+			let id = core_affinity::CoreId{ id: 2 };
+                        set_current_thread_rt_priority(80);
+                        // Pin to the last core (e.g., Core 3 on a 4-core system)
+                        core_affinity::set_for_current(id);
+                    
+			let mut next_wait = Instant::now() + Duration::from_micros(self.current_config.target_cycle_time_us as u64);
 
-                    loop {
-                        let now = Instant::now();
-                        let _res = rt.block_on(async {
-                            let res = group.tx_rx_dc(&maindevice).await.expect("TX/RX");
-                            let now = tokio::time::Instant::now();
-                            (res, now)
-                        });
-
-                        let full_buffer = self.input_producer.input_buffer_mut();
-                        // We get a mutable slice to the whole buffer to make sub-slicing easier
-                        let mut current_offset = 0;
-                        for subdevice in group.iter(&maindevice) {
-                            let len = subdevice.io_raw().inputs().len();
-                            if current_offset + len <= ETHERCAT_TX_RX_SIZE {
-                                full_buffer[current_offset..current_offset + len]
-                                    .copy_from_slice(subdevice.io_raw().inputs());
-                                current_offset += len;
-                            } else {
-                                println!("Data exceeds buffer");
-                                break;
+		        loop {                        
+			    let cycle_start = Instant::now();                            
+			    let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                            next_wait = cycle_start + Duration::from_micros(self.current_config.target_cycle_time_us as u64);
+                            let full_buffer = self.input_producer.input_buffer_mut();
+                            // We get a mutable slice to the whole buffer to make sub-slicing easier
+                            let mut current_offset = 0;
+                            for subdevice in group.iter(&maindevice) {
+                                let len = subdevice.io_raw().inputs().len();
+                                if current_offset + len <= ETHERCAT_TX_RX_SIZE {
+                                    full_buffer[current_offset..current_offset + len]
+                                        .copy_from_slice(subdevice.io_raw().inputs());
+                                    current_offset += len;
+                                } else {
+                                    println!("Data exceeds buffer");
+                                    break;
+                                }
                             }
-                        }
-                        self.input_producer.publish();
-                        /*rt.block_on(async {
-                            tokio::time::sleep_until(res.1 + res.0.extra.next_cycle_wait).await
-                        });*/
 
-                        let full_buffer = self.output_consumer.read();
-                        // We get a mutable slice to the whole buffer to make sub-slicing easier
-                        let mut current_offset = 0;
-                        for subdevice in group.iter(&maindevice) {
+                            self.input_producer.publish();
+                    let full_buffer = self.output_consumer.read();
+                    // We get a mutable slice to the whole buffer to make sub-slicing easier
+                    let mut current_offset = 0;
+		          for subdevice in group.iter(&maindevice) {
                             let mut output = subdevice.outputs_raw_mut();
-                            let len = output.len();
-                            output.copy_from_slice(
-                                &full_buffer[current_offset..current_offset + len],
-                            );
-                            current_offset += len;
+                                let len = output.len();
+                                output.copy_from_slice(
+                                    &full_buffer[current_offset..current_offset + len],
+                                );
+                                current_offset += len;
+                            }
+                            while Instant::now() < next_wait {
+                                std::hint::spin_loop();
+                            }
+                            self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
                         }
-                        self.cycle_time_us = now.elapsed().as_micros() as u64;
-                    }
+                    });
                 }
             }
             self.requested_state = None;

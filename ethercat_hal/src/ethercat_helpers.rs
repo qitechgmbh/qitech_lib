@@ -470,7 +470,6 @@ pub fn enable_dc_sync(
     device_address: usize,
 ) -> Result<(),anyhow::Error> {
     let rt = get_async_runtime();
-    
     rt.block_on(async {
         for mut subdevice in group.iter_mut(maindevice) {
             if subdevice.configured_address() == device_address as u16 {
