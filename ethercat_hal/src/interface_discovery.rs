@@ -19,51 +19,55 @@ pub struct Interface {
 	pub link_type : LinkType,
 	pub name : String,
 }
+pub fn list_ethernet_interfaces() -> Result<Vec<Interface>, anyhow::Error> {
+    let mut ifaddr: *mut libc::ifaddrs = std::ptr::null_mut();
 
-pub fn list_ethernet_interfaces() -> Result<Vec<Interface>,anyhow::Error>{
-    let mut ifaddr: *mut ifaddrs = ptr::null_mut();
-    // Safety: getifaddrs populates a linked list of interface structures.
-    // We must ensure we free this memory using freeifaddrs later.
+    // Safety: getifaddrs populates a linked list. We MUST call freeifaddrs.
     unsafe {
-        if getifaddrs(&mut ifaddr) == -1 {
-            eprintln!("Error calling getifaddrs");
-            return Err(anyhow::anyhow!("Error calling getifaddrs"));
+        if libc::getifaddrs(&mut ifaddr) == -1 {
+            return Err(anyhow::anyhow!("Error calling getifaddrs: {}", std::io::Error::last_os_error()));
         }
-        let mut vec : Vec<Interface> = vec![];
+
+        let mut vec: Vec<Interface> = vec![];
         let mut curr = ifaddr;
 
         while !curr.is_null() {
-            let interface = *curr;            
-            let flags = interface.ifa_flags;
-            // Convert the C string name to a Rust &str
-            if !interface.ifa_name.is_null() {
-                let name = CStr::to_string_lossy(CStr::from_ptr(interface.ifa_name)).into_owned(); 
-					
-				println!("Interface {} {}",name,flags & libc::IFF_LOOPBACK as u32);
-				if (flags & libc::IFF_LOOPBACK as u32) == 1 {    	
-				    curr = interface.ifa_next;	
-				    println!("is Loopback");	
-    				continue;
-				}     
+            let ifa = *curr; // The actual structure
+            
+            if !ifa.ifa_name.is_null() {
+                let name = CStr::from_ptr(ifa.ifa_name).to_string_lossy().into_owned();
+                let flags = ifa.ifa_flags;
 
-                // Determine address family (IPv4, IPv6, or Packet/Link)
-                let interface = if !interface.ifa_addr.is_null() {
-                    match (*interface.ifa_addr).sa_family as i32 {
-                        libc::AF_INET => Interface {link_type: LinkType::Ipv4, name},
-                        libc::AF_INET6 => Interface {link_type: LinkType::Ipv6, name},
-                        libc::AF_PACKET => Interface {link_type: LinkType::Link, name}, 
-                        _ => Interface {link_type: LinkType::Unknown, name},
-                    }
-                } else {
-                    Interface {link_type: LinkType::Unknown, name}
-                };
-                vec.push(interface);
+                // FIX: Bitwise check. IFF_LOOPBACK is usually 0x8, not 0x1.
+                if (flags & libc::IFF_LOOPBACK as u32) != 0 {
+                    // Skip loopback
+                    curr = ifa.ifa_next;
+                    continue;
+                }
+
+                // FIX: Only process if the interface has an address assigned
+                if !ifa.ifa_addr.is_null() {
+                    let family = (*ifa.ifa_addr).sa_family as i32;
+                    
+                    let link_type = match family {
+                        libc::AF_INET => LinkType::Ipv4,
+                        libc::AF_INET6 => LinkType::Ipv6,
+                        libc::AF_PACKET => LinkType::Link,
+                        _ => LinkType::Unknown,
+                    };
+
+                    // Note: This will add the same interface name multiple times 
+                    // (once for Link, once for Ipv4, etc.)
+                    vec.push(Interface { link_type, name });
+                }
             }
-            curr = interface.ifa_next;
+            
+            // Always move to next before loop ends
+            curr = ifa.ifa_next;
         }
-        // Clean up the memory allocated by getifaddrs
-        freeifaddrs(ifaddr);
-        Ok( vec )
+
+        libc::freeifaddrs(ifaddr);
+        Ok(vec)
     }
 }
 
@@ -136,8 +140,8 @@ fn test_discovery(fd: RawFd, packet: &[u8]) -> bool{
         // Buffer for response
         let mut buf = [0u8; 1514];
         let received = libc::recv(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len(), 0);
-
-        if received > 0 {
+		
+        if received > 0 && buf[12] == 0x88 && buf[13] == 0xA4 {
             println!("Received {} bytes on this interface", received);
             // Check WKC in the response...                        
             return true;
