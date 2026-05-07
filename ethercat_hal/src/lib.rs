@@ -279,6 +279,7 @@ pub enum ChannelRequests {
     Shutdown(),
     // Legacy code, only usable when feature enable_legacy_code is set
     ReadMachineIdent(),
+    WriteMachineIdent(Vec<MachineDeviceInfo>),
 }
 
 pub struct ChannelRequest {
