@@ -34,7 +34,7 @@ pub fn list_ethernet_interfaces() -> Result<Vec<Interface>,anyhow::Error>{
             // Convert the C string name to a Rust &str
             if !interface.ifa_name.is_null() {
                 let name = CStr::to_string_lossy(CStr::from_ptr(interface.ifa_name)).into_owned(); 					
-				if (flags & libc::IFF_LOOPBACK as u32) == 1 {    	
+				if (flags & libc::IFF_LOOPBACK as u32) != 0 {    	
 				    curr = interface.ifa_next;	
     				continue;
 				}     
