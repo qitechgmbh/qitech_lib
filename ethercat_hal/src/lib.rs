@@ -447,10 +447,10 @@ pub fn init_ethercat(interface_name: &str, config : Option<MasterConfiguration> 
             }
         })
         .expect("Failed to spawn thread");
-        EtherCATControl {
-            controller: controller,
-            channel,
-            app_handle,
-            join_handle: Some(join_handle),
-        }
+    EtherCATControl {
+        controller: controller,
+        channel,
+        app_handle,
+        join_handle: Some(join_handle),
+    }
 }
