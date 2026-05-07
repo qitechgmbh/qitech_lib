@@ -132,14 +132,20 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                         let pdu_tx = tx;
                         let pdu_rx = rx;
                         let interface = self.interface.clone().unwrap();
-
+                        let opt = self.current_config.realtime_optimizations.clone();                        
                         ethercat_tx_rx_handle = std::thread::Builder::new()
                             .name("EthercatTxRxThread".to_owned())
                             .spawn(move || {
-				  let id = core_affinity::CoreId{ id: 3 };
-				  set_current_thread_rt_priority(80);
-                                   core_affinity::set_for_current(id);
-				   tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
+				                    match opt {
+                                    Some(opt) => {
+                                        let id = core_affinity::CoreId{ id: opt.ethercat_io_thread_core };
+                                        set_current_thread_rt_priority(opt.ethercat_io_thread_priority as i32);
+                                        // Pin to the last core (e.g., Core 3 on a 4-core system)
+                                        core_affinity::set_for_current(id);
+                                    },
+                                    None => (),
+                                    };
+                                tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
                                     .expect("Failed to run TX/RX task (io_uring)");
                             });
 
@@ -480,17 +486,22 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                             break;
                         }
                     }
-                    rt.block_on(async {
-			let id = core_affinity::CoreId{ id: 2 };
-                        set_current_thread_rt_priority(80);
-                        // Pin to the last core (e.g., Core 3 on a 4-core system)
-                        core_affinity::set_for_current(id);
-                    
-			let mut next_wait = Instant::now() + Duration::from_micros(self.current_config.target_cycle_time_us as u64);
 
-		        loop {                        
-			    let cycle_start = Instant::now();                            
-			    let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                    rt.block_on(async {
+                        match &self.current_config.realtime_optimizations {
+                            Some(opt) => {
+                                let id = core_affinity::CoreId{ id: opt.ethercat_loop_thread_core };
+                                set_current_thread_rt_priority(opt.ethercat_loop_thread_priority as i32);
+                                // Pin to the last core (e.g., Core 3 on a 4-core system)
+                                core_affinity::set_for_current(id);
+                            },
+                            None => (),
+                        };
+                        let mut next_wait = Instant::now() + Duration::from_micros(self.current_config.target_cycle_time_us as u64);
+
+		              loop {                        
+			             let cycle_start = Instant::now();                            
+			             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
                             next_wait = cycle_start + Duration::from_micros(self.current_config.target_cycle_time_us as u64);
                             let full_buffer = self.input_producer.input_buffer_mut();
                             // We get a mutable slice to the whole buffer to make sub-slicing easier

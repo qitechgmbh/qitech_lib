@@ -1,5 +1,7 @@
 use std::{ffi::CString, mem, os::fd::RawFd};
+use libc::{getifaddrs, freeifaddrs, ifaddrs};
 use std::ffi::CStr;
+use std::ptr;
 
 #[derive(Debug)]
 pub enum LinkType {
@@ -9,70 +11,67 @@ pub enum LinkType {
 	Ipv6
 }
 
-
 #[derive(Debug)]
 pub struct Interface {
 	pub link_type : LinkType,
 	pub name : String,
 }
 
-pub fn list_ethernet_interfaces() -> Result<Vec<Interface>, anyhow::Error> {
-    let mut ifaddr: *mut libc::ifaddrs = std::ptr::null_mut();    
+pub fn list_ethernet_interfaces() -> Result<Vec<Interface>,anyhow::Error>{
+    let mut ifaddr: *mut ifaddrs = ptr::null_mut();
+    // getifaddrs populates a linked list of interface structures.
     unsafe {
-        
-        if libc::getifaddrs(&mut ifaddr) == -1 {
-            return Err(anyhow::anyhow!("Error calling getifaddrs: {}", std::io::Error::last_os_error()));
+        if getifaddrs(&mut ifaddr) == -1 {
+            eprintln!("Error calling getifaddrs");
+            return Err(anyhow::anyhow!("Error calling getifaddrs"));
         }
-
-        let mut vec: Vec<Interface> = vec![];
+        let mut vec : Vec<Interface> = vec![];
         let mut curr = ifaddr;
+
         while !curr.is_null() {
-            let ifa = *curr;             
-            if !ifa.ifa_name.is_null() {
-                let name = CStr::from_ptr(ifa.ifa_name).to_string_lossy().into_owned();
-                let flags = ifa.ifa_flags;               
-                if (flags & libc::IFF_LOOPBACK as u32) != 0 {                    
-                    curr = ifa.ifa_next;
-                    continue;
-                }
-
-                if !ifa.ifa_addr.is_null() {
-                    let family = (*ifa.ifa_addr).sa_family as i32;
-                    
-                    let link_type = match family {
-                        libc::AF_INET => LinkType::Ipv4,
-                        libc::AF_INET6 => LinkType::Ipv6,
-                        libc::AF_PACKET => LinkType::Link,
-                        _ => LinkType::Unknown,
-                    };
-                    vec.push(Interface { link_type, name });
-                }
-            }            
-            // Always move to next before loop ends
-            curr = ifa.ifa_next;
+            let interface = *curr;            
+            let flags = interface.ifa_flags;
+            // Convert the C string name to a Rust &str
+            if !interface.ifa_name.is_null() {
+                let name = CStr::to_string_lossy(CStr::from_ptr(interface.ifa_name)).into_owned(); 					
+				if (flags & libc::IFF_LOOPBACK as u32) == 1 {    	
+				    curr = interface.ifa_next;	
+    				continue;
+				}     
+                let interface = if !interface.ifa_addr.is_null() {
+                    match (*interface.ifa_addr).sa_family as i32 {
+                        libc::AF_INET => Interface {link_type: LinkType::Ipv4, name},
+                        libc::AF_INET6 => Interface {link_type: LinkType::Ipv6, name},
+                        libc::AF_PACKET => Interface {link_type: LinkType::Link, name}, 
+                        _ => Interface {link_type: LinkType::Unknown, name},
+                    }
+                } else {
+                    Interface {link_type: LinkType::Unknown, name}
+                };
+                vec.push(interface);
+            }
+            curr = interface.ifa_next;
         }
-
-        libc::freeifaddrs(ifaddr);
-        Ok(vec)
+        freeifaddrs(ifaddr);
+        Ok( vec )
     }
 }
 
+// RawFd is just a c_int (i32 basically)
 fn open_raw_socket_libc(iface: &str) -> Result<RawFd, anyhow::Error> {
-    unsafe {
+    unsafe {        
         let protocol = (0x88a4u16).to_be() as i32; // EtherCAT EtherType
-        let fd = libc::socket(libc::AF_PACKET, libc::SOCK_RAW, protocol);
-        
+        let fd = libc::socket(libc::AF_PACKET, libc::SOCK_RAW, protocol);        
         if fd < 0 {
             return Err(anyhow::anyhow!("Socket creation failed: {}", std::io::Error::last_os_error()));
-        }
-
+        }        
         let if_name = CString::new(iface).map_err(|_| anyhow::anyhow!("Invalid interface name"))?;
         let if_index = libc::if_nametoindex(if_name.as_ptr());
         if if_index == 0 {
             libc::close(fd);
             return Err(anyhow::anyhow!("Interface {} not found", iface));
         }
-
+       
         let mut addr: libc::sockaddr_ll = mem::zeroed();
         addr.sll_family = libc::AF_PACKET as u16;
         addr.sll_ifindex = if_index as i32;
@@ -99,7 +98,6 @@ fn open_raw_socket_libc(iface: &str) -> Result<RawFd, anyhow::Error> {
             &timeout as *const _ as *const libc::c_void,
             mem::size_of::<libc::timeval>() as libc::socklen_t,
         );
-
         Ok(fd)
     }
 }
@@ -111,15 +109,11 @@ fn test_discovery(fd: RawFd, packet: &[u8]) -> bool{
         if sent < 0 {
             return false;
         }
+
+        // Buffer for response
         let mut buf = [0u8; 1514];
         let received = libc::recv(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len(), 0);
-		
-        if received > 0 && buf[12] == 0x88 && buf[13] == 0xA4 {
-            return true;
-        } else {
-            println!("Timeout or no data");
-            return false;
-        }
+        return received > 0 && buf[12] == 0x88 && buf[13] == 0xa4;
     }
 }
 
