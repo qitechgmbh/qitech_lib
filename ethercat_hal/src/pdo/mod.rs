@@ -229,7 +229,7 @@ pub trait TxPdo: Configuration {
                 // check if end_bit_index is out of bounds
                 if end_bit_index > buffer.len() {
                     return Err(anyhow::anyhow!(
-                        "[{}::RxPdo::write] Range {}..{} ({}bits) is out of bounds for buffer with length {}",
+                        "[{}::TxPdo::read] Range {}..{} ({}bits) is out of bounds for buffer with length {}",
                         module_path!(),
                         bit_offset,
                         end_bit_index,
