@@ -33,7 +33,7 @@ fn get_async_runtime() -> &'static Runtime {
     })
 }
 
-
+pub const BECKHOFF_VENDOR_ID : u32 = 0x2;
 pub const ETHERCAT_TX_RX_SIZE: usize = 4096;
 pub const MAX_SUBDEVICES: usize = 16;
 pub const MAX_PDU_DATA: usize = PduStorage::element_size(512);
