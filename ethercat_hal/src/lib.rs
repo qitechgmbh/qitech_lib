@@ -359,21 +359,46 @@ impl Default for DcConfiguration {
         }
     }
 }
+#[derive(Clone,Debug)]
+pub struct RtOptimizationConfig {
+    // Pinning to core 0 also might not be optimal on Linux
+    // for optimal performance cores should not be shared,except the irq core
+    pub ethercat_loop_thread_core : usize,
+    pub ethercat_loop_thread_priority : i32, 
+    pub ethercat_io_thread_core : usize,
+    pub ethercat_io_thread_priority : i32,
+    // If none irq is not pinned to a core
+    pub pin_irq_core : Option<usize>,
+}
+
+impl Default for RtOptimizationConfig {
+    fn default() -> Self {
+        Self { 
+            ethercat_loop_thread_core: Default::default(), 
+            ethercat_loop_thread_priority: Default::default(), 
+            ethercat_io_thread_core: Default::default(), 
+            ethercat_io_thread_priority: Default::default(),
+            pin_irq_core: None,
+        }
+    }
+}
 
 #[derive(Clone,Debug)]
 pub struct MasterConfiguration {
     /// target cycle time in Microseconds
     pub target_cycle_time_us : usize,
     pub tx_rx_config : MasterTxRxConfig,
+    pub realtime_optimizations : Option<RtOptimizationConfig>,
     pub dc_config : DcConfiguration,
 }
 
 impl Default for MasterConfiguration {
     fn default() -> Self { 
         Self { 
-            target_cycle_time_us: 500,
+            target_cycle_time_us: 1000,
             tx_rx_config: MasterTxRxConfig::TxRxIoUring,
-            dc_config:DcConfiguration::default()
+            dc_config: DcConfiguration::default(),
+            realtime_optimizations: None,
         }
     }
 }

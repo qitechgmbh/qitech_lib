@@ -3,13 +3,19 @@ use std::{env, time::Duration};
 
 fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
+    let cycle_time_us: u64 = 200;
     let mut dc_config = DcConfiguration::default();
     dc_config.start_delay = Duration::from_millis(100);
-    dc_config.sync0_period = Duration::from_micros(25);
-    dc_config.sync0_shift = Duration::from_micros(50);
+    dc_config.sync0_period = Duration::from_micros(cycle_time_us / 2);
+    dc_config.sync0_shift = Duration::from_micros(cycle_time_us);
     dc_config.target_dc_tick = 100;
 
-    let config = MasterConfiguration { target_cycle_time_us: 50, tx_rx_config: ethercat_hal::MasterTxRxConfig::TxRxIoUring, dc_config };
+    let config = MasterConfiguration {
+        target_cycle_time_us: cycle_time_us as usize,
+        tx_rx_config: ethercat_hal::MasterTxRxConfig::TxRxIoUring,
+        dc_config,
+        realtime_optimizations: None,
+    };
     let ethercat_control = init_ethercat(&interface, Some(config));
 
     let ethercat_interface = ethercat_control.channel;
@@ -18,6 +24,7 @@ fn main() {
 
     let _res = ethercat_interface.request_state_change(EtherCATState::PreOp);
     std::thread::sleep(Duration::from_millis(5000));
+
     println!(
         "found {:?} ethercat terminals: ",
         ethercat_controller.subdevice_count
@@ -31,11 +38,10 @@ fn main() {
     let _res = ethercat_interface.request_state_change(EtherCATState::Op);
     std::thread::sleep(Duration::from_millis(5000));
 
-    let mut cycles : usize = 10000;
-    let mut max : u64 = u64::MIN;
-    let mut min : u64 = u64::MAX;
+    let mut cycles: usize = 10000;
+    let mut max: u64 = u64::MIN;
+    let mut min: u64 = u64::MAX;
     let mut spike_count = 0;
-
 
     loop {
         std::thread::sleep(Duration::from_micros(200));
@@ -54,5 +60,8 @@ fn main() {
             spike_count += 1;
         }
     }
-    println!("cycle time spikes above 1000us {} min {} max {}", spike_count,min,max);
+    println!(
+        "cycle time spikes above 1000us {} min {} max {}",
+        spike_count, min, max
+    );
 }
