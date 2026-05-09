@@ -285,6 +285,33 @@ impl EtherCATThreadChannel {
         }
     }
 
+    pub fn write_machine_device_info_eeprom(
+        &self,
+        info: Vec<MachineDeviceInfo>,
+    ) -> Result<(), anyhow::Error> {
+        use crate::ChannelRequests;
+
+        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
+        let req: ChannelRequest = ChannelRequest {
+            channel_request: ChannelRequests::WriteMachineIdent(info),
+            response_channel: EtherCATThreadResponseChannel(tx),
+        };
+        let res = self.0.send(req);
+        match res {
+            Ok(response) => response,
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+        let res = rx.recv_timeout(Duration::from_millis(5000));
+        let response: ChannelResponse = match res {
+            Ok(res) => res,
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+        match response {
+            ChannelResponse::WriteMachineInfoResponse(result) => result,
+            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+        }
+    }
+
     pub fn sdo_write<T: 'static>(
         &self,
         device_address: u16,
