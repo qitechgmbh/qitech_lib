@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+# Pre-commit hook: format checks for Rust.
+# Fails commit if any staged file is badly formatted.
+# Bypass with `git commit --no-verify` if absolutely necessary.
+
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+# Staged files (Added, Copied, Modified). Renamed handled by ACMR.
+mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMR)
+
+if [ ${#staged[@]} -eq 0 ]; then
+    exit 0
+fi
+
+color_red=$'\033[0;31m'
+color_green=$'\033[0;32m'
+color_yellow=$'\033[0;33m'
+color_reset=$'\033[0m'
+
+info()  { printf "%s[pre-commit]%s %s\n" "$color_yellow" "$color_reset" "$*"; }
+ok()    { printf "%s[pre-commit]%s %s\n" "$color_green"  "$color_reset" "$*"; }
+fail()  { printf "%s[pre-commit]%s %s\n" "$color_red"    "$color_reset" "$*" >&2; }
+
+has_ext() {
+    local pattern=$1
+    shift
+    local prefix=${1:-}
+    for f in "${staged[@]}"; do
+        if [ -n "$prefix" ]; then
+            [[ "$f" == "$prefix"* ]] || continue
+        fi
+        [[ "$f" =~ $pattern ]] && return 0
+    done
+    return 1
+}
+
+errors=0
+
+# --- Rust ---------------------------------------------------------------
+if has_ext '\.rs$'; then
+    info "Rust files staged → cargo fmt --check"
+    if ! cargo fmt --check --quiet; then
+        fail "Rust formatting issues. Run: cargo fmt"
+        errors=$((errors + 1))
+    else
+        ok "cargo fmt clean"
+    fi
+fi
+
+if [ "$errors" -gt 0 ]; then
+    fail "Commit blocked: $errors check(s) failed."
+    exit 1
+fi
+
+ok "All format checks passed."
+exit 0
