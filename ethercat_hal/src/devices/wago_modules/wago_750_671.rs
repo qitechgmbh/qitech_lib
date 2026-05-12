@@ -11,7 +11,7 @@ use crate::{
         DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed,
         EthercatDynamicPDO, Module, NewEthercatDevice, SubDeviceProductTuple,
     },
-    io::digital_input::{DigitalInputDevice, DigitalInputInput},
+    io::digital_input::DigitalInputDevice,
     io::stepper_velocity_wago_750_671::{
         C1Flag, C1Mode, C2Flag, C3Flag, ControlByteC1, S1Flag, S2Flag, S3Flag, StatusByteS1,
         StatusByteS2, StatusByteS3,

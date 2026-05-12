@@ -2,7 +2,7 @@ use crate::devices::{
     DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed,
     EthercatDynamicPDO, Module, NewEthercatDevice, SubDeviceProductTuple,
 };
-use crate::io::digital_output::{DigitalOutputDevice, DigitalOutputOutput};
+use crate::io::digital_output::DigitalOutputDevice;
 
 #[derive(Clone)]
 pub struct Wago750_531 {
@@ -40,25 +40,20 @@ pub struct Wago750_531RxPdo {
     pub port4: bool,
 }
 
-impl DigitalOutputDevice<Wago750_531OutputPort> for Wago750_531 {
-    fn set_output(&mut self, port: Wago750_531OutputPort, value: DigitalOutputOutput) {
+impl DigitalOutputDevice for Wago750_531 {
+    fn set_output(&mut self, port: usize, value: bool) {
         let output_value: bool = value.into();
         match port {
-            Wago750_531OutputPort::DO1 => self.rx_pdo.port1 = output_value,
-            Wago750_531OutputPort::DO2 => self.rx_pdo.port2 = output_value,
-            Wago750_531OutputPort::DO3 => self.rx_pdo.port3 = output_value,
-            Wago750_531OutputPort::DO4 => self.rx_pdo.port4 = output_value,
+            0 => self.rx_pdo.port1 = output_value,
+            1 => self.rx_pdo.port2 = output_value,
+            2 => self.rx_pdo.port3 = output_value,
+            3 => self.rx_pdo.port4 = output_value,
+            _ => (),
         }
     }
 
-    fn get_output(&self, port: Wago750_531OutputPort) -> DigitalOutputOutput {
-        let current_value = match port {
-            Wago750_531OutputPort::DO1 => self.rx_pdo.port1,
-            Wago750_531OutputPort::DO2 => self.rx_pdo.port2,
-            Wago750_531OutputPort::DO3 => self.rx_pdo.port3,
-            Wago750_531OutputPort::DO4 => self.rx_pdo.port4,
-        };
-        DigitalOutputOutput(current_value)
+    fn get_port_count(&self) -> usize {
+        4
     }
 }
 
@@ -165,6 +160,10 @@ impl EthercatDevice for Wago750_531 {
         self.tx_bit_offset = module.tx_offset;
         self.rx_bit_offset = module.rx_offset;
         self.module = Some(module);
+    }
+
+    fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
     }
 }
 
