@@ -3,7 +3,6 @@
  * 24 VDC / 1.5 A
  */
 
-use anyhow::Ok;
 use bitvec::field::BitField;
 
 use crate::{
@@ -146,21 +145,18 @@ pub struct Wago750_671TxPdo {
     pub status_byte2: u8,     // S2
     pub status_byte1: u8,     // S1
 }
-#[derive(Clone)]
-pub enum Wago750_671InputPort {
-    DI1,
-    DI2,
-}
-
-impl DigitalInputDevice<Wago750_671InputPort> for Wago750_671 {
-    fn get_input(&self, port: Wago750_671InputPort) -> Result<DigitalInputInput, anyhow::Error> {
+impl DigitalInputDevice for Wago750_671 {
+    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
         let s3 = StatusByteS3::from_bits(self.txpdo.status_byte3);
-        Ok(DigitalInputInput {
-            value: match port {
-                Wago750_671InputPort::DI1 => s3.has_flag(S3Flag::Input1),
-                Wago750_671InputPort::DI2 => s3.has_flag(S3Flag::Input2),
-            },
-        })
+        match port {
+            0 => Ok(s3.has_flag(S3Flag::Input1)),
+            1 => Ok(s3.has_flag(S3Flag::Input2)),
+            _ => Err(anyhow::anyhow!("Wago750_671 has 2 digital inputs (0-1)")),
+        }
+    }
+
+    fn get_port_count(&self) -> usize {
+        2
     }
 }
 impl EthercatDeviceUsed for Wago750_671 {
@@ -200,6 +196,10 @@ impl EthercatDeviceProcessing for Wago750_671 {
 }
 
 impl EthercatDevice for Wago750_671 {
+    fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+
     fn input(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,

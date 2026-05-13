@@ -1,6 +1,5 @@
-use std::sync::Arc;
-
-use tokio::sync::RwLock;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::devices::wago_modules::wago_750_671::{InitState, Wago750_671};
 
@@ -10,7 +9,7 @@ use crate::devices::wago_modules::wago_750_671::{InitState, Wago750_671};
  */
 #[derive(Debug)]
 pub struct StepperVelocityWago750671 {
-    pub device: Arc<RwLock<Wago750_671>>,
+    pub device: Rc<RefCell<Wago750_671>>,
     pub state: InitState,
     pub target_velocity: i16,
     pub target_acceleration: u16,
@@ -20,7 +19,7 @@ pub struct StepperVelocityWago750671 {
 }
 
 impl StepperVelocityWago750671 {
-    pub fn new(device: Arc<RwLock<Wago750_671>>) -> Self {
+    pub fn new(device: Rc<RefCell<Wago750_671>>) -> Self {
         Self {
             device,
             state: InitState::Off,
@@ -52,7 +51,7 @@ impl StepperVelocityWago750671 {
     pub fn set_velocity(&mut self, velocity: i16) {
         self.target_velocity = velocity;
 
-        let mut dev = block_on(self.device.write());
+        let mut dev = self.device.borrow_mut();
 
         // clamp velocity to -25000 - 25000 :: because this is
         // the min max for the controller
@@ -66,7 +65,7 @@ impl StepperVelocityWago750671 {
     pub fn set_acceleration(&mut self, acceleration: u16) {
         self.target_acceleration = acceleration;
 
-        let mut dev = block_on(self.device.write());
+        let mut dev = self.device.borrow_mut();
 
         dev.rxpdo.acceleration = acceleration;
     }
@@ -76,7 +75,7 @@ impl StepperVelocityWago750671 {
             return;
         }
         self.freq_range_sel = factor;
-        let mut dev = block_on(self.device.write());
+        let mut dev = self.device.borrow_mut();
         let c2 = ControlByteC2::from_bits(dev.rxpdo.control_byte2)
             .with_freq_range(factor)
             .bits();
@@ -88,7 +87,7 @@ impl StepperVelocityWago750671 {
             return;
         }
         self.acc_range_sel = factor;
-        let mut dev = block_on(self.device.write());
+        let mut dev = self.device.borrow_mut();
         let c2 = ControlByteC2::from_bits(dev.rxpdo.control_byte2)
             .with_acc_range(factor)
             .bits();
@@ -97,12 +96,12 @@ impl StepperVelocityWago750671 {
 
     fn change_init_state(&mut self, state: InitState) {
         self.state = state.clone();
-        let mut dev = block_on(self.device.write());
+        let mut dev = self.device.borrow_mut();
         dev.state = state;
     }
 
     fn write_control_byte(&self, control_byte: ControlByte, value: u8) {
-        let mut dev = block_on(self.device.write());
+        let mut dev = self.device.borrow_mut();
 
         match control_byte {
             ControlByte::C0 => dev.rxpdo.control_byte0 = value,
@@ -114,7 +113,7 @@ impl StepperVelocityWago750671 {
 
     #[allow(dead_code)]
     fn read_status_byte(&self, status_byte: StatusByte) -> u8 {
-        let dev = block_on(self.device.read());
+        let dev = self.device.borrow();
 
         match status_byte {
             StatusByte::S0 => dev.txpdo.status_byte0,
