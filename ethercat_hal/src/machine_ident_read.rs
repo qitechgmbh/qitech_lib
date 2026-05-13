@@ -74,10 +74,36 @@ pub fn write_device_identifications(
     maindevice: &MainDevice,
     identifications: &[MachineDeviceInfo],
 ) -> Result<(), anyhow::Error> {
+    if identifications.len() != group.len() {
+        anyhow::bail!(
+            "identifications length {} does not match subdevice count {}",
+            identifications.len(),
+            group.len()
+        );
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    for info in identifications {
+        if !seen.insert(info.device_address) {
+            anyhow::bail!(
+                "duplicate device_address 0x{:04x} in identifications",
+                info.device_address
+            );
+        }
+    }
+
     let addresses = MachineDeviceAddresses::default();
     let rt = get_async_runtime();
     let res: Result<(), ethercrab::error::Error> = rt.block_on(async {
-        for (subdevice, info) in group.iter(maindevice).zip(identifications.iter()) {
+        for info in identifications {
+            let subdevice = group
+                .iter(maindevice)
+                .find(|sd| sd.configured_address() == info.device_address)
+                .ok_or_else(|| ethercrab::error::Error::NotFound {
+                    item: ethercrab::error::Item::SubDevice,
+                    index: Some(info.device_address as usize),
+                })?;
+
             subdevice
                 .eeprom_write_dangerously(maindevice, addresses.vendor_word, info.machine_vendor)
                 .await?;
