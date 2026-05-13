@@ -137,14 +137,14 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
         let mut group_op: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, Op, HasDc>> = None;
         let mut maindevice: Option<MainDevice> = None;
         loop {
-            match self.state {
+            let outcome = match self.state {
                 EtherCATState::NoInterface => {
-                    if self.interface.is_some() {
-                        self.state = EtherCATState::Init;
-                    }
+                    self.handle_no_interface();
+                    continue;
                 }
                 EtherCATState::Boot => {
                     // Do Nothing
+                    continue;
                 }
                 EtherCATState::Init => {
                     let msg = match self.rx_channel.try_recv() {
@@ -669,7 +669,7 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                         }
                     });
                 }
-            }
+            };
             self.requested_state = None;
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
