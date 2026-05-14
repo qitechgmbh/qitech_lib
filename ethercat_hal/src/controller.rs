@@ -16,7 +16,6 @@ use ethercrab::{
 };
 use std::{
     sync::mpsc::Receiver,
-    thread::JoinHandle,
     time::{Duration, Instant},
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
