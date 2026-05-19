@@ -3,11 +3,10 @@ use crate::{
     EtherCATThreadResponseChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType,
     get_async_runtime, machine_ident_read::MachineDeviceInfo,
 };
-use std::{any::TypeId, time::Duration};
 use ethercrab::{
-    DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup
+    DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
 };
-
+use std::{any::TypeId, time::Duration};
 
 pub trait EthercatResponseTypedResult: Sized {
     fn from_bool(_v: bool) -> anyhow::Result<Self> {
@@ -48,7 +47,9 @@ impl_ethercat_typed_result!(i32, from_i32);
 pub trait EthercatSdoBytes {
     fn size(&self) -> usize;
     fn to_bytes(&self) -> [u8; 4];
-    fn from_bytes(bytes: [u8; 4]) -> Self where Self: Sized;
+    fn from_bytes(bytes: [u8; 4]) -> Self
+    where
+        Self: Sized;
 }
 
 impl EthercatSdoBytes for u8 {
@@ -144,29 +145,45 @@ impl EtherCATThreadChannel {
         device_address: u16,
         index: u16,
         sub_index: u8,
-    ) -> Result<T, anyhow::Error> where T : EthercatSdoBytes {
+    ) -> Result<T, anyhow::Error>
+    where
+        T: EthercatSdoBytes,
+    {
         use crate::SdoIndex;
-        let index = SdoIndex { index: index as u32, sub_index: sub_index as u16 };
+        let index = SdoIndex {
+            index: index as u32,
+            sub_index: sub_index as u16,
+        };
         let res = self.sdo_map.get(&index);
-        
+
         let result = match res {
             Some(r) => r,
-            None => return Err(anyhow::anyhow!("Sdo Index {}:{} for device {} not found",index.index,index.sub_index,device_address)),
+            None => {
+                return Err(anyhow::anyhow!(
+                    "Sdo Index {}:{} for device {} not found",
+                    index.index,
+                    index.sub_index,
+                    device_address
+                ));
+            }
         };
 
         if TypeId::of::<T>() == result.type_id {
-            let mut bytes : [u8;4] = [0u8;4];
+            let mut bytes: [u8; 4] = [0u8; 4];
             for i in 0..result.value.len() {
                 if i > 3 {
                     break;
-                } 
+                }
                 bytes[i] = result.value.get(i).unwrap().clone();
             }
             Ok(T::from_bytes(bytes))
-        }
-        else{
+        } else {
             use std::any::type_name;
-            Err(anyhow::anyhow!("sdo_read: Unknown TypeId {} or Invalid Size {}!!",type_name::<T>(),result.value.len()))
+            Err(anyhow::anyhow!(
+                "sdo_read: Unknown TypeId {} or Invalid Size {}!!",
+                type_name::<T>(),
+                result.value.len()
+            ))
         }
     }
 
@@ -182,7 +199,8 @@ impl EtherCATThreadChannel {
         value: T,
     ) -> Result<(), anyhow::Error>
     where
-        T: EtherCrabWireWrite + EthercatSdoBytes {
+        T: EtherCrabWireWrite + EthercatSdoBytes,
+    {
         Ok(())
     }
 
@@ -190,12 +208,12 @@ impl EtherCATThreadChannel {
         Ok(())
     }
 
-    pub fn enable_dc_sync0(&self, device_address: u16) -> Result<(),anyhow::Error> {
+    pub fn enable_dc_sync0(&self, device_address: u16) -> Result<(), anyhow::Error> {
         Ok(())
     }
 }
 
-#[cfg(not(feature = "mock"))] 
+#[cfg(not(feature = "mock"))]
 impl EtherCATThreadChannel {
     pub fn sdo_read<T: 'static>(
         &self,
@@ -321,13 +339,13 @@ impl EtherCATThreadChannel {
         Ok(())
     }
 
-    pub fn enable_dc_sync0(&self, device_address: u16) -> Result<(),anyhow::Error> {
+    pub fn enable_dc_sync0(&self, device_address: u16) -> Result<(), anyhow::Error> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::EnableDCSync0(device_address.into()),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
-        
+
         let res = self.0.send(req);
         match res {
             Ok(_) => (),
@@ -347,12 +365,13 @@ impl EtherCATThreadChannel {
     }
 
     pub fn set_mut_beckhoff_eeprom_lock_active(
-        &self, device_address: u16
-    ) -> Result<(), anyhow::Error> {        
+        &self,
+        device_address: u16,
+    ) -> Result<(), anyhow::Error> {
         const BECKHOFF_EEPROM_LOCK_CODEWORD: u32 = 0x12345678;
         const BECKHOFF_CODEWORD_INDEX: u16 = 0xF008;
 
-        let code_word = match self.sdo_read::<u32>(device_address,BECKHOFF_CODEWORD_INDEX, 0) {
+        let code_word = match self.sdo_read::<u32>(device_address, BECKHOFF_CODEWORD_INDEX, 0) {
             Ok(code_word) => code_word,
             // This happens when the subdevice has no mailbox
             // There is NO check in ethercrab for Mailbox presence, so we just have to pray that it has one and send a request
@@ -367,7 +386,12 @@ impl EtherCATThreadChannel {
         };
 
         if !eeprom_lock_toggled {
-            self.sdo_write(device_address,BECKHOFF_CODEWORD_INDEX, 0, BECKHOFF_EEPROM_LOCK_CODEWORD)?;
+            self.sdo_write(
+                device_address,
+                BECKHOFF_CODEWORD_INDEX,
+                0,
+                BECKHOFF_EEPROM_LOCK_CODEWORD,
+            )?;
         }
 
         Ok(())
@@ -468,7 +492,7 @@ pub fn enable_dc_sync(
     group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
     maindevice: &MainDevice,
     device_address: usize,
-) -> Result<(),anyhow::Error> {
+) -> Result<(), anyhow::Error> {
     let rt = get_async_runtime();
     rt.block_on(async {
         for mut subdevice in group.iter_mut(maindevice) {

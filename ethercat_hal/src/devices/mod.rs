@@ -29,9 +29,9 @@ use crate::{MetaSubdevice, SdoIndex};
 #[cfg(feature = "mock")]
 use crate::TypeErasedValue;
 
+use super::devices::el1008::EL1008;
 use crate::devices::ep2339_0021::EP2339_0021_IDENTITY_A;
 use crate::devices::panasonic_modules::minas_a6::{self, MINAS_A6_IDENTITY_A};
-use super::devices::el1008::EL1008;
 use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;
 use ek1100::{EK1100, EK1100_IDENTITY_A};
@@ -291,5 +291,5 @@ pub fn downcast_rc_refcell<T: 'static>(
 }
 
 pub type SubDeviceIdentityTuple = (u32, u32, u32);
-// vendor id at 0, and prod id at 1 
+// vendor id at 0, and prod id at 1
 pub type SubDeviceProductTuple = (u32, u32);
