@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use bitvec::field::BitField;
 
 use crate::devices::{
@@ -41,20 +42,26 @@ pub struct Wago750_460TxPdo {
     t4: u16,
 }
 
-impl TemperatureInputDevice<Wago750_460Port> for Wago750_460 {
-    fn get_input(&self, port: Wago750_460Port) -> TemperatureInputInput {
+impl TemperatureInputDevice for Wago750_460 {
+    fn get_input(&self, port: usize) -> Result<TemperatureInputInput, anyhow::Error> {
         let raw = match port {
-            Wago750_460Port::T1 => self.tx_pdo.t1,
-            Wago750_460Port::T2 => self.tx_pdo.t2,
-            Wago750_460Port::T3 => self.tx_pdo.t3,
-            Wago750_460Port::T4 => self.tx_pdo.t4,
+            0 => self.tx_pdo.t1,
+            1 => self.tx_pdo.t2,
+            2 => self.tx_pdo.t3,
+            3 => self.tx_pdo.t4,
+            illegal => {
+                return Err(anyhow!(format!(
+                    "Illegal port index {} for 750_460",
+                    illegal
+                )));
+            }
         };
         // Full 16-bit signed value, 0.1 °C per LSB — no status bits in the word.
         let temp_raw = raw as i16;
         let temperature = temp_raw as f32 / 10.0;
         let overrange = temp_raw >= 8500;
         let underrange = temp_raw <= -2000;
-        TemperatureInputInput {
+        Ok(TemperatureInputInput {
             temperature,
             undervoltage: underrange,
             overvoltage: overrange,
@@ -63,7 +70,11 @@ impl TemperatureInputDevice<Wago750_460Port> for Wago750_460 {
             error: overrange || underrange,
             txpdo_state: false,
             txpdo_toggle: false,
-        }
+        })
+    }
+
+    fn get_port_count(&self) -> usize {
+        4
     }
 }
 
@@ -168,6 +179,10 @@ impl EthercatDevice for Wago750_460 {
         self.tx_bit_offset = module.tx_offset;
         self.rx_bit_offset = module.rx_offset;
         self.module = Some(module);
+    }
+
+    fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
     }
 }
 

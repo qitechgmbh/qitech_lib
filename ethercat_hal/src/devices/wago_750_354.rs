@@ -4,6 +4,8 @@ use crate::devices::SubDeviceIdentityTuple;
 use crate::devices::wago_modules::wago_750_430::{
     WAGO_750_430_MODULE_IDENT, WAGO_750_430_PRODUCT_ID,
 };
+use crate::devices::wago_modules::wago_750_671::WAGO_750_671_PRODUCT_ID;
+use crate::devices::wago_modules::wago_750_672::WAGO_750_672_PRODUCT_ID;
 use crate::devices::wago_modules::*;
 use crate::devices::{
     DynamicEthercatDevice, Module,
@@ -297,6 +299,16 @@ impl Wago750_354 {
                     module.has_rx = false;
                     module.name = "750-430".to_string();
                 }
+                WAGO_750_671_PRODUCT_ID => {
+                    module.has_tx = true;
+                    module.has_rx = true;
+                    module.name = "750-671".to_string();
+                }
+                WAGO_750_672_PRODUCT_ID => {
+                    module.has_tx = true;
+                    module.has_rx = true;
+                    module.name = "750-672".to_string();
+                }
                 _ => println!(
                     "Wago-750-354 found Unknown/Unimplemented Module: {}",
                     ident_iom
@@ -363,6 +375,8 @@ impl Wago750_354 {
                         WAGO_750_652_MODULE_IDENT => Box::new(wago_750_652::Wago750_652::new()),
                         WAGO_750_402_MODULE_IDENT => Box::new(wago_750_402::Wago750_402::new()),
                         WAGO_750_430_MODULE_IDENT => Box::new(wago_750_430::Wago750_430::new()),
+                        WAGO_750_671_MODULE_IDENT => Box::new(wago_750_671::Wago750_671::new()),
+                        WAGO_750_672_MODULE_IDENT => Box::new(wago_750_672::Wago750_672::new()),
 
                         _ => {
                             println!(
