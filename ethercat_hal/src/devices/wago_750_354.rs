@@ -4,8 +4,12 @@ use crate::devices::SubDeviceIdentityTuple;
 use crate::devices::wago_modules::wago_750_430::{
     WAGO_750_430_MODULE_IDENT, WAGO_750_430_PRODUCT_ID,
 };
-use crate::devices::wago_modules::wago_750_671::WAGO_750_671_PRODUCT_ID;
-use crate::devices::wago_modules::wago_750_672::WAGO_750_672_PRODUCT_ID;
+use crate::devices::wago_modules::wago_750_671::{
+    WAGO_750_671_MODULE_IDENT, WAGO_750_671_PRODUCT_ID,
+};
+use crate::devices::wago_modules::wago_750_672::{
+    WAGO_750_672_MODULE_IDENT, WAGO_750_672_PRODUCT_ID,
+};
 use crate::devices::wago_modules::*;
 use crate::devices::{
     DynamicEthercatDevice, Module,
