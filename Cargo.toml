@@ -10,6 +10,8 @@ ethercat_hal_derive = { path = "ethercat_hal_derive" }
 modbus = { path = "modbus"}
 machines = { path = "machines" }
 units = {path = "units"}
+common = {path = "common"}
+serial = {path = "serial"}
 tokio = "1.49.0"
 
 [lib]

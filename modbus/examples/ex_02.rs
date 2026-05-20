@@ -1,47 +1,29 @@
-use std::{cell::RefCell, rc::Rc, thread::sleep, time::Duration};
+use std::time::Duration;
 
+use common::get_async_runtime;
 use modbus::{
-    clients::example_client::ExampleClient,
-    devices::qitech_laser::LaserDevice,
-    managers::{ExampleDeviceManager, example_manager::ExampleScheduler},
+    ModbusDevice, devices::qitech_laser::LaserDevice
 };
-use tokio_modbus::{Slave, client::rtu};
-use tokio_serial::SerialStream;
+use tokio::time::{Interval, interval};
+use tokio::signal;
 
-#[tokio::main]
-pub async fn main() {
-    let (tx, rx) = ExampleClient::create_channels();
+pub fn main(){        
+    let serial_device  = LaserDevice::new("/dev/ttyUSB0".to_owned(), 1, None);    
+    let mut serial_device =  match serial_device {
+        Ok(device) => device,
+        Err(_) => return,
+    };  
 
-    let mgr = ExampleDeviceManager::new(tx);
+    let mut loop_count = 0;  
 
-    tokio::spawn(async move {
-        let tty_path = "/dev/ttyUSB0";
-        let slave = Slave(0x17);
-        let builder = tokio_serial::new(tty_path, 38400);
-        let port = SerialStream::open(&builder).unwrap();
-        let ctx = rtu::attach_slave(port, slave);
-
-        ExampleClient::run(ctx, rx).await;
-    });
-    let laser_device: Rc<RefCell<LaserDevice<ExampleScheduler>>> =
-        ExampleDeviceManager::register_device(mgr.clone(), 1);
-
-    loop {
-        {
-            let mut laser = laser_device.borrow_mut();
-            laser.refresh_measurement();
-        }
-
-        // send
-        mgr.borrow_mut().update();
-        sleep(Duration::from_secs(1));
-
-        // recv
-        mgr.borrow_mut().update();
-
-        {
-            let laser = laser_device.borrow_mut();
-            println!("laser_measurement: {:?}", laser.measurement());
-        }
+    while loop_count < 1000 {
+        serial_device.send_next_request().expect("wtf");
+        std::thread::sleep_ms(3);
+        serial_device.handle_response().expect("wtf2");        
+        {           
+            println!("laser_measurement: {:?}", serial_device.measurement);
+        }             
+        loop_count+=1;
     }
+    drop(serial_device);   
 }

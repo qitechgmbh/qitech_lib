@@ -113,26 +113,56 @@ pub const EL3204_IDENTITY_A: SubDeviceIdentityTuple =
 pub const EL3204_IDENTITY_B: SubDeviceIdentityTuple =
     (EL3204_VENDOR_ID, EL3204_PRODUCT_ID, EL3204_REVISION_B);
 
-
 #[cfg(feature = "mock")]
 impl crate::devices::MockEtherCatSdos for EL3204 {
-    fn get_sdo_map() -> std::collections::HashMap<crate::SdoIndex, crate::devices::TypeErasedValue> {
+    fn get_sdo_map() -> std::collections::HashMap<crate::SdoIndex, crate::devices::TypeErasedValue>
+    {
         let mut map = HashMap::new();
         // Helper to insert values into the map
         let mut insert_sdo = |idx: u32, sub: u16, val: u64, size: usize, tid: TypeId| {
             let bytes = val.to_le_bytes()[..size].to_vec();
             map.insert(
-                SdoIndex { index: idx, sub_index: sub },
-                crate::devices::TypeErasedValue { type_id: tid, value: bytes }
+                SdoIndex {
+                    index: idx,
+                    sub_index: sub,
+                },
+                crate::devices::TypeErasedValue {
+                    type_id: tid,
+                    value: bytes,
+                },
             );
         };
 
         // Data for Channels 1 through 4 (0x1a00 to 0x1a03)
         let channels = [
-            (0x1a00, [0x60000101, 0x60000201, 0x60000302, 0x60000502, 0x60000701, 0x00000007, 0x60000f01, 0x60001001, 0x60001110]),
-            (0x1a01, [0x60100101, 0x60100201, 0x60100302, 0x60100502, 0x60100701, 0x00000007, 0x60100f01, 0x60101001, 0x60101110]),
-            (0x1a02, [0x60200101, 0x60200201, 0x60200302, 0x60200502, 0x60200701, 0x00000007, 0x60200f01, 0x60201001, 0x60201110]),
-            (0x1a03, [0x60300101, 0x60300201, 0x60300302, 0x60300502, 0x60300701, 0x00000007, 0x60300f01, 0x60301001, 0x60301110]),
+            (
+                0x1a00,
+                [
+                    0x60000101, 0x60000201, 0x60000302, 0x60000502, 0x60000701, 0x00000007,
+                    0x60000f01, 0x60001001, 0x60001110,
+                ],
+            ),
+            (
+                0x1a01,
+                [
+                    0x60100101, 0x60100201, 0x60100302, 0x60100502, 0x60100701, 0x00000007,
+                    0x60100f01, 0x60101001, 0x60101110,
+                ],
+            ),
+            (
+                0x1a02,
+                [
+                    0x60200101, 0x60200201, 0x60200302, 0x60200502, 0x60200701, 0x00000007,
+                    0x60200f01, 0x60201001, 0x60201110,
+                ],
+            ),
+            (
+                0x1a03,
+                [
+                    0x60300101, 0x60300201, 0x60300302, 0x60300502, 0x60300701, 0x00000007,
+                    0x60300f01, 0x60301001, 0x60301110,
+                ],
+            ),
         ];
 
         for (base_index, sub_values) in channels {
@@ -140,7 +170,13 @@ impl crate::devices::MockEtherCatSdos for EL3204 {
             insert_sdo(base_index, 0x00, 0x09, 1, TypeId::of::<u8>());
             // SubIndices 1 through 9: PDO Mappings (UNSIGNED32)
             for (i, &val) in sub_values.iter().enumerate() {
-                insert_sdo(base_index, (i + 1) as u16, val as u64, 4, TypeId::of::<u32>());
+                insert_sdo(
+                    base_index,
+                    (i + 1) as u16,
+                    val as u64,
+                    4,
+                    TypeId::of::<u32>(),
+                );
             }
         }
         map

@@ -1,23 +1,23 @@
-use std::{ffi::CString, mem, os::fd::RawFd};
-use libc::{getifaddrs, freeifaddrs, ifaddrs};
+use libc::{freeifaddrs, getifaddrs, ifaddrs};
 use std::ffi::CStr;
 use std::ptr;
+use std::{ffi::CString, mem, os::fd::RawFd};
 
 #[derive(Debug)]
 pub enum LinkType {
-	Link,
-	Unknown,
-	Ipv4,
-	Ipv6
+    Link,
+    Unknown,
+    Ipv4,
+    Ipv6,
 }
 
 #[derive(Debug)]
 pub struct Interface {
-	pub link_type : LinkType,
-	pub name : String,
+    pub link_type: LinkType,
+    pub name: String,
 }
 
-pub fn list_ethernet_interfaces() -> Result<Vec<Interface>,anyhow::Error>{
+pub fn list_ethernet_interfaces() -> Result<Vec<Interface>, anyhow::Error> {
     let mut ifaddr: *mut ifaddrs = ptr::null_mut();
     // getifaddrs populates a linked list of interface structures.
     unsafe {
@@ -25,53 +25,71 @@ pub fn list_ethernet_interfaces() -> Result<Vec<Interface>,anyhow::Error>{
             eprintln!("Error calling getifaddrs");
             return Err(anyhow::anyhow!("Error calling getifaddrs"));
         }
-        let mut vec : Vec<Interface> = vec![];
+        let mut vec: Vec<Interface> = vec![];
         let mut curr = ifaddr;
 
         while !curr.is_null() {
-            let interface = *curr;            
+            let interface = *curr;
             let flags = interface.ifa_flags;
             // Convert the C string name to a Rust &str
             if !interface.ifa_name.is_null() {
-                let name = CStr::to_string_lossy(CStr::from_ptr(interface.ifa_name)).into_owned(); 					
-				if (flags & libc::IFF_LOOPBACK as u32) != 0 {    	
-				    curr = interface.ifa_next;	
-    				continue;
-				}     
+                let name = CStr::to_string_lossy(CStr::from_ptr(interface.ifa_name)).into_owned();
+                if (flags & libc::IFF_LOOPBACK as u32) != 0 {
+                    curr = interface.ifa_next;
+                    continue;
+                }
                 let interface = if !interface.ifa_addr.is_null() {
                     match (*interface.ifa_addr).sa_family as i32 {
-                        libc::AF_INET => Interface {link_type: LinkType::Ipv4, name},
-                        libc::AF_INET6 => Interface {link_type: LinkType::Ipv6, name},
-                        libc::AF_PACKET => Interface {link_type: LinkType::Link, name}, 
-                        _ => Interface {link_type: LinkType::Unknown, name},
+                        libc::AF_INET => Interface {
+                            link_type: LinkType::Ipv4,
+                            name,
+                        },
+                        libc::AF_INET6 => Interface {
+                            link_type: LinkType::Ipv6,
+                            name,
+                        },
+                        libc::AF_PACKET => Interface {
+                            link_type: LinkType::Link,
+                            name,
+                        },
+                        _ => Interface {
+                            link_type: LinkType::Unknown,
+                            name,
+                        },
                     }
                 } else {
-                    Interface {link_type: LinkType::Unknown, name}
+                    Interface {
+                        link_type: LinkType::Unknown,
+                        name,
+                    }
                 };
                 vec.push(interface);
             }
             curr = interface.ifa_next;
         }
         freeifaddrs(ifaddr);
-        Ok( vec )
+        Ok(vec)
     }
 }
 
 // RawFd is just a c_int (i32 basically)
 fn open_raw_socket_libc(iface: &str) -> Result<RawFd, anyhow::Error> {
-    unsafe {        
+    unsafe {
         let protocol = (0x88a4u16).to_be() as i32; // EtherCAT EtherType
-        let fd = libc::socket(libc::AF_PACKET, libc::SOCK_RAW, protocol);        
+        let fd = libc::socket(libc::AF_PACKET, libc::SOCK_RAW, protocol);
         if fd < 0 {
-            return Err(anyhow::anyhow!("Socket creation failed: {}", std::io::Error::last_os_error()));
-        }        
+            return Err(anyhow::anyhow!(
+                "Socket creation failed: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
         let if_name = CString::new(iface).map_err(|_| anyhow::anyhow!("Invalid interface name"))?;
         let if_index = libc::if_nametoindex(if_name.as_ptr());
         if if_index == 0 {
             libc::close(fd);
             return Err(anyhow::anyhow!("Interface {} not found", iface));
         }
-       
+
         let mut addr: libc::sockaddr_ll = mem::zeroed();
         addr.sll_family = libc::AF_PACKET as u16;
         addr.sll_ifindex = if_index as i32;
@@ -102,8 +120,7 @@ fn open_raw_socket_libc(iface: &str) -> Result<RawFd, anyhow::Error> {
     }
 }
 
-
-fn test_discovery(fd: RawFd, packet: &[u8]) -> bool{
+fn test_discovery(fd: RawFd, packet: &[u8]) -> bool {
     unsafe {
         let sent = libc::send(fd, packet.as_ptr() as *const libc::c_void, packet.len(), 0);
         if sent < 0 {
@@ -117,14 +134,18 @@ fn test_discovery(fd: RawFd, packet: &[u8]) -> bool{
     }
 }
 
-
-
-pub fn test_interface(interface_name : &str) -> Result<(),anyhow::Error> {
-	const ETHERCAT_DISCOVERY_FRAME: [u8; 29] = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x88, 0xa4, 0xd, 0x10, 0x8, 0x1, 0x0, 0x0, 0x3, 0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0];
-	let fd = open_raw_socket_libc(interface_name)?;
-	if test_discovery(fd,&ETHERCAT_DISCOVERY_FRAME) {
-		Ok(())
-	}else {
-		Err( anyhow::anyhow!("Interface {:?} is not Ethercat",interface_name) )		
-	}
+pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
+    const ETHERCAT_DISCOVERY_FRAME: [u8; 29] = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x88, 0xa4, 0xd, 0x10,
+        0x8, 0x1, 0x0, 0x0, 0x3, 0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+    ];
+    let fd = open_raw_socket_libc(interface_name)?;
+    if test_discovery(fd, &ETHERCAT_DISCOVERY_FRAME) {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "Interface {:?} is not Ethercat",
+            interface_name
+        ))
+    }
 }

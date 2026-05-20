@@ -1,82 +1,121 @@
-pub mod clients;
 pub mod devices;
-pub mod managers;
+use std::{collections::HashMap};
+use tokio::sync::Mutex;
+use tokio_modbus::{Request, Response, Slave, client::{rtu, tcp}};
+use tokio_serial::{SerialPortBuilder, SerialStream};
+struct DataBits(tokio_serial::DataBits);
+struct StopBits(tokio_serial::StopBits);
 
-use std::any::Any;
+pub type ModbusRequest = Request<'static>;
+pub type ModbusResponse = Response;
+pub type ClientContext =  tokio_modbus::client::Context;
 
-use clients::example_client::{ExampleClient, RequestMessage};
-use tokio::sync::mpsc::Receiver;
-pub use tokio_modbus as protocol;
-use tokio_modbus::{Slave, client::rtu};
-use tokio_serial::SerialStream;
+pub struct SerialDeviceManager {
+    pub port_contexts : HashMap<String, Mutex<ClientContext>>,
+    // keep track of devices
+    pub devices : HashMap<String, SerialDeviceMeta>,
+}
 
-pub type Request = protocol::Request<'static>;
-pub type Response = protocol::Response;
-pub type ExceptionCode = protocol::ExceptionCode;
-pub type FunctionCode = protocol::FunctionCode;
+pub struct ModbusSettings {
+    pub baudrate: u32,
+    pub bits: u8,
+    pub stop_bits: u8,
+    pub parity: Parity,
+    pub modbus_type: ModbusType, 
+}
 
-pub fn start_modbus_async_task(
-    tty_path: String,
-    slave_id: u8,
-    baudrate: u32,
-    rx: Receiver<RequestMessage>,
-) -> impl Future<Output = ()> {
-    async move {
-        let slave = Slave(slave_id);
-        let builder = tokio_serial::new(tty_path, baudrate);
-        let port = SerialStream::open(&builder).expect("Failed to open serial port");
-        let ctx = rtu::attach_slave(port, slave);
-        ExampleClient::run(ctx, rx).await
+/*
+    This trait is suited to applications of Modbus where you
+    continually poll the device with the same request over and over
+*/
+pub trait ModbusDevice {
+    fn new(path : String, slave_id : u8, settings : Option<ModbusSettings>) -> Result<Self,anyhow::Error> where Self: Sized;    
+    // When send_request fails device is dead and should be dropped
+    // Prepare your request to be sent with whatever logic you wish
+    fn send_next_request(&mut self) -> Result<(),anyhow::Error>;
+    fn handle_response(&mut self) -> Result<(),anyhow::Error>;
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;    
+}
+
+pub fn create_modbus_device_context(dev : &SerialDeviceMeta) -> Result<ClientContext,anyhow::Error> {
+        let device_builder = create_modbus_builder(dev)?;
+        let port = SerialStream::open(&device_builder).unwrap();
+        let slave = Slave(dev.slave_id);        
+        match dev.modbus_type {
+            ModbusType::Rtu => Ok(rtu::attach_slave(port, slave)),
+            ModbusType::Tcp => Ok(tcp::attach_slave(port,slave)),
+        }
+}
+
+fn create_modbus_builder(dev : &SerialDeviceMeta) -> Result<SerialPortBuilder,anyhow::Error> {   
+        let data_bits : DataBits =  
+        dev.bits.try_into()?;
+        let stop_bits : StopBits = dev.stop_bits.try_into()?;
+        Ok(tokio_serial::new(dev.path.clone(), dev.baudrate).
+            flow_control(tokio_serial::FlowControl::None).
+            data_bits(data_bits.0).
+            stop_bits(stop_bits.0).
+            parity(dev.parity.clone().into()))
+}
+
+impl TryInto<DataBits> for u8 {
+    type Error = anyhow::Error;
+    fn try_into(self) -> Result<DataBits,Self::Error> {        
+        match self {
+            5 => Ok(DataBits{0 : tokio_serial::DataBits::Five}),
+            6 => Ok(DataBits{0 : tokio_serial::DataBits::Six}),
+            7 => Ok(DataBits{0 : tokio_serial::DataBits::Seven}),
+            8 => Ok(DataBits{0 : tokio_serial::DataBits::Eight}),
+            _ => Err(anyhow::anyhow!("DataBits specified not Valid".to_owned())),
+        }
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Priority {
-    Low,
-    Medium,
-    High,
-    Urgent,
+
+impl TryInto<StopBits> for u8 {
+    type Error = anyhow::Error;
+    fn try_into(self) -> Result<StopBits,Self::Error> {        
+        match self {
+            1 => Ok(StopBits{0 : tokio_serial::StopBits::One}),
+            2 => Ok(StopBits{0 : tokio_serial::StopBits::Two}),            
+            _ => Err(anyhow::anyhow!("StopBits specified not Valid".to_owned())),
+        }
+    }
 }
 
-pub trait Scheduler {
-    /// notifies manager that this device
-    /// want's to submit a request with
-    /// certain priority.
-    /// Operation should not fail.
-    fn schedule(&self, priority: Priority);
+
+impl Into<tokio_serial::Parity> for Parity {    
+    fn into(self) -> tokio_serial::Parity {        
+        match self {
+            Parity::None => tokio_serial::Parity::None,
+            Parity::Even => tokio_serial::Parity::Even,
+            Parity::Odd => tokio_serial::Parity::Odd,
+        }
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParseError {
-    /// (index: u16, received: u16)
-    InvalidValue(u16, u16),
-
-    /// (minimum: u16, received: u16)
-    DataTooSmall(u16, u16),
+#[derive(Debug,Clone,PartialEq,Eq,Hash)]
+pub enum Parity {
+    None,
+    Even,
+    Odd,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HandleResponseError {
-    ParseError(ParseError),
-    InvalidFunctionCode(FunctionCode),
-    NoResponseExpected,
+#[derive(Debug,Clone,PartialEq,Eq,Hash)]
+pub enum ModbusType {
+    Rtu,
+    Tcp,
 }
 
-pub trait Device<S: Scheduler> {
-    /// creates a new device and assigns it it's scheduler
-    /// to notify it's manager that it wants to submit
-    /// a request
-    fn new(scheduler: S) -> Self
-    where
-        Self: Sized;
-
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-
-    /// retrieve the devices next request if any.
-    /// should only be called be the device manager
-    /// if the device is scheduled
-    fn next_request(&mut self) -> Option<(Request, bool)>;
-
-    /// response forwarded by manager to device to handle
-    fn handle_response(&mut self, response: Response) -> Result<(), HandleResponseError>;
+#[derive(Debug,Clone,PartialEq,Eq,Hash)]
+pub struct SerialDeviceMeta {
+    pub path : String, // can be IP or Fs Path
+    pub device_name : Option<String>,
+    pub slave_id : u8,
+    pub baudrate : u32,
+    pub bits : u8,
+    pub stop_bits : u8,
+    pub parity : Parity,
+    pub modbus_type : ModbusType
 }
+

@@ -1,15 +1,15 @@
 [package]
-name        = "modbus"
+name        = "serial"
 version     = "0.1.0"
 edition     = "2024"
-description = "Modbus subcrate"
+description = "Serial subcrate"
 
 [dependencies]
 tokio = { version = "1.49.0", features = ["sync","rt-multi-thread","macros","signal"] }
 tokio-serial = "5.0"
 tokio-modbus = "0.17.0"
 anyhow = "1.0.102"
-common = {path = "../common"}
+
 [lib]
 
 

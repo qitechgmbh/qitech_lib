@@ -193,7 +193,6 @@ impl PredefinedPdoAssignment<EL3021TxPdo, EL3021RxPdo> for EL3021PredefinedPdoAs
     }
 }
 
-
 pub const EL3021_VENDOR_ID: u32 = 2;
 pub const EL3021_PRODUCT_ID: u32 = 197996626;
 pub const EL3021_REVISION_A: u32 = 1310720;

@@ -94,7 +94,12 @@ fn setup_homing(
     enc: &EncoderResolution,
     homing: &MotorHomingConfig,
 ) -> Result<(), anyhow::Error> {
-    ch.sdo_write(addr, Reg::HOMING_MODE, 0, homing.homing_direction.mode_code())?;
+    ch.sdo_write(
+        addr,
+        Reg::HOMING_MODE,
+        0,
+        homing.homing_direction.mode_code(),
+    )?;
     ch.sdo_write(
         addr,
         Reg::HOMING_SPEED,

@@ -55,8 +55,14 @@ impl MachineDataRegistry {
     }
 }
 
+#[derive(Debug,Clone)]
+pub enum MachineError {
+    RecoverableFailure(String),
+    IrrecoverableFailure(String), // irrecoverable    
+}
+
 pub trait Machine {
-    fn act(&mut self, machine_data: Option<&mut MachineDataRegistry>);
+    fn act(&mut self, machine_data: Option<&mut MachineDataRegistry>) -> Result<(), MachineError>;
     fn react(&mut self, registry: &MachineDataRegistry);
     fn get_identification(&self) -> MachineIdentificationUnique;
 }
