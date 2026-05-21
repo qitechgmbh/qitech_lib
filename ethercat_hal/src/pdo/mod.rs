@@ -1,3 +1,4 @@
+pub mod oversampling;
 pub mod analog_input;
 pub mod basic;
 pub mod el252x;

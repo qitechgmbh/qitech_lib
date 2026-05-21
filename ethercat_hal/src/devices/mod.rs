@@ -16,6 +16,7 @@ pub mod el3024;
 pub mod el3062_0030;
 pub mod el3204;
 pub mod el4002;
+pub mod el4732;
 pub mod el5152;
 pub mod el6021;
 pub mod el7031;
@@ -55,6 +56,7 @@ use el3204::EL3204_IDENTITY_A;
 use el3204::EL3204_IDENTITY_B;
 use el4002::EL4002;
 use el4002::EL4002_IDENTITY_A;
+use el4732::{EL4732, EL4732_IDENTITY_A, EL4732_IDENTITY_B, EL4732_IDENTITY_C};
 use el5152::{EL5152, EL5152_IDENTITY_A};
 use el6021::{EL6021_IDENTITY_A, EL6021_IDENTITY_B, EL6021_IDENTITY_C, EL6021_IDENTITY_D};
 use el7031::{EL7031_IDENTITY_A, EL7031_IDENTITY_B};
@@ -205,6 +207,7 @@ pub fn device_from_subdevice_identity(
         }
         EP2339_0021_IDENTITY_A => Ok(Box::new(ep2339_0021::EP2339_0021::new())),
         MINAS_A6_IDENTITY_A => Ok(Box::new(minas_a6::MinasA6BMotor::new())),
+        EL4732_IDENTITY_A | EL4732_IDENTITY_B | EL4732_IDENTITY_C => Ok(Box::new(EL4732::new())),
         _ => Err(anyhow::anyhow!(
             "[{}::device_from_subdevice] No Driver: vendor_id: 0x{:x}, product_id: 0x{:x}, revision: 0x{:x}",
             module_path!(),
@@ -250,6 +253,9 @@ pub fn device_from_subdevice_identity_rc(
         }
         EP2339_0021_IDENTITY_A => Ok(Rc::new(RefCell::new(ep2339_0021::EP2339_0021::new()))),
         MINAS_A6_IDENTITY_A => Ok(Rc::new(RefCell::new(minas_a6::MinasA6BMotor::new()))),
+        EL4732_IDENTITY_A | EL4732_IDENTITY_B | EL4732_IDENTITY_C => {
+            Ok(Rc::new(RefCell::new(el4732::EL4732::new())))
+        }
 
         _ => Err(anyhow::anyhow!(
             "[{}::device_from_subdevice] No Driver: vendor_id: 0x{:x}, product_id: 0x{:x}, revision: 0x{:x}",
@@ -268,7 +274,7 @@ where
     let any_dev = dev.into_any_boxed();
     // Attempt to downcast to the concrete type Box<T>
     match any_dev.downcast::<T>() {
-        Ok(concrete_box) => Ok(concrete_box),
+        std::result::Result::Ok(concrete_box) => Ok(concrete_box),
         Err(_) => Err(anyhow::anyhow!(
             "Downcast failed: device is not of type {}",
             std::any::type_name::<T>()
