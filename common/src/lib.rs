@@ -1,5 +1,5 @@
 use std::sync::OnceLock;
-use tokio::runtime::{Runtime};
+use tokio::runtime::Runtime;
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
 pub fn get_async_runtime() -> &'static Runtime {
