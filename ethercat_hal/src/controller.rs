@@ -10,6 +10,7 @@ use crate::{
     send_response,
 };
 
+use common::set_irq_affinity;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
     std::ethercat_now,
@@ -28,7 +29,9 @@ where
     C: Consumer,
     P: Producer,
 {
+    pub cycle: u64,
     pub cycle_time_us: u64,
+    pub next_cycle: Instant,
     pub interface: Option<String>,
     pub subdevices: [MetaSubdevice; 256],
     pub subdevice_count: usize,
@@ -81,6 +84,8 @@ where
         config: MasterConfiguration,
     ) -> Self {
         Self {
+            cycle: 0,
+            next_cycle: std::time::Instant::now(),
             cycle_time_us: 0,
             interface,
             subdevices: [MetaSubdevice::default(); 256],
@@ -156,6 +161,15 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                         );
                                         // Pin to the last core (e.g., Core 3 on a 4-core system)
                                         core_affinity::set_for_current(id);
+                                        if let Some(irq_core) = opt.pin_irq_core {
+                                            let res = set_irq_affinity(&interface, irq_core as u32);
+                                            if res.is_err() {
+                                                println!("set_irq_affinity failed: {:?}", res);
+                                            }else {
+                                                println!("set irq_affinity of {} to core {}",&interface,irq_core);
+                                            }
+                                            
+                                        }
                                     }
                                     None => (),
                                 };
@@ -466,6 +480,22 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
 
                                 if is_all_safe {
                                     println!("SAFE-OP");
+                                    // --- Calculate and map offsets here ---
+                                    let mut rx_offset = 0;
+                                    let mut tx_offset = 0;
+                                    for (i, subdevice) in group_back.iter(device).enumerate() {
+                                        let length_tx = subdevice.io_raw().inputs().len();
+                                        let length_rx = subdevice.io_raw().outputs().len();
+
+                                        self.subdevices[i].start_tx = tx_offset;
+                                        self.subdevices[i].end_tx = tx_offset + length_tx;
+
+                                        self.subdevices[i].start_rx = rx_offset;
+                                        self.subdevices[i].end_rx = rx_offset + length_rx;
+
+                                        rx_offset += length_rx;
+                                        tx_offset += length_tx;
+                                    }
                                     break group_back;
                                 } else {
                                     group_container = Some(GroupState::SafeOp(group_back));
@@ -491,25 +521,10 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                         let response = rt
                             .block_on(group_op.as_ref().unwrap().tx_rx_dc(&maindevice))
                             .expect("TX/RX");
+
                         if response.all_op() {
-                            let mut rx_offset = 0;
-                            let mut tx_offset = 0;
-                            let mut i = 0;
-
-                            for subdevice in group.iter(&maindevice) {
-                                let length_tx = subdevice.io_raw().inputs().len();
-                                let length_rx = subdevice.io_raw().outputs().len();
-
+                            for i in 0..self.subdevice_count {
                                 self.subdevices[i].initialized = true;
-                                self.subdevices[i].start_tx = tx_offset;
-                                self.subdevices[i].end_tx = tx_offset + length_tx;
-
-                                self.subdevices[i].start_rx = rx_offset;
-                                self.subdevices[i].end_rx = rx_offset + length_rx;
-
-                                rx_offset += length_rx;
-                                tx_offset += length_tx;
-                                i += 1;
                             }
                             println!("ALL OP");
                             break;
@@ -525,20 +540,15 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                 set_current_thread_rt_priority(
                                     opt.ethercat_loop_thread_priority as i32,
                                 );
-                                // Pin to the last core (e.g., Core 3 on a 4-core system)
                                 core_affinity::set_for_current(id);
                             }
                             None => (),
                         };
-                        let mut next_wait = Instant::now()
-                            + Duration::from_micros(
-                                self.current_config.target_cycle_time_us as u64,
-                            );
 
                         loop {
                             let cycle_start = Instant::now();
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
-                            next_wait = cycle_start
+                            self.next_cycle = cycle_start
                                 + Duration::from_micros(
                                     self.current_config.target_cycle_time_us as u64,
                                 );
@@ -569,10 +579,11 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                 );
                                 current_offset += len;
                             }
-                            while Instant::now() < next_wait {
+                            while Instant::now() < self.next_cycle {
                                 std::hint::spin_loop();
                             }
                             self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
+                            self.cycle += 1;
                         }
                     });
                 }
