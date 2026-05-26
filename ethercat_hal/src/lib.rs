@@ -362,6 +362,7 @@ pub enum ChannelResponse {
     MachineDeviceInfoResponse(Result<Vec<MachineDeviceInfo>, anyhow::Error>),
     WriteMachineInfoResponse(Result<(), anyhow::Error>),
     EnableDCSync0Response(Result<(), anyhow::Error>),
+    EnableDCSync01Response(Result<(), anyhow::Error>),
 }
 
 #[derive(Debug)]
@@ -371,6 +372,7 @@ pub enum ChannelRequests {
     ChangeState(EtherCATState),
     // usize in this case is the device_address
     EnableDCSync0(usize),
+    EnableDCSync01(usize, Duration),
     Shutdown(),
     // Legacy code, only usable when feature legacy_code is set
     ReadMachineIdent(),

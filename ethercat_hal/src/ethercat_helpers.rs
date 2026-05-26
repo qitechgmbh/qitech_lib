@@ -215,6 +215,14 @@ impl EtherCATThreadChannel {
     pub fn enable_dc_sync0(&self, _device_address: u16) -> Result<(), anyhow::Error> {
         Ok(())
     }
+
+    pub fn enable_dc_sync01(
+        &self,
+        _device_address: u16,
+        _sync1_period: Duration,
+    ) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
 }
 
 #[cfg(not(feature = "mock"))]
@@ -395,6 +403,37 @@ impl EtherCATThreadChannel {
         }
     }
 
+    pub fn enable_dc_sync01(
+        &self,
+        device_address: u16,
+        sync1_period: Duration,
+    ) -> Result<(), anyhow::Error> {
+        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
+        let req: ChannelRequest = ChannelRequest {
+            channel_request: crate::ChannelRequests::EnableDCSync01(
+                device_address.into(),
+                sync1_period,
+            ),
+            response_channel: EtherCATThreadResponseChannel(tx),
+        };
+
+        match self.0.send(req) {
+            Ok(_) => (),
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+
+        let res = rx.recv_timeout(Duration::from_millis(500));
+        let response = match res {
+            Ok(res) => res,
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+
+        match response {
+            ChannelResponse::EnableDCSync01Response(result) => result,
+            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+        }
+    }
+
     pub fn set_mut_beckhoff_eeprom_lock_active(
         &self,
         device_address: u16,
@@ -533,5 +572,23 @@ pub fn enable_dc_sync(
             }
         }
         return Err(anyhow::anyhow!("Unknown Subdevice"));
+    })
+}
+
+pub fn enable_dc_sync01(
+    group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
+    maindevice: &MainDevice,
+    device_address: usize,
+    sync1_period: Duration,
+) -> Result<(), anyhow::Error> {
+    let rt = get_async_runtime();
+    rt.block_on(async {
+        for mut subdevice in group.iter_mut(maindevice) {
+            if subdevice.configured_address() == device_address as u16 {
+                subdevice.set_dc_sync(DcSync::Sync01 { sync1_period });
+                return Ok(());
+            }
+        }
+        Err(anyhow::anyhow!("Unknown Subdevice"))
     })
 }

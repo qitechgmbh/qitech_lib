@@ -1,10 +1,12 @@
 use crate::{
     ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState,
     MAX_SUBDEVICES, MasterConfiguration, MetaSubdevice, PDI_LEN, PDU_STORAGE, Producer, SdoType,
-    TripleBufProducer,
-    ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
+    TripleBufConsumer, TripleBufProducer,
+    ethercat_helpers::{enable_dc_sync, enable_dc_sync01, sdo_read, sdo_write},
     get_async_runtime,
-    machine_ident_read::{read_device_identifications, write_device_identifications},
+    machine_ident_read::{
+        MachineDeviceInfo, read_device_identifications,
+    },
     send_response,
 };
 #[cfg(target_os = "linux")]
@@ -16,6 +18,7 @@ use ethercrab::{
 };
 use std::{
     sync::mpsc::Receiver,
+    thread::JoinHandle,
     time::{Duration, Instant},
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
@@ -45,17 +48,13 @@ fn set_current_thread_rt_priority(priority: i32) {
     unsafe {
         let thread_id = libc::pthread_self();
         let param = libc::sched_param {
-            sched_priority: priority, // 1 to 99
+            sched_priority: priority,
         };
-
-        // SCHED_FIFO is the standard for real-time control loops.
-        // It will run until it finishes or is preempted by a higher-priority RT thread.
         let result = libc::pthread_setschedparam(
             thread_id,
             libc::SCHED_FIFO,
             &param as *const libc::sched_param,
         );
-
         if result != 0 {
             let err = std::io::Error::last_os_error();
             eprintln!(
@@ -360,7 +359,6 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                     );
                                 }
                             }
-
                             continue;
                         }
                         ChannelRequests::ReadMachineIdent() => {
@@ -391,7 +389,21 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                             );
                             continue;
                         }
+                        ChannelRequests::EnableDCSync01(device_address, sync1_period) => {
+                            let res = enable_dc_sync01(
+                                &mut preop_group,
+                                maindev,
+                                device_address,
+                                sync1_period,
+                            );
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::EnableDCSync01Response(res),
+                            );
+                            continue;
+                        }
                     }
+
                     let mut now = Instant::now();
                     let start = Instant::now();
                     let mut averages = Vec::new();
@@ -422,7 +434,8 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
 
                     loop {
                         rt.block_on(
-                            group_preop_pdi.tx_rx_sync_system_time(&maindevice.as_ref().unwrap()),
+                            group_preop_pdi
+                                .tx_rx_sync_system_time(&maindevice.as_ref().unwrap()),
                         )
                         .expect("TX/RX");
 
@@ -494,7 +507,6 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                         match group_container.take().unwrap() {
                             GroupState::PreOp(group) => {
                                 let device = maindevice.as_ref().unwrap();
-
                                 // Wrap the whole sequence in one block_on so 'now' and 'sleep' share the same reactor session
                                 let _res = rt.block_on(async {
                                     let now = tokio::time::Instant::now(); // Moved inside
@@ -507,7 +519,8 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                 });
 
                                 if tick > self.current_config.dc_config.target_dc_tick {
-                                    let group_res = rt.block_on(group.into_safe_op(device));
+                                    let group_res =
+                                        rt.block_on(group.request_into_safe_op(device));
                                     let group = group_res.expect("Failed SafeOp");
                                     group_container = Some(GroupState::SafeOp(group));
                                     println!("Requested SAFE-OP");
@@ -577,6 +590,34 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                     let rt = get_async_runtime();
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
+                    loop {
+                        let response = rt
+                            .block_on(group_op.as_ref().unwrap().tx_rx_dc(&maindevice))
+                            .expect("TX/RX");
+                        if response.all_op() {
+                            let mut rx_offset = 0;
+                            let mut tx_offset = 0;
+                            let mut i = 0;
+
+                            for subdevice in group.iter(&maindevice) {
+                                let length_tx = subdevice.io_raw().inputs().len();
+                                let length_rx = subdevice.io_raw().outputs().len();
+
+                                self.subdevices[i].initialized = true;
+                                self.subdevices[i].start_tx = tx_offset;
+                                self.subdevices[i].end_tx = tx_offset + length_tx;
+                                self.subdevices[i].start_rx = rx_offset;
+                                self.subdevices[i].end_rx = rx_offset + length_rx;
+
+                                rx_offset += length_rx;
+                                tx_offset += length_tx;
+                                i += 1;
+                            }
+                            println!("ALL OP");
+                            break;
+                        }
+                    }
+
                     rt.block_on(async {
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
