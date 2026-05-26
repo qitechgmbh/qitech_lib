@@ -1,9 +1,7 @@
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
-
 #[cfg(target_os = "linux")]
 use libc;
-
 use std::ffi::CString;
 use std::io;
 use std::str;

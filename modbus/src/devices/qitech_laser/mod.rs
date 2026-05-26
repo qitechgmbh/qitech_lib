@@ -1,10 +1,16 @@
+use crate::{
+    ModbusDevice, ModbusRequest, ModbusResponse, ModbusSettings, ModbusType, Parity,
+    SerialDeviceMeta, create_modbus_device_context,
+};
 use common::get_async_runtime;
 use std::{fmt, time::Duration};
-use tokio::{sync::{mpsc, oneshot}, task::JoinHandle};
-use tokio_modbus::{ExceptionCode, Request, Response, client::{Client, Context}};
-use crate::{
-    ModbusDevice, ModbusRequest, ModbusResponse, ModbusSettings, ModbusType, 
-    Parity, SerialDeviceMeta, create_modbus_device_context
+use tokio::{
+    sync::{mpsc, oneshot},
+    task::JoinHandle,
+};
+use tokio_modbus::{
+    ExceptionCode, Request, Response,
+    client::{Client, Context},
 };
 
 const MEASUREMENTS_ADDRESS: u16 = 0x0E;
@@ -23,13 +29,13 @@ pub struct LaserDevice {
     tx: mpsc::Sender<ActorMessage>,
     // A oneshot receiver tracking a pending in-flight request
     pending_response: Option<oneshot::Receiver<Result<ModbusResponse, LaserError>>>,
-    handle : JoinHandle<()>,
+    handle: JoinHandle<()>,
 }
 
 impl Drop for LaserDevice {
     fn drop(&mut self) {
         // Dropping the `tx` channel will cause the background actor's channel to close.
-        // The background task will break out of its loop, run `ctx.disconnect().await`, 
+        // The background task will break out of its loop, run `ctx.disconnect().await`,
         // and gracefully clean up the serial connection.
         println!("drop is called");
         self.handle.abort();
@@ -45,7 +51,7 @@ impl ModbusDevice for LaserDevice {
 
         let req = Request::ReadInputRegisters(MEASUREMENTS_ADDRESS, MEASUREMENTS_COUNT);
         let (reply_tx, reply_rx) = oneshot::channel();
-        
+
         let msg = ActorMessage {
             request: req,
             reply_tx,
@@ -56,10 +62,8 @@ impl ModbusDevice for LaserDevice {
             Ok(_) => {
                 self.pending_response = Some(reply_rx);
             }
-            Err(mpsc::error::TrySendError::Full(_)) => {
-            }
-            Err(mpsc::error::TrySendError::Closed(_)) => {
-            }
+            Err(mpsc::error::TrySendError::Full(_)) => {}
+            Err(mpsc::error::TrySendError::Closed(_)) => {}
         }
 
         Ok(())
@@ -73,7 +77,11 @@ impl ModbusDevice for LaserDevice {
         self
     }
 
-    fn new(path: String, slave_id: u8, settings: Option<ModbusSettings>) -> Result<Self, anyhow::Error> {
+    fn new(
+        path: String,
+        slave_id: u8,
+        settings: Option<ModbusSettings>,
+    ) -> Result<Self, anyhow::Error> {
         let meta = match settings {
             Some(s) => SerialDeviceMeta {
                 path,
@@ -111,17 +119,19 @@ impl ModbusDevice for LaserDevice {
             meta,
             tx,
             pending_response: None,
-            handle : handle,
+            handle: handle,
         })
     }
 
     fn handle_response(&mut self) -> Result<(), anyhow::Error> {
         let is_ready = match &mut self.pending_response {
             Some(rx) => match rx.try_recv() {
-                Ok(result) => Some(result),         // Response arrived!
+                Ok(result) => Some(result),                       // Response arrived!
                 Err(oneshot::error::TryRecvError::Empty) => None, // Still processing
                 Err(oneshot::error::TryRecvError::Closed) => {
-                    return Err(anyhow::anyhow!("Oneshot channel dropped without a response"));
+                    return Err(anyhow::anyhow!(
+                        "Oneshot channel dropped without a response"
+                    ));
                 }
             },
             None => return Ok(()), // No request currently pending
@@ -135,7 +145,12 @@ impl ModbusDevice for LaserDevice {
 
             let words = match response {
                 Response::ReadInputRegisters(v) => v,
-                rsp => return Err(anyhow::anyhow!("Invalid Function Code: {}", rsp.function_code())),
+                rsp => {
+                    return Err(anyhow::anyhow!(
+                        "Invalid Function Code: {}",
+                        rsp.function_code()
+                    ));
+                }
             };
 
             debug_assert!(words.len() == 3);
@@ -178,7 +193,7 @@ impl std::error::Error for LaserError {
             // These sub-errors implement std::error::Error, so we return them
             LaserError::ModbusError(e) => Some(e),
             LaserError::ModbusException(e) => Some(e),
-            
+
             // These errors do not have an underlying nested error payload
             LaserError::TaskDied() => None,
             LaserError::IoErr() => None,
@@ -190,9 +205,9 @@ impl std::error::Error for LaserError {
 /// The long-running asynchronous worker loop.
 /// This completely owns and keeps the `Context` alive.
 async fn run_modbus_actor(
-    mut rx: mpsc::Receiver<ActorMessage>, 
-    mut ctx: Context, 
-    meta: SerialDeviceMeta
+    mut rx: mpsc::Receiver<ActorMessage>,
+    mut ctx: Context,
+    meta: SerialDeviceMeta,
 ) {
     let timeout_duration = Duration::from_secs(2);
 

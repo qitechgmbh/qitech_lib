@@ -4,7 +4,9 @@ use crate::{
     TripleBufConsumer, TripleBufProducer,
     ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
     get_async_runtime,
-    machine_ident_read::{MachineDeviceInfo, read_device_identifications},
+    machine_ident_read::{
+        MachineDeviceInfo, read_device_identifications, write_device_identifications,
+    },
     send_response,
 };
 
@@ -315,6 +317,18 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                             send_response(
                                 msg.response_channel,
                                 ChannelResponse::MachineDeviceInfoResponse(res),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::WriteMachineIdent(identifications) => {
+                            let res = write_device_identifications(
+                                preop_group,
+                                maindev,
+                                &identifications,
+                            );
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::WriteMachineInfoResponse(res),
                             );
                             continue;
                         }

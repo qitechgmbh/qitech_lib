@@ -277,8 +277,9 @@ pub enum ChannelRequests {
     // usize in this case is the device_address
     EnableDCSync0(usize),
     Shutdown(),
-    // Legacy code, only usable when feature enable_legacy_code is set
+    // Legacy code, only usable when feature legacy_code is set
     ReadMachineIdent(),
+    WriteMachineIdent(Vec<MachineDeviceInfo>),
 }
 
 pub struct ChannelRequest {
