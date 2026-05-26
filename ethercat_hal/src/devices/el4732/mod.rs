@@ -3,6 +3,11 @@ use crate::io::analog_output::{AnalogOutputDevice, AnalogOutputOutput};
 use crate::pdo::oversampling::{AnalogOutputOversample, CycleCount};
 use crate::pdo::{RxPdo, TxPdo};
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
+use coe::EL4732Configuration;
+use libc::write;
+
+pub mod coe;
+
 
 /// EL4732 2-channel analog output device with oversampling support
 ///
@@ -23,6 +28,7 @@ pub struct EL4732 {
     pub rxpdo: EL4732RxPdo,
     pub txpdo: EL4732TxPdo,
     is_used: bool,
+    pub configuration: EL4732Configuration,
 }
 
 impl EthercatDeviceProcessing for EL4732 {}
@@ -42,10 +48,12 @@ impl EL4732 {
     /// `oversample_factor` must be one of:
     ///   1, 2, 3, 4, 5, 8, 10, 16, 20, 25, 32, 40, 50, 100
     pub fn new_with_oversample(oversample_factor: usize) -> Self {
+        let configuration = EL4732Configuration::default();
         Self {
             rxpdo: EL4732RxPdo::new(oversample_factor),
             txpdo: EL4732TxPdo::default(),
             is_used: false,
+            configuration,
         }
     }
 
