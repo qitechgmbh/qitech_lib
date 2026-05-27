@@ -24,6 +24,8 @@ pub mod ep2339_0021;
 pub mod panasonic_modules;
 pub mod wago_750_354;
 pub mod wago_modules;
+mod el9505;
+mod el1124;
 use crate::{MetaSubdevice, SdoIndex};
 
 #[cfg(feature = "mock")]
