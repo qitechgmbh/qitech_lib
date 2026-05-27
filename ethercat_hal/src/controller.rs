@@ -583,7 +583,12 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                 std::hint::spin_loop();
                             }
                             self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
-                            self.cycle += 1;
+                            if self.cycle == u64::MAX {
+                                self.cycle = 0;
+                            }else{
+                                self.cycle += 1;
+                            }
+                            
                         }
                     });
                 }
