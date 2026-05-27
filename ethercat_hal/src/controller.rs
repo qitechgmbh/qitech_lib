@@ -5,7 +5,7 @@ use crate::{
     ethercat_helpers::{enable_dc_sync, enable_dc_sync01, sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::{
-        MachineDeviceInfo, read_device_identifications,
+        MachineDeviceInfo, read_device_identifications, write_device_identifications,
     },
     send_response,
 };
@@ -18,11 +18,33 @@ use ethercrab::{
 };
 use std::{
     sync::mpsc::Receiver,
-    thread::JoinHandle,
     time::{Duration, Instant},
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::time::interval;
+
+struct RuntimeState {
+    maindevice: Option<MainDevice<'static>>,
+    group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>>,
+    group_preop_pdi_dc: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, HasDc>>,
+    group_op: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, Op, HasDc>>,
+}
+
+impl RuntimeState {
+    fn new() -> Self {
+        Self {
+            maindevice: None,
+            group: None,
+            group_preop_pdi_dc: None,
+            group_op: None,
+        }
+    }
+}
+
+enum StateResult {
+    Continue,
+    Shutdown,
+}
 
 pub struct EtherCATController<C, P>
 where
@@ -48,13 +70,17 @@ fn set_current_thread_rt_priority(priority: i32) {
     unsafe {
         let thread_id = libc::pthread_self();
         let param = libc::sched_param {
-            sched_priority: priority,
+            sched_priority: priority, // 1 to 99
         };
+
+        // SCHED_FIFO is the standard for real-time control loops.
+        // It will run until it finishes or is preempted by a higher-priority RT thread.
         let result = libc::pthread_setschedparam(
             thread_id,
             libc::SCHED_FIFO,
             &param as *const libc::sched_param,
         );
+
         if result != 0 {
             let err = std::io::Error::last_os_error();
             eprintln!(
