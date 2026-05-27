@@ -1,4 +1,3 @@
-use crate::Mailbox;
 use crate::{
     ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState,
     MAX_SUBDEVICES, MasterConfiguration, MetaSubdevice, PDI_LEN, PDU_STORAGE, Producer, SdoType,
@@ -15,7 +14,6 @@ use ethercrab::{
     std::ethercat_now,
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
 };
-use std::sync::Arc;
 use std::{
     sync::mpsc::Receiver,
     thread::JoinHandle,
@@ -127,25 +125,16 @@ where
     }
 }
 
-unsafe impl Sync for EtherCATController<Arc<Mailbox>, TripleBufProducer> {}
-impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
-    pub fn ethercat_state_machine(&mut self) -> Result<(), anyhow::Error> {
-        let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
-        let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> =
-            None;
-        let mut group_preop_pdi: SubDeviceGroup<
-            MAX_SUBDEVICES,
-            PDI_LEN,
-            ethercrab::DefaultLock,
-            PreOpPdi,
-            NoDc,
-        >;
+unsafe impl Sync for EtherCATController<TripleBufConsumer, TripleBufProducer> {}
+impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
+    pub fn ethercat_state_machine(&mut self) {
+        let mut ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
+        let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> = None;
+        let mut group_preop_pdi: SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, NoDc>;
         let mut group_preop_pdi_dc: Option<
             SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, HasDc>,
         > = None;
-        let mut group_op: Option<
-            SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, Op, HasDc>,
-        > = None;
+        let mut group_op: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, Op, HasDc>> = None;
         let mut maindevice: Option<MainDevice> = None;
         loop {
             match self.state {
@@ -492,24 +481,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                 EtherCATState::PreopPdi => {
                     // State machine to handle transition to SafeOp with process data
                     enum GroupState {
-                        PreOp(
-                            SubDeviceGroup<
-                                MAX_SUBDEVICES,
-                                PDI_LEN,
-                                ethercrab::DefaultLock,
-                                PreOpPdi,
-                                HasDc,
-                            >,
-                        ),
-                        SafeOp(
-                            SubDeviceGroup<
-                                MAX_SUBDEVICES,
-                                PDI_LEN,
-                                ethercrab::DefaultLock,
-                                SafeOp,
-                                HasDc,
-                            >,
-                        ),
+                        PreOp(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, HasDc>),
+                        SafeOp(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, SafeOp, HasDc>),
                     }
 
                     let mut group_container = Some(GroupState::PreOp(
