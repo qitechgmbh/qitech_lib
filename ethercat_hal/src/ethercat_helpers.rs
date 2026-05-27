@@ -223,6 +223,14 @@ impl EtherCATThreadChannel {
     ) -> Result<(), anyhow::Error> {
         Ok(())
     }
+
+    pub fn configure_oversampling(
+        &self,
+        _device_address: u16,
+        _factor: u16,
+    ) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
 }
 
 #[cfg(not(feature = "mock"))]
@@ -434,6 +442,34 @@ impl EtherCATThreadChannel {
         }
     }
 
+    pub fn configure_oversampling(
+        &self,
+        device_address: u16,
+        factor: u16,
+    ) -> Result<(), anyhow::Error> {
+        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
+        let req = ChannelRequest {
+            channel_request: crate::ChannelRequests::ConfigureOversampling(
+                device_address.into(),
+                factor,
+            ),
+            response_channel: EtherCATThreadResponseChannel(tx),
+        };
+        match self.0.send(req) {
+            Ok(_) => (),
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+        let res = rx.recv_timeout(Duration::from_millis(500));
+        let response = match res {
+            Ok(res) => res,
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+        match response {
+            ChannelResponse::ConfigureOversamplingResponse(result) => result,
+            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+        }
+    }
+
     pub fn set_mut_beckhoff_eeprom_lock_active(
         &self,
         device_address: u16,
@@ -590,5 +626,30 @@ pub fn enable_dc_sync01(
             }
         }
         Err(anyhow::anyhow!("Unknown Subdevice"))
+    })
+}
+
+pub fn configure_oversampling(
+    group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
+    maindevice: &MainDevice,
+    device_address: usize,
+    factor: u16,
+) -> Result<(), anyhow::Error> {
+    let rt = get_async_runtime();
+    let oversampling: &'static [(u16, u16)] = Box::leak(
+        vec![(0x1600u16, factor), (0x1700u16, factor)].into_boxed_slice()
+    );
+
+    rt.block_on(async {
+        for mut subdevice in group.iter_mut(maindevice) {
+            if subdevice.configured_address() == device_address as u16 {
+                subdevice.set_oversampling(oversampling);
+                return Ok(());
+            }
+        }
+        Err(anyhow::anyhow!(
+            "Unknown Subdevice at address 0x{:04X}",
+            device_address
+        ))
     })
 }

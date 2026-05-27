@@ -3,10 +3,7 @@ use crate::io::analog_output::{AnalogOutputDevice, AnalogOutputOutput};
 use crate::pdo::oversampling::{AnalogOutputOversample, CycleCount};
 use crate::pdo::{RxPdo, TxPdo};
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
-use coe::EL4732Configuration;
 use libc::write;
-
-pub mod coe;
 
 
 /// EL4732 2-channel analog output device with oversampling support
@@ -186,6 +183,17 @@ impl Default for EL4732TxPdo {
 pub enum EL4732Port {
     AO1 = 0,
     AO2 = 1,
+}
+
+#[derive(Debug, Clone)]
+pub struct EL4732Configuration {
+    pub oversample_factor: usize,
+}
+
+impl Default for EL4732Configuration {
+    fn default() -> Self {
+        Self { oversample_factor: 1 }
+    }
 }
 
 pub const EL4732_VENDOR_ID: u32 = 0x2;
