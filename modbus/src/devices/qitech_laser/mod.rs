@@ -24,7 +24,6 @@ struct ActorMessage {
 
 pub struct LaserDevice {
     pub measurement: Option<Measurement>,
-    meta: SerialDeviceMeta,
     // The synchronous front-end holds the sender channel to talk to the actor
     tx: mpsc::Sender<ActorMessage>,
     // A oneshot receiver tracking a pending in-flight request
@@ -105,18 +104,16 @@ impl ModbusDevice for LaserDevice {
             },
         };
         let rt = get_async_runtime();
-        let meta_clone = meta.clone();
-        let g = rt.enter();
+        let _g = rt.enter();
         // Initialize the Modbus Context initially
         let ctx = create_modbus_device_context(&meta)?;
         // Create an bounded command channel for our actor
         let (tx, rx) = mpsc::channel::<ActorMessage>(1);
         // Spawn the long-running async worker thread immediately
-        let handle = rt.spawn(run_modbus_actor(rx, ctx, meta_clone));
+        let handle = rt.spawn(run_modbus_actor(rx, ctx));
 
         Ok(Self {
             measurement: None,
-            meta,
             tx,
             pending_response: None,
             handle: handle,
@@ -207,7 +204,6 @@ impl std::error::Error for LaserError {
 async fn run_modbus_actor(
     mut rx: mpsc::Receiver<ActorMessage>,
     mut ctx: Context,
-    meta: SerialDeviceMeta,
 ) {
     let timeout_duration = Duration::from_secs(2);
 
@@ -218,7 +214,7 @@ async fn run_modbus_actor(
         let process_result = match response_result {
             Ok(Ok(Ok(response))) => Ok(response),
             Ok(Ok(Err(modbus_err))) => Err(LaserError::ModbusException(modbus_err)),
-            Ok(Err(io_err)) => Err(LaserError::IoErr()),
+            Ok(Err(_io_err)) => Err(LaserError::IoErr()),
             Err(_timeout_err) => Err(LaserError::RequestTimeOut),
         };
         let _ = msg.reply_tx.send(process_result);
