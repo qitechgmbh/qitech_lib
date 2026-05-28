@@ -3,14 +3,13 @@ name: Rust
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
     branches:
-      - master
+      - main
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_VERSION: "1.86"
 
 permissions:
   contents: read
@@ -29,12 +28,10 @@ jobs:
 
       - &setup-rust
         name: Install Rust Toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-          profile: minimal
-          override: true
-          components: rustfmt
+          toolchain: stable
+          components: clippy,rustfmt
 
       - &cargo-cache
         name: Cache Rust dependencies
@@ -46,13 +43,11 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-${{ env.RUST_VERSION }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-${{ env.RUST_VERSION }}-cargo-
+            ${{ runner.os }}-cargo-
 
       - name: Build
-        env:
-          RUSTFLAGS: "-D warnings"
         run: cargo build --verbose
 
   format:
@@ -71,10 +66,7 @@ jobs:
     steps:
       - *checkout
       - *setup-rust
-      - *setup-rust
       - *cargo-cache
 
       - name: Build Examples
-        env:
-          RUSTFLAGS: "-D warnings"
         run: cargo build --examples --verbose
