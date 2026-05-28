@@ -547,7 +547,7 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
 
                         loop {
                             let cycle_start = Instant::now();
-                            let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                            let _res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
                             self.next_cycle = cycle_start
                                 + Duration::from_micros(
                                     self.current_config.target_cycle_time_us as u64,

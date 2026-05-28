@@ -26,7 +26,7 @@ pub mod wago_750_354;
 pub mod wago_modules;
 mod el9505;
 mod el1124;
-use crate::{MetaSubdevice, SdoIndex};
+use crate::MetaSubdevice;
 
 #[cfg(feature = "mock")]
 use crate::TypeErasedValue;
@@ -59,7 +59,6 @@ use el7031::{EL7031_IDENTITY_A, EL7031_IDENTITY_B};
 use el7031_0030::EL7031_0030_IDENTITY_A;
 use el7041_0052::EL7041_0052_IDENTITY_A;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::{any::Any, fmt::Debug};
 use wago_750_354::{WAGO_750_354_IDENTITY_A, Wago750_354};
