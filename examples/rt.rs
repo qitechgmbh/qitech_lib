@@ -57,7 +57,6 @@ fn main() {
     // Currently By Default a Triple Buffer Producer/Consumer is used
     let mut missed_frames: Vec<u64> = vec![];
     let mut last_cycle = ethercat_controller.cycle;
-    let mut cycle = last_cycle;
     let mut cycles_recorded = 0;
 
     while cycles_recorded < total_cycles {
@@ -75,7 +74,6 @@ fn main() {
                 }
             }
 
-            cycle = current_controller_cycle;
             last_cycle = current_controller_cycle;
             let cycle_time = ethercat_controller.cycle_time_us;
             cycle_times.push(cycle_time);
