@@ -30,6 +30,8 @@ use crate::MetaSubdevice;
 
 #[cfg(feature = "mock")]
 use crate::TypeErasedValue;
+use crate::devices::el1124::{EL1124, EL1124_IDENTITY_A};
+use crate::devices::el9505::{EL9505, EL9505_IDENTITY_A};
 
 use super::devices::el1008::EL1008;
 use crate::devices::ep2339_0021::EP2339_0021_IDENTITY_A;
@@ -192,6 +194,8 @@ pub fn device_from_subdevice_identity(
         EL6021_IDENTITY_A | EL6021_IDENTITY_B | EL6021_IDENTITY_C | EL6021_IDENTITY_D => {
             Ok(Box::new(el6021::EL6021::new()))
         }
+        EL9505_IDENTITY_A => Ok(Box::new(EL9505::new())),
+        EL1124_IDENTITY_A => Ok(Box::new(EL1124::new())),
         EL3204_IDENTITY_A | EL3204_IDENTITY_B => Ok(Box::new(el3204::EL3204::new())),
         EL7031_IDENTITY_A | EL7031_IDENTITY_B => Ok(Box::new(el7031::EL7031::new())),
         EL7031_0030_IDENTITY_A => Ok(Box::new(el7031_0030::EL7031_0030::new())),
@@ -221,13 +225,10 @@ pub fn device_from_subdevice_identity_rc(
         IP20_EC_DI8_DO8_IDENTITY => Ok(Rc::new(RefCell::new(IP20EcDi8Do8::new()))),
         EK1100_IDENTITY_A => Ok(Rc::new(RefCell::new(EK1100::new()))),
         EL1002_IDENTITY_A => Ok(Rc::new(RefCell::new(EL1002::new()))),
-
         EL1008_IDENTITY_A | EL1008_IDENTITY_B => Ok(Rc::new(RefCell::new(EL1008::new()))),
-
         EL2002_IDENTITY_A | EL2002_IDENTITY_B => Ok(Rc::new(RefCell::new(EL2002::new()))),
         EL2004_IDENTITY_A => Ok(Rc::new(RefCell::new(EL2004::new()))),
         EL2008_IDENTITY_A | EL2008_IDENTITY_B => Ok(Rc::new(RefCell::new(EL2008::new()))),
-
         EL2522_IDENTITY_A => Ok(Rc::new(RefCell::new(EL2522::new()))),
         EL3001_IDENTITY_A => Ok(Rc::new(RefCell::new(el3001::EL3001::new()))),
         EL3021_IDENTITY_A => Ok(Rc::new(RefCell::new(el3021::EL3021::new()))),
@@ -235,16 +236,15 @@ pub fn device_from_subdevice_identity_rc(
         EL3062_0030_IDENTITY_A => Ok(Rc::new(RefCell::new(el3062_0030::EL3062_0030::new()))),
         EL4002_IDENTITY_A => Ok(Rc::new(RefCell::new(EL4002::new()))),
         EL5152_IDENTITY_A => Ok(Rc::new(RefCell::new(EL5152::new()))),
-
         EL6021_IDENTITY_A | EL6021_IDENTITY_B | EL6021_IDENTITY_C | EL6021_IDENTITY_D => {
             Ok(Rc::new(RefCell::new(el6021::EL6021::new())))
         }
-
         EL3204_IDENTITY_A | EL3204_IDENTITY_B => Ok(Rc::new(RefCell::new(el3204::EL3204::new()))),
         EL7031_IDENTITY_A | EL7031_IDENTITY_B => Ok(Rc::new(RefCell::new(el7031::EL7031::new()))),
         EL7031_0030_IDENTITY_A => Ok(Rc::new(RefCell::new(el7031_0030::EL7031_0030::new()))),
         EL7041_0052_IDENTITY_A => Ok(Rc::new(RefCell::new(el7041_0052::EL7041_0052::new()))),
-
+        EL9505_IDENTITY_A => Ok(Rc::new(RefCell::new(el9505::EL9505::new()))),
+        EL1124_IDENTITY_A => Ok(Rc::new(RefCell::new(el1124::EL1124::new()))),
         EL2521_IDENTITY_0000_A | EL2521_IDENTITY_0000_B | EL2521_IDENTITY_0024_A => {
             Ok(Rc::new(RefCell::new(EL2521::new())))
         }

@@ -1128,6 +1128,7 @@ impl MinasA6BMotor {
                     self.state = State::ErrorResetToggled;
                 }
             }
+            #[allow(unreachable_patterns)]
             State::ErrorResetToggled => {
                 self.classify_state();
             }
