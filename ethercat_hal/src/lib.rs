@@ -214,7 +214,7 @@ impl Default for MetaSubdevice {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Clone,Copy)]
 pub enum EtherCATState {
     NoInterface = 0,
     Boot = 1,
