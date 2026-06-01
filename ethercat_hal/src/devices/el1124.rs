@@ -72,6 +72,7 @@ impl DigitalInputDevice for EL1124 {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub enum EL1124Port {
     DI1,
@@ -80,6 +81,7 @@ pub enum EL1124Port {
     DI4,
 }
 
+#[allow(dead_code)]
 impl EL1124Port {
     pub const fn to_bit_index(&self) -> usize {
         match self {
@@ -114,6 +116,7 @@ impl Default for EL1124TxPdo {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum EL1124PredefinedPdoAssignment {
     All,

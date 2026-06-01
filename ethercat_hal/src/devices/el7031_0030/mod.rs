@@ -12,8 +12,7 @@ use crate::{
         counter_wrapper_u16_i128::CounterWrapperU16U128, signing_converter_u16::U16SigningConverter,
     },
     io::{
-        analog_input::{AnalogInputDevice, AnalogInputInput, physical::AnalogInputRange},
-        digital_input::DigitalInputDevice,
+        analog_input::{AnalogInputInput, physical::AnalogInputRange},        
         stepper_velocity_el70x1::{
             StepperVelocityEL70x1Device, StepperVelocityEL70x1Input, StepperVelocityEL70x1Output,
         },
@@ -368,9 +367,13 @@ impl StepperVelocityEL70x1Device for EL7031_0030 {
     }
 
     fn set_enabled(&mut self, port: usize, enabled: bool) {
-        let mut output = self.get_output(port).unwrap();
+        let output = self.get_output(port);
+        let mut output = match output {
+            Ok(output) => output,
+            Err(_) => return,
+        };
         output.enable = enabled;
-        self.set_output(port, output);
+        let _ = self.set_output(port, output);
     }
 
     fn set_speed(&mut self, port: usize, steps_per_second: f64) -> Result<(), anyhow::Error> {
