@@ -30,6 +30,17 @@ fn main() {
     }
     eth_control
         .channel
+        .request_state_change(ethercat_hal::EtherCATState::SafeOp)
+        .expect("Channel was not ready");
+    loop {
+        match eth_control.controller.state {
+            ethercat_hal::EtherCATState::SafeOp => break,
+            _ => std::thread::sleep(Duration::from_millis(10)),
+        }
+    }
+
+    eth_control
+        .channel
         .request_state_change(ethercat_hal::EtherCATState::Op)
         .expect("Channel was not ready");
     loop {

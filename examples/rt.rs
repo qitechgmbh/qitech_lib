@@ -41,6 +41,8 @@ fn main() {
     for i in 0..ethercat_controller.subdevice_count {
         println!("{:?}", ethercat_controller.subdevices[i].get_name());
     }
+    let _res = ethercat_interface.request_state_change(EtherCATState::SafeOp);
+    std::thread::sleep(Duration::from_millis(5000));
 
     let _res = ethercat_interface.request_state_change(EtherCATState::Op);
     std::thread::sleep(Duration::from_millis(5000));
