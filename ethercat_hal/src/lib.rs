@@ -214,7 +214,7 @@ impl Default for MetaSubdevice {
     }
 }
 
-#[derive(Debug,Clone,Copy)]
+#[derive(Debug,Clone,Copy,PartialEq)]
 pub enum EtherCATState {
     NoInterface = 0,
     Boot = 1,
@@ -222,6 +222,7 @@ pub enum EtherCATState {
     PreOp = 3,
     PreopPdi = 4,
     Op = 5,
+    SafeOp = 6,
 }
 
 #[derive(Debug)]

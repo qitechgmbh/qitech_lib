@@ -105,6 +105,143 @@ where
 
 unsafe impl Sync for EtherCATController<TripleBufConsumer, TripleBufProducer> {}
 impl EtherCATController<TripleBufConsumer, TripleBufProducer> {    
+
+    // beckhoff docs mention devices not outputting anything in safeop
+    // This is only half true, WIth the EL2004 for example and in SafeOp
+    // If you set pin 0 to true you also get a 24v Dc signal ... So probably ethercrab doesnt map it correctly 
+    fn run_safe_tx_rx<'a>(&mut self,group : SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, SafeOp, HasDc>, maindevice : MainDevice<'a>) -> 
+        (SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, SafeOp, HasDc>, MainDevice<'a>) 
+        {
+
+        let rt = get_async_runtime();
+        let res = rt.block_on(async move {
+            loop {
+                let res = self.rx_channel.try_recv();
+                let response = match res {
+                    Ok(response) => Some(response),
+                            Err(_e) => None,
+                        };
+                    match response {
+                            Some(msg) =>  {                                    
+                                    match msg.channel_request {
+                                        ChannelRequests::ChangeState(ether_catstate) => 
+                                        {
+                                            self.state = ether_catstate;
+                                            return (group, maindevice);
+                                        }
+                                        _ => (),      
+                                    }
+                                },
+                                None => (),
+                            }
+
+                            let cycle_start = Instant::now();
+                            let _res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                            self.next_cycle = cycle_start
+                                + Duration::from_micros(
+                                    self.current_config.target_cycle_time_us as u64,
+                                );
+                            let full_buffer = self.input_producer.input_buffer_mut();
+                            // We get a mutable slice to the whole buffer to make sub-slicing easier
+                            let mut current_offset = 0;
+                            for subdevice in group.iter(&maindevice) {
+                                let len = subdevice.io_raw().inputs().len();
+                                if current_offset + len <= ETHERCAT_TX_RX_SIZE {
+                                    full_buffer[current_offset..current_offset + len]
+                                        .copy_from_slice(subdevice.io_raw().inputs());
+                                    current_offset += len;
+                                } else {
+                                    //println!("Data exceeds buffer");
+                                    break;
+                                }
+                            }
+                            self.input_producer.publish();
+                            while Instant::now() < self.next_cycle {
+                                std::hint::spin_loop();
+                            }
+
+                            self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
+                            if self.cycle == u64::MAX {
+                                self.cycle = 0;
+                            }else{
+                                self.cycle += 1;
+                            }
+                        }
+                    }
+            );
+        res
+        }
+
+        fn run_tx_rx(&mut self,group : SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, Op, HasDc>, maindevice : MainDevice) -> () 
+        {
+            self.cycle = 0;            
+            let rt = get_async_runtime();
+            let res = rt.block_on(async move {
+                match &self.current_config.realtime_optimizations {
+                    Some(opt) => {
+                                let id = core_affinity::CoreId {
+                                    id: opt.ethercat_loop_thread_core,
+                                };
+                                set_current_thread_rt_priority(
+                                    opt.ethercat_loop_thread_priority as i32,
+                                );
+                                core_affinity::set_for_current(id);
+                            }
+                            None => (),
+                        };
+
+                        loop {
+                            let cycle_start = Instant::now();
+                            let _res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                            self.next_cycle = cycle_start
+                                + Duration::from_micros(
+                                    self.current_config.target_cycle_time_us as u64,
+                                );
+                            let full_buffer = self.input_producer.input_buffer_mut();
+                            // We get a mutable slice to the whole buffer to make sub-slicing easier
+                            let mut current_offset = 0;
+                            for subdevice in group.iter(&maindevice) {
+                                let len = subdevice.io_raw().inputs().len();
+                                if current_offset + len <= ETHERCAT_TX_RX_SIZE {
+                                    full_buffer[current_offset..current_offset + len]
+                                        .copy_from_slice(subdevice.io_raw().inputs());
+                                    current_offset += len;
+                                } else {
+                                    //println!("Data exceeds buffer");
+                                    break;
+                                }
+                            }
+
+                            self.input_producer.publish();
+                            let full_buffer = self.output_consumer.read();
+                            // We get a mutable slice to the whole buffer to make sub-slicing easier
+                            let mut current_offset = 0;
+                            
+                            for subdevice in group.iter(&maindevice) {
+                                let mut output = subdevice.outputs_raw_mut();
+                                let len = output.len();
+                                output.copy_from_slice(
+                                    &full_buffer[current_offset..current_offset + len],
+                                );
+                                current_offset += len;
+                            }
+                            
+                            while Instant::now() < self.next_cycle {
+                                std::hint::spin_loop();
+                            }
+
+                            self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
+                            if self.cycle == u64::MAX {
+                                self.cycle = 0;
+                            }else{
+                                self.cycle += 1;
+                            }
+                        }
+                    }
+            );
+        res
+        }
+
     pub fn ethercat_state_machine(&mut self) {        
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>> = None;
@@ -113,6 +250,7 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
             SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, HasDc>,
         > = None;
         let mut group_op: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, Op, HasDc>> = None;
+        let mut group_safe_op : Option<SubDeviceGroup<MAX_SUBDEVICES,PDI_LEN,SafeOp,HasDc>> = None;
         let mut maindevice: Option<MainDevice> = None;
         loop {
             match self.state {
@@ -250,7 +388,8 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                 continue; // end the loop here -> go back to NoInterface state
                             }
                             EtherCATState::PreOp => continue,
-                            EtherCATState::Op => (),
+                            EtherCATState::SafeOp => (),
+                            EtherCATState::Op => continue,
                             _ => continue,
                         },
                         ChannelRequests::Shutdown() => return,
@@ -437,7 +576,7 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
 
                     let mut tick = 0;
                     let rt = get_async_runtime();
-                    let group_safe_op = loop {
+                    group_safe_op = loop {
                         match group_container.take().unwrap() {
                             GroupState::PreOp(group) => {
                                 let device = maindevice.as_ref().unwrap();
@@ -494,7 +633,7 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                         rx_offset += length_rx;
                                         tx_offset += length_tx;
                                     }
-                                    break group_back;
+                                    break Some(group_back);
                                 } else {
                                     group_container = Some(GroupState::SafeOp(group_back));
                                 }
@@ -502,24 +641,23 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                         }
                         tick += 1;
                     };
-
+                    println!("Started Transition to SafeOp");
+                    self.state = EtherCATState::SafeOp;
+                }
+                EtherCATState::SafeOp => {
+                    let tuple = self.run_safe_tx_rx(group_safe_op.unwrap(),maindevice.unwrap());
+                    group_safe_op = Some(tuple.0);
+                    maindevice = Some(tuple.1);
+                    let rt = get_async_runtime();
                     group_op = Some(
-                        rt.block_on(group_safe_op.request_into_op(&maindevice.as_ref().unwrap()))
+                        rt.block_on(group_safe_op.take().unwrap().request_into_op(&maindevice.as_ref().unwrap()))
                             .expect("SAFE-OP -> OP"),
                     );
-
-                    println!("Started Transition to OP");
-                    self.state = EtherCATState::Op;
-                }
-                EtherCATState::Op => {
-                    let rt = get_async_runtime();
-                    let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
                     loop {
                         let response = rt
                             .block_on(group_op.as_ref().unwrap().tx_rx_dc(&maindevice))
                             .expect("TX/RX");
-
                         if response.all_op() {
                             for i in 0..self.subdevice_count {
                                 self.subdevices[i].initialized = true;
@@ -528,67 +666,10 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                             break;
                         }
                     }
-
-                    rt.block_on(async {
-                        match &self.current_config.realtime_optimizations {
-                            Some(opt) => {
-                                let id = core_affinity::CoreId {
-                                    id: opt.ethercat_loop_thread_core,
-                                };
-                                set_current_thread_rt_priority(
-                                    opt.ethercat_loop_thread_priority as i32,
-                                );
-                                core_affinity::set_for_current(id);
-                            }
-                            None => (),
-                        };
-
-                        loop {
-                            let cycle_start = Instant::now();
-                            let _res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
-                            self.next_cycle = cycle_start
-                                + Duration::from_micros(
-                                    self.current_config.target_cycle_time_us as u64,
-                                );
-                            let full_buffer = self.input_producer.input_buffer_mut();
-                            // We get a mutable slice to the whole buffer to make sub-slicing easier
-                            let mut current_offset = 0;
-                            for subdevice in group.iter(&maindevice) {
-                                let len = subdevice.io_raw().inputs().len();
-                                if current_offset + len <= ETHERCAT_TX_RX_SIZE {
-                                    full_buffer[current_offset..current_offset + len]
-                                        .copy_from_slice(subdevice.io_raw().inputs());
-                                    current_offset += len;
-                                } else {
-                                    println!("Data exceeds buffer");
-                                    break;
-                                }
-                            }
-
-                            self.input_producer.publish();
-                            let full_buffer = self.output_consumer.read();
-                            // We get a mutable slice to the whole buffer to make sub-slicing easier
-                            let mut current_offset = 0;
-                            for subdevice in group.iter(&maindevice) {
-                                let mut output = subdevice.outputs_raw_mut();
-                                let len = output.len();
-                                output.copy_from_slice(
-                                    &full_buffer[current_offset..current_offset + len],
-                                );
-                                current_offset += len;
-                            }
-                            while Instant::now() < self.next_cycle {
-                                std::hint::spin_loop();
-                            }
-                            self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
-                            if self.cycle == u64::MAX {
-                                self.cycle = 0;
-                            }else{
-                                self.cycle += 1;
-                            }
-                            
-                        }
-                    });
+                }
+                EtherCATState::Op => {
+                  self.run_tx_rx(group_op.unwrap(),maindevice.unwrap());
+                  break;         
                 }
             }
             self.requested_state = None;
