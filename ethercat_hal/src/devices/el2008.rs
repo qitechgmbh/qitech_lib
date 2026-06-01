@@ -31,6 +31,10 @@ impl NewEthercatDevice for EL2008 {
 
 impl DigitalOutputDevice for EL2008 {
     fn set_output(&mut self, port: usize, value: bool) {
+
+        println!("EL2008 set output port: {} {}", port, value);
+        return;
+        /*
         let expect_text = "All channels should be Some(_)";
         match port {
             0 => self.rxpdo.channel1.as_mut().expect(expect_text).value = value.into(),
@@ -42,7 +46,7 @@ impl DigitalOutputDevice for EL2008 {
             6 => self.rxpdo.channel7.as_mut().expect(expect_text).value = value.into(),
             7 => self.rxpdo.channel8.as_mut().expect(expect_text).value = value.into(),
             _ => (),
-        }
+        }*/
     }
 
     fn get_port_count(&self) -> usize {
