@@ -301,7 +301,7 @@ pub fn send_response(response_channel: EtherCATThreadResponseChannel, response: 
 #[cfg(feature = "mock")]
 pub fn init_ethercat_mock(
     faked_subdevices: Vec<MetaSubdevice>,
-    machine_infos: Option<Vec<MachineDeviceInfo>>,
+    _machine_infos: Option<Vec<MachineDeviceInfo>>,
 ) -> EtherCATControl<MockConsumer, MockProducer> {
     let (_, rx) = mpsc::channel(); // wont actually get used in any way, just here to avoid handling options in the controller ...
     let mock_producer = [0u8; ETHERCAT_TX_RX_SIZE];
@@ -322,7 +322,7 @@ pub fn init_ethercat_mock(
     };
 
     let channel: EtherCATThreadChannel = EtherCATThreadChannel {
-        sdo_map: HashMap::new(),
+        sdo_map: std::collections::HashMap::new(),
         machine_device_infos: vec![],
     };
     let app_handle = EtherCATAppHandle {
@@ -330,7 +330,7 @@ pub fn init_ethercat_mock(
         output_producer: producer,
     };
 
-    let mut controller = EtherCATController::new(producer_c, consumer_c, rx, None);
+    let mut controller = EtherCATController::new(producer_c, consumer_c, rx, None, MasterConfiguration::default());
 
     controller.subdevice_count = faked_subdevices.len();
     for i in 0..faked_subdevices.len() {

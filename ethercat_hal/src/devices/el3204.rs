@@ -117,12 +117,12 @@ pub const EL3204_IDENTITY_B: SubDeviceIdentityTuple =
 impl crate::devices::MockEtherCatSdos for EL3204 {
     fn get_sdo_map() -> std::collections::HashMap<crate::SdoIndex, crate::devices::TypeErasedValue>
     {
-        let mut map = HashMap::new();
+        let mut map = std::collections::HashMap::new();
         // Helper to insert values into the map
-        let mut insert_sdo = |idx: u32, sub: u16, val: u64, size: usize, tid: TypeId| {
+        let mut insert_sdo = |idx: u32, sub: u16, val: u64, size: usize, tid: std::any::TypeId| {
             let bytes = val.to_le_bytes()[..size].to_vec();
             map.insert(
-                SdoIndex {
+                crate::SdoIndex {
                     index: idx,
                     sub_index: sub,
                 },
@@ -167,7 +167,7 @@ impl crate::devices::MockEtherCatSdos for EL3204 {
 
         for (base_index, sub_values) in channels {
             // SubIndex 0: Number of entries (UNSIGNED8)
-            insert_sdo(base_index, 0x00, 0x09, 1, TypeId::of::<u8>());
+            insert_sdo(base_index, 0x00, 0x09, 1, std::any::TypeId::of::<u8>());
             // SubIndices 1 through 9: PDO Mappings (UNSIGNED32)
             for (i, &val) in sub_values.iter().enumerate() {
                 insert_sdo(
@@ -175,7 +175,7 @@ impl crate::devices::MockEtherCatSdos for EL3204 {
                     (i + 1) as u16,
                     val as u64,
                     4,
-                    TypeId::of::<u32>(),
+                    std::any::TypeId::of::<u32>(),
                 );
             }
         }
