@@ -81,7 +81,7 @@ pub struct Module {
 
 #[cfg(feature = "mock")]
 pub trait MockEtherCatSdos {
-    fn get_sdo_map() -> HashMap<SdoIndex, TypeErasedValue>;
+    fn get_sdo_map() -> std::collections::HashMap<crate::SdoIndex, TypeErasedValue>;
 }
 
 /// A trait for all devices
