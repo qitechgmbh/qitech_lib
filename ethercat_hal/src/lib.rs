@@ -557,7 +557,6 @@ pub fn init_ethercat(
     let join_handle = std::thread::Builder::new()
     .name("EthercatStateMachine".into())
     .spawn(move || {
-        // Change the first generic parameter from Mailbox to Arc<Mailbox>
         let ptr = Arc::as_ptr(&controller_for_thread) 
             as *mut EtherCATController<std::sync::Arc<Mailbox>, TripleBufProducer>;
         unsafe {
