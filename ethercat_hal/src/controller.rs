@@ -34,8 +34,6 @@ where
     rx_channel: Receiver<ChannelRequest>,
     input_producer: P,
     output_consumer: C,
-    output : [u8; ETHERCAT_TX_RX_SIZE],
-    input  : [u8; ETHERCAT_TX_RX_SIZE],
 }
 
 fn set_current_thread_rt_priority(priority: i32) {
@@ -90,8 +88,6 @@ where
             input_producer: input,
             output_consumer: output,
             current_config: config,
-            output: [0u8;ETHERCAT_TX_RX_SIZE],
-            input: [0u8;ETHERCAT_TX_RX_SIZE],
         }
     }
 
@@ -551,7 +547,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             }
                             None => (),
                         };
-
+                        let mut output_snapshot = [0u8; ETHERCAT_TX_RX_SIZE];
                         loop {
                             let cycle_start = Instant::now();
                             let _res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
@@ -577,7 +573,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                             match self.output_consumer.read() {
                                 Some(out) => {
-                                    self.output.copy_from_slice(out);
+                                    output_snapshot.copy_from_slice(out);
                                 },
                                 None => (),
                             };
@@ -587,16 +583,14 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 let mut output = subdevice.outputs_raw_mut();
                                 let len = output.len();
                                 output.copy_from_slice(
-                                    &self.output[current_offset..current_offset + len],
+                                    &output_snapshot[current_offset..current_offset + len],
                                 );
                                 current_offset += len;
                             }
                             self.output_consumer.finish_read();
-
                             while Instant::now() < self.next_cycle {
                                 std::hint::spin_loop();
                             }
-
                             self.cycle_time_us.store(cycle_start.elapsed().as_micros() as usize, std::sync::atomic::Ordering::Relaxed);
                             self.cycle.fetch_add(1, std::sync::atomic::Ordering::Relaxed);                                                        
                         }
