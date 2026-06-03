@@ -516,30 +516,28 @@ impl Default for MasterConfiguration {
 pub fn init_ethercat(
     interface_name: &str,
     config: Option<MasterConfiguration>,
-) -> EtherCATControl<Arc<Mailbox>, TripleBufProducer, TripleBufConsumer,Arc<Mailbox>> {
+) -> EtherCATControl<Arc<Mailbox>, Arc<Mailbox>, Arc<Mailbox>,Arc<Mailbox>> {
     let (tx, rx) = mpsc::channel();
-    let (input_producer, input_consumer) =
-        triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);    
-    
     let mailbox = Arc::new(Mailbox { 
+        data: [0u8; ETHERCAT_TX_RX_SIZE].into(), 
+        full: AtomicBool::new(false),         
+    });
+
+    let mailbox_ecat = Arc::new(Mailbox { 
         data: [0u8; ETHERCAT_TX_RX_SIZE].into(), 
         full: AtomicBool::new(false),         
     });
     
     let controller = match config {
         Some(conf) => Arc::new(EtherCATController::new(
-            TripleBufProducer {
-                output_producer: input_producer,
-            },
+            mailbox_ecat.clone(),
             mailbox.clone(),
             rx,
             Some(interface_name.to_string()),
             conf,
         )),
         None => Arc::new(EtherCATController::new(
-            TripleBufProducer {
-                output_producer: input_producer,
-            },
+            mailbox_ecat.clone(),
             mailbox.clone(),
             rx,
             Some(interface_name.to_string()),
@@ -548,7 +546,7 @@ pub fn init_ethercat(
     };
 
     let app_handle = EtherCATAppHandle {
-        input_consumer: TripleBufConsumer { input_consumer },
+        input_consumer: mailbox_ecat,
         output_producer: mailbox,
     };
 
@@ -558,7 +556,7 @@ pub fn init_ethercat(
     .name("EthercatStateMachine".into())
     .spawn(move || {
         let ptr = Arc::as_ptr(&controller_for_thread) 
-            as *mut EtherCATController<std::sync::Arc<Mailbox>, TripleBufProducer>;
+            as *mut EtherCATController<std::sync::Arc<Mailbox>,std::sync::Arc<Mailbox>>;
         unsafe {
             (&mut *ptr).ethercat_state_machine();
         }

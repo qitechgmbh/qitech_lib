@@ -15,9 +15,9 @@ pub fn main() {
     let mut loop_count = 0;
 
     while loop_count < 1000 {
-        serial_device.send_next_request().expect("wtf");
+        serial_device.send_next_request().expect("");
         std::thread::sleep_ms(3);
-        serial_device.handle_response().expect("wtf2");
+        serial_device.handle_response().expect("");
         {
             println!("laser_measurement: {:?}", serial_device.measurement);
         }

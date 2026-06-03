@@ -1,5 +1,5 @@
 use crate::{
-    ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES, Mailbox, MasterConfiguration, MetaSubdevice, PDI_LEN, PDU_STORAGE, Producer, SdoType,TripleBufProducer, ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write}, get_async_runtime, machine_ident_read::{
+    ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES, Mailbox, MasterConfiguration, MetaSubdevice, PDI_LEN, PDU_STORAGE, Producer, SdoType, ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write}, get_async_runtime, machine_ident_read::{
         read_device_identifications, write_device_identifications,
     }, send_response
 };
@@ -119,8 +119,8 @@ const PRE_OP : u8 = EtherCATState::PreOp as u8;
 const PRE_OP_PDI : u8 = EtherCATState::PreopPdi as u8;
 const OP : u8 = EtherCATState::Op as u8;
 
-unsafe impl Sync for EtherCATController<Arc<Mailbox>, TripleBufProducer> {}
-impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
+unsafe impl Sync for EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {}
+impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
     pub fn ethercat_state_machine(&mut self) {        
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>> = None;
@@ -547,7 +547,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             }
                             None => (),
                         };
-                        let mut output_snapshot = [0u8; ETHERCAT_TX_RX_SIZE];
+
+                        let mut output_snapshot = [0u8; ETHERCAT_TX_RX_SIZE];                    
                         loop {
                             let cycle_start = Instant::now();
                             let _res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
@@ -555,25 +556,28 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 + Duration::from_micros(
                                     self.current_config.target_cycle_time_us as u64,
                             );
-                            let input = self.input_producer.input_buffer_mut().expect("input_producer should always have inputs");
-                            // We get a mutable slice to the whole buffer to make sub-slicing easier
-                            let mut current_offset = 0;
-                            for subdevice in group.iter(&maindevice) {
-                                let len = subdevice.io_raw().inputs().len();
-                                if current_offset + len <= ETHERCAT_TX_RX_SIZE {
-                                    input[current_offset..current_offset + len]
-                                        .copy_from_slice(subdevice.io_raw().inputs());
-                                    current_offset += len;
-                                } else {
-                                    println!("Data exceeds buffer");
-                                    break;
+
+                            if let Some(input) = self.input_producer.input_buffer_mut() {
+                                let mut current_offset = 0;
+                                for subdevice in group.iter(&maindevice) {
+                                    let len = subdevice.io_raw().inputs().len();
+                                    if current_offset + len <= ETHERCAT_TX_RX_SIZE {
+                                        input[current_offset..current_offset + len]
+                                            .copy_from_slice(subdevice.io_raw().inputs());
+                                        current_offset += len;
+                                    } else {
+                                        println!("Data exceeds buffer");
+                                        break;
+                                    }
                                 }
+                                // Mark the buffer as full so the client can read it
+                                self.input_producer.publish(); 
                             }
-                            self.input_producer.publish();
 
                             match self.output_consumer.read() {
                                 Some(out) => {
                                     output_snapshot.copy_from_slice(out);
+                                    self.output_consumer.finish_read();
                                 },
                                 None => (),
                             };
@@ -587,10 +591,11 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 );
                                 current_offset += len;
                             }
-                            self.output_consumer.finish_read();
+                            
                             while Instant::now() < self.next_cycle {
                                 std::hint::spin_loop();
                             }
+                            
                             self.cycle_time_us.store(cycle_start.elapsed().as_micros() as usize, std::sync::atomic::Ordering::Relaxed);
                             self.cycle.fetch_add(1, std::sync::atomic::Ordering::Relaxed);                                                        
                         }
