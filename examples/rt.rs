@@ -36,9 +36,9 @@ fn main() {
 
     println!(
         "found {:?} ethercat terminals: ",
-        ethercat_controller.subdevice_count
+        ethercat_controller.get_subdevice_count()
     );
-    for i in 0..ethercat_controller.subdevice_count {
+    for i in 0..ethercat_controller.get_subdevice_count() {
         println!("{:?}", ethercat_controller.subdevices[i].get_name());
     }
 
@@ -56,26 +56,26 @@ fn main() {
     // But with a sligthly rewritten ethercat_hal/controller.rs or maybe just a different Producer/Consumer it should be possible
     // Currently By Default a Triple Buffer Producer/Consumer is used
     let mut missed_frames: Vec<u64> = vec![];
-    let mut last_cycle = ethercat_controller.cycle;
+    let mut last_cycle = ethercat_controller.get_cycle();
     let mut cycles_recorded = 0;
 
     while cycles_recorded < total_cycles {
         // Spin until time is up OR the controller has advanced past our last seen cycle
         while Instant::now() < ethercat_controller.next_cycle
-            && last_cycle == ethercat_controller.cycle
+            && last_cycle == ethercat_controller.get_cycle()
         {
             std::thread::yield_now();
         }
-        let current_controller_cycle = ethercat_controller.cycle;
+        let current_controller_cycle = ethercat_controller.get_cycle();
         if current_controller_cycle > last_cycle {
             if current_controller_cycle - last_cycle > 1 {
                 for i in (last_cycle + 1)..current_controller_cycle {
-                    missed_frames.push(i);
+                    missed_frames.push(i as u64);
                 }
             }
 
             last_cycle = current_controller_cycle;
-            let cycle_time = ethercat_controller.cycle_time_us;
+            let cycle_time = ethercat_controller.get_cycle_time_us();
             cycle_times.push(cycle_time);
 
             let jitter = (cycle_time as i64 - cycle_time_us as i64).abs() as u64;
@@ -89,9 +89,16 @@ fn main() {
         }
     }
     // --- STATISTICS CALCULATION ---
-    let min_time = *cycle_times.iter().min().unwrap_or(&0);
-    let max_time = *cycle_times.iter().max().unwrap_or(&0);
-    let sum_time: u64 = cycle_times.iter().sum();
+    cycle_times.sort_unstable();
+    jitters.sort_unstable();
+    let p99_index = (total_cycles * 99) / 100;
+    let p99_time = cycle_times[p99_index];
+    let p99_jitter = jitters[p99_index];
+    let max_jitter = *jitters.iter().max().unwrap_or(&0);
+
+    let min_time = cycle_times.iter().min().unwrap();
+    let max_time = cycle_times.iter().max().unwrap();
+    let sum_time: usize = cycle_times.iter().sum::<usize>();
     let avg_time = sum_time as f64 / total_cycles as f64;
 
     // Calculate standard deviation
@@ -104,15 +111,6 @@ fn main() {
         .sum::<f64>()
         / total_cycles as f64;
     let std_dev = variance.sqrt();
-
-    // Sort to extract percentiles
-    cycle_times.sort_unstable();
-    jitters.sort_unstable();
-
-    let p99_index = (total_cycles * 99) / 100;
-    let p99_time = cycle_times[p99_index];
-    let p99_jitter = jitters[p99_index];
-    let max_jitter = *jitters.iter().max().unwrap_or(&0);
 
     println!("\n================ BENCHMARK RESULTS ================");
     println!("Target Cycle Time:    {} µs", cycle_time_us);

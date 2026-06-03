@@ -106,6 +106,14 @@ where
     pub fn get_state(&self) -> EtherCATState {
         self.state.load(std::sync::atomic::Ordering::Acquire).into()
     }
+
+    pub fn get_cycle(&self) -> usize {
+        self.cycle.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn get_cycle_time_us(&self) -> usize {
+        self.cycle_time_us.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 const NO_INTERFACE : u8 = EtherCATState::NoInterface as u8;
@@ -226,15 +234,12 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             }
                         });
                         self.state.store(EtherCATState::PreOp as u8, Ordering::Release);
-                        println!("released the value");
                         send_response(msg.response_channel, ChannelResponse::ChangeState(Ok(())));
                     };
                 }
                 PRE_OP => {
-                   // println!("hello");
                     let maindev = maindevice.as_ref().unwrap();
                     let mut preop_group = group.as_mut().unwrap();
-
                     let mut i = 0;
                     for subdevice in preop_group.iter(&maindev) {
                         let bytes = subdevice.name().as_bytes();
