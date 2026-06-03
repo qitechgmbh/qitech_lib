@@ -559,13 +559,13 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 + Duration::from_micros(
                                     self.current_config.target_cycle_time_us as u64,
                             );
-                            self.input = *self.input_producer.input_buffer_mut().expect("input_producer should always have inputs");
+                            let input = self.input_producer.input_buffer_mut().expect("input_producer should always have inputs");
                             // We get a mutable slice to the whole buffer to make sub-slicing easier
                             let mut current_offset = 0;
                             for subdevice in group.iter(&maindevice) {
                                 let len = subdevice.io_raw().inputs().len();
                                 if current_offset + len <= ETHERCAT_TX_RX_SIZE {
-                                    self.input[current_offset..current_offset + len]
+                                    input[current_offset..current_offset + len]
                                         .copy_from_slice(subdevice.io_raw().inputs());
                                     current_offset += len;
                                 } else {
