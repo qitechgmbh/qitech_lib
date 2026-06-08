@@ -13,6 +13,8 @@ pub mod machine_ident_read;
 use crate::controller::EtherCATController;
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
+use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, OnceLock, mpsc::Sender};
 use std::thread::JoinHandle;
@@ -42,11 +44,12 @@ pub const PDI_LEN: usize = 1024;
 static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
 
 pub trait Consumer {
-    fn read(&mut self) -> &[u8];
+    fn read(&mut self) -> Option<&[u8]>;
+    fn finish_read(&mut self);
 }
 
 pub trait Producer {
-    fn input_buffer_mut(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE];
+    fn input_buffer_mut(&mut self) -> Option<&mut [u8; ETHERCAT_TX_RX_SIZE]>;
     fn publish(&mut self);
 }
 
@@ -59,8 +62,8 @@ pub struct MockProducer {
 }
 
 impl Producer for MockProducer {
-    fn input_buffer_mut(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
-        &mut self.buffer
+    fn input_buffer_mut(&mut self) -> Option<&mut [u8; ETHERCAT_TX_RX_SIZE]> {
+        Some(&mut self.buffer)
     }
 
     fn publish(&mut self) {
@@ -69,10 +72,82 @@ impl Producer for MockProducer {
 }
 
 impl Consumer for MockConsumer {
-    fn read(&mut self) -> &[u8] {
-        &self.buffer
+    fn read(&mut self) -> Option<&[u8]> {
+        Some(&self.buffer)
+    }
+    fn finish_read(&mut self) {
+        
     }
 }
+
+
+
+unsafe impl Sync for Mailbox {}
+unsafe impl Send for Mailbox {}
+
+pub struct Mailbox {
+    pub data : UnsafeCell<[u8;ETHERCAT_TX_RX_SIZE]>,
+    pub full : AtomicBool,
+}
+
+
+impl Consumer for std::sync::Arc<Mailbox> {
+    fn read(&mut self) -> Option<&[u8]> {
+        // Cast the shared Arc pointer to a mutable reference to Mailbox
+        let ptr = std::sync::Arc::as_ptr(self) as *mut Mailbox;
+        unsafe { (&mut *ptr).read() }
+    }
+
+    fn finish_read(&mut self) {
+        let ptr = std::sync::Arc::as_ptr(self) as *mut Mailbox;
+        unsafe { (&mut *ptr).finish_read(); }
+    }
+}
+
+impl Producer for std::sync::Arc<Mailbox> {
+    fn input_buffer_mut(&mut self) -> Option<&mut [u8; ETHERCAT_TX_RX_SIZE]> {
+        let ptr = std::sync::Arc::as_ptr(self) as *mut Mailbox;
+        unsafe { (&mut *ptr).input_buffer_mut() }
+    }
+
+    fn publish(&mut self) {
+        let ptr = std::sync::Arc::as_ptr(self) as *mut Mailbox;
+        unsafe { (&mut *ptr).publish(); }
+    }
+}
+
+impl Consumer for Mailbox {
+    fn read(&mut self) -> Option<&[u8]> {
+        // Consumer only reads if `full` is true
+        if !self.full.load(Ordering::Acquire) {
+            return None;
+        }
+        unsafe { Some(&*self.data.get()) }
+    }
+
+    fn finish_read(&mut self) {
+        // We are completely done reading. 
+        // We store `false` to release the buffer back to the producer.
+        self.full.store(false, Ordering::Release);
+    }
+}
+
+impl Producer for Mailbox {
+    fn input_buffer_mut(&mut self) -> Option<&mut [u8; ETHERCAT_TX_RX_SIZE]> {
+        // Producer only writes if `full` is false
+        if self.full.load(Ordering::Acquire) {
+            return None;
+        }
+        unsafe { Some(&mut *self.data.get()) }
+    }
+
+    fn publish(&mut self) {
+        // We are completely done writing. 
+        // We store `true` to release the buffer to the consumer.
+        self.full.store(true, Ordering::Release);
+    }
+}
+
 
 pub struct TripleBufConsumer {
     pub input_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
@@ -83,14 +158,15 @@ pub struct TripleBufProducer {
 }
 
 impl Consumer for TripleBufConsumer {
-    fn read(&mut self) -> &[u8] {
-        self.input_consumer.read()
+    fn read(&mut self) -> Option<&[u8]> {
+        Some(self.input_consumer.read())
     }
+    fn finish_read(&mut self) { }
 }
 
 impl Producer for TripleBufProducer {
-    fn input_buffer_mut(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
-        self.output_producer.input_buffer_mut()
+    fn input_buffer_mut(&mut self) -> Option<&mut [u8; ETHERCAT_TX_RX_SIZE]> {
+        Some(self.output_producer.input_buffer_mut())
     }
 
     fn publish(&mut self) {
@@ -112,11 +188,11 @@ where
     C: Consumer,
     P: Producer,
 {
-    pub fn get_inputs(&mut self) -> &[u8] {
+    pub fn get_inputs(&mut self) -> Option<&[u8]> {
         self.input_consumer.read()
     }
 
-    pub fn write_outputs(&mut self) -> &mut [u8; ETHERCAT_TX_RX_SIZE] {
+    pub fn write_outputs(&mut self) -> Option<&mut [u8; ETHERCAT_TX_RX_SIZE]> {
         self.output_producer.input_buffer_mut()
     }
 
@@ -152,14 +228,17 @@ pub struct EtherCATThreadChannel {
 
 #[derive(Clone)]
 pub struct EtherCATThreadResponseChannel(pub Sender<ChannelResponse>);
-pub struct EtherCATControl<C, P>
+
+pub struct EtherCATControl<C1, P1, C2, P2>
 where
-    C: Consumer,
-    P: Producer,
+    C1: Consumer,
+    P1: Producer,
+    C2 : Consumer,
+    P2 : Producer,
 {
-    pub controller: Arc<EtherCATController<C, P>>,
+    pub controller: Arc<EtherCATController<C1, P1>>,
     pub channel: EtherCATThreadChannel,
-    pub app_handle: EtherCATAppHandle<C, P>,
+    pub app_handle: EtherCATAppHandle<C2, P2>,
     pub join_handle: Option<JoinHandle<()>>,
 }
 
@@ -214,7 +293,8 @@ impl Default for MetaSubdevice {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Clone,Copy,PartialEq)]
+#[repr(u8)]
 pub enum EtherCATState {
     NoInterface = 0,
     Boot = 1,
@@ -222,6 +302,19 @@ pub enum EtherCATState {
     PreOp = 3,
     PreopPdi = 4,
     Op = 5,
+}
+
+impl From<u8> for EtherCATState {
+    fn from(value: u8) -> Self {
+        match value {            
+            1 => Self::Boot,
+            2 => Self::Init,
+            3 => Self::PreOp,
+            4 => Self::PreopPdi,
+            5 => Self::Op,
+            _ => EtherCATState::NoInterface,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -277,8 +370,9 @@ pub enum ChannelRequests {
     // usize in this case is the device_address
     EnableDCSync0(usize),
     Shutdown(),
-    // Legacy code, only usable when feature enable_legacy_code is set
+    // Legacy code, only usable when feature legacy_code is set
     ReadMachineIdent(),
+    WriteMachineIdent(Vec<MachineDeviceInfo>),
 }
 
 pub struct ChannelRequest {
@@ -300,7 +394,7 @@ pub fn send_response(response_channel: EtherCATThreadResponseChannel, response: 
 #[cfg(feature = "mock")]
 pub fn init_ethercat_mock(
     faked_subdevices: Vec<MetaSubdevice>,
-    machine_infos: Option<Vec<MachineDeviceInfo>>,
+    _machine_infos: Option<Vec<MachineDeviceInfo>>,
 ) -> EtherCATControl<MockConsumer, MockProducer> {
     let (_, rx) = mpsc::channel(); // wont actually get used in any way, just here to avoid handling options in the controller ...
     let mock_producer = [0u8; ETHERCAT_TX_RX_SIZE];
@@ -321,7 +415,7 @@ pub fn init_ethercat_mock(
     };
 
     let channel: EtherCATThreadChannel = EtherCATThreadChannel {
-        sdo_map: HashMap::new(),
+        sdo_map: std::collections::HashMap::new(),
         machine_device_infos: vec![],
     };
     let app_handle = EtherCATAppHandle {
@@ -329,7 +423,7 @@ pub fn init_ethercat_mock(
         output_producer: producer,
     };
 
-    let mut controller = EtherCATController::new(producer_c, consumer_c, rx, None);
+    let mut controller = EtherCATController::new(producer_c, consumer_c, rx, None, MasterConfiguration::default());
 
     controller.subdevice_count = faked_subdevices.len();
     for i in 0..faked_subdevices.len() {
@@ -422,22 +516,22 @@ impl Default for MasterConfiguration {
 pub fn init_ethercat(
     interface_name: &str,
     config: Option<MasterConfiguration>,
-) -> EtherCATControl<TripleBufConsumer, TripleBufProducer> {
+) -> EtherCATControl<Arc<Mailbox>, TripleBufProducer, TripleBufConsumer,Arc<Mailbox>> {
     let (tx, rx) = mpsc::channel();
-
     let (input_producer, input_consumer) =
-        triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
-    let (output_producer, output_consumer) =
-        triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
-
+        triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);    
+    
+    let mailbox = Arc::new(Mailbox { 
+        data: [0u8; ETHERCAT_TX_RX_SIZE].into(), 
+        full: AtomicBool::new(false),         
+    });
+    
     let controller = match config {
         Some(conf) => Arc::new(EtherCATController::new(
             TripleBufProducer {
                 output_producer: input_producer,
             },
-            TripleBufConsumer {
-                input_consumer: output_consumer,
-            },
+            mailbox.clone(),
             rx,
             Some(interface_name.to_string()),
             conf,
@@ -446,9 +540,7 @@ pub fn init_ethercat(
             TripleBufProducer {
                 output_producer: input_producer,
             },
-            TripleBufConsumer {
-                input_consumer: output_consumer,
-            },
+            mailbox.clone(),
             rx,
             Some(interface_name.to_string()),
             MasterConfiguration::default(),
@@ -457,23 +549,20 @@ pub fn init_ethercat(
 
     let app_handle = EtherCATAppHandle {
         input_consumer: TripleBufConsumer { input_consumer },
-        output_producer: TripleBufProducer { output_producer },
+        output_producer: mailbox,
     };
 
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx);
     let controller_for_thread = Arc::clone(&controller);
-
     let join_handle = std::thread::Builder::new()
-        .name("EthercatStateMachine".into())
-        .spawn(move || {
-            // We need &mut self for the state machine.
-            let ptr = Arc::as_ptr(&controller_for_thread)
-                as *mut EtherCATController<TripleBufConsumer, TripleBufProducer>;
-            unsafe {
-                (&mut *ptr).ethercat_state_machine();
-            }
-        })
-        .expect("Failed to spawn thread");
+    .name("EthercatStateMachine".into())
+    .spawn(move || {
+        let ptr = Arc::as_ptr(&controller_for_thread) 
+            as *mut EtherCATController<std::sync::Arc<Mailbox>, TripleBufProducer>;
+        unsafe {
+            (&mut *ptr).ethercat_state_machine();
+        }
+    }).expect("Failed to spawn thread");
     EtherCATControl {
         controller: controller,
         channel,

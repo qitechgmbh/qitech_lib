@@ -1,40 +1,37 @@
 use crate::{
-    ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState,
-    MAX_SUBDEVICES, MasterConfiguration, MetaSubdevice, PDI_LEN, PDU_STORAGE, Producer, SdoType,
-    TripleBufConsumer, TripleBufProducer,
-    ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
-    get_async_runtime,
-    machine_ident_read::{MachineDeviceInfo, read_device_identifications},
-    send_response,
+    ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES, Mailbox, MasterConfiguration, MetaSubdevice, PDI_LEN, PDU_STORAGE, Producer, SdoType,TripleBufProducer, ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write}, get_async_runtime, machine_ident_read::{
+        read_device_identifications, write_device_identifications,
+    }, send_response
 };
 
+use common::set_irq_affinity;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
     std::ethercat_now,
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
 };
 use std::{
-    sync::mpsc::Receiver,
+    sync::{Arc, atomic::{AtomicU8, AtomicUsize, Ordering}, mpsc::Receiver},
     thread::JoinHandle,
     time::{Duration, Instant},
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::time::interval;
-
 pub struct EtherCATController<C, P>
 where
     C: Consumer,
     P: Producer,
 {
-    pub cycle_time_us: u64,
-    pub interface: Option<String>,
-    pub subdevices: [MetaSubdevice; 256],
-    pub subdevice_count: usize,
-    pub state: EtherCATState,
-    pub current_config: MasterConfiguration,
+    pub state: AtomicU8,
+    pub next_cycle: Instant,
+    pub cycle: AtomicUsize,
+    pub cycle_time_us: AtomicUsize,
+    pub subdevice_count: AtomicUsize,
+    pub subdevices: [MetaSubdevice; 256],            
+    current_config: MasterConfiguration,
     requested_state: Option<EtherCATState>,
+    interface: Option<String>,
     rx_channel: Receiver<ChannelRequest>,
-    machine_device_infos: Option<Vec<MachineDeviceInfo>>,
     input_producer: P,
     output_consumer: C,
 }
@@ -79,29 +76,53 @@ where
         config: MasterConfiguration,
     ) -> Self {
         Self {
-            cycle_time_us: 0,
+            cycle: AtomicUsize::new(0),
+            next_cycle: std::time::Instant::now(),
+            cycle_time_us: AtomicUsize::new(0),
             interface,
             subdevices: [MetaSubdevice::default(); 256],
-            subdevice_count: 0,
-            state: EtherCATState::NoInterface,
+            subdevice_count: AtomicUsize::new(0),
+            state: AtomicU8::new(EtherCATState::NoInterface as u8),
             requested_state: None,
             rx_channel: rx,
             input_producer: input,
             output_consumer: output,
-            machine_device_infos: None,
             current_config: config,
         }
     }
 
     pub fn get_subdevices(&self) -> &[MetaSubdevice] {
-        &self.subdevices[0..self.subdevice_count]
+        &self.subdevices[0..self.subdevice_count.load(std::sync::atomic::Ordering::Acquire)]
+    }
+
+    pub fn get_subdevice_count(&self) -> usize {
+        self.subdevice_count.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    pub fn get_state(&self) -> EtherCATState {
+        self.state.load(std::sync::atomic::Ordering::Acquire).into()
+    }
+
+    pub fn get_cycle(&self) -> usize {
+        self.cycle.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn get_cycle_time_us(&self) -> usize {
+        self.cycle_time_us.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
-unsafe impl Sync for EtherCATController<TripleBufConsumer, TripleBufProducer> {}
-impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
-    pub fn ethercat_state_machine(&mut self) {
-        let mut ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
+const NO_INTERFACE : u8 = EtherCATState::NoInterface as u8;
+const BOOT : u8 = EtherCATState::Boot as u8;
+const INIT : u8 = EtherCATState::Init as u8;
+const PRE_OP : u8 = EtherCATState::PreOp as u8;
+const PRE_OP_PDI : u8 = EtherCATState::PreopPdi as u8;
+const OP : u8 = EtherCATState::Op as u8;
+
+unsafe impl Sync for EtherCATController<Arc<Mailbox>, TripleBufProducer> {}
+impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
+    pub fn ethercat_state_machine(&mut self) {        
+        let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>> = None;
         let mut group_preop_pdi: SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, NoDc>;
         let mut group_preop_pdi_dc: Option<
@@ -110,16 +131,16 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
         let mut group_op: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, Op, HasDc>> = None;
         let mut maindevice: Option<MainDevice> = None;
         loop {
-            match self.state {
-                EtherCATState::NoInterface => {
+            match self.state.load(Ordering::Acquire) {
+               NO_INTERFACE => {
                     if self.interface.is_some() {
-                        self.state = EtherCATState::Init;
+                        self.state.store(EtherCATState::Init as u8, Ordering::Release);
                     }
                 }
-                EtherCATState::Boot => {
+                BOOT => {
                     // Do Nothing
                 }
-                EtherCATState::Init => {
+                INIT => {
                     let msg = match self.rx_channel.try_recv() {
                         Ok(value) => value,
                         Err(_) => continue,
@@ -141,7 +162,7 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                         let pdu_rx = rx;
                         let interface = self.interface.clone().unwrap();
                         let opt = self.current_config.realtime_optimizations.clone();
-                        ethercat_tx_rx_handle = std::thread::Builder::new()
+                        _ethercat_tx_rx_handle = std::thread::Builder::new()
                             .name("EthercatTxRxThread".to_owned())
                             .spawn(move || {
                                 match opt {
@@ -154,6 +175,15 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                         );
                                         // Pin to the last core (e.g., Core 3 on a 4-core system)
                                         core_affinity::set_for_current(id);
+                                        if let Some(irq_core) = opt.pin_irq_core {
+                                            let res = set_irq_affinity(&interface, irq_core as u32);
+                                            if res.is_err() {
+                                                println!("set_irq_affinity failed: {:?}", res);
+                                            }else {
+                                                println!("set irq_affinity of {} to core {}",&interface,irq_core);
+                                            }
+                                            
+                                        }
                                     }
                                     None => (),
                                 };
@@ -193,8 +223,8 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                 group
                             }
                             Err(err) => {
-                                println!("failed moving to PreOp from Init {:?}", err);
-                                self.state = EtherCATState::Init;
+                                println!("failed moving to PreOp from Init {:?}", err);                                
+                                self.state.store(EtherCATState::Init as u8, Ordering::Release);
                                 send_response(
                                     msg.response_channel,
                                     ChannelResponse::ChangeState(Err(err.into())),
@@ -202,14 +232,13 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                 continue;
                             }
                         });
-                        self.state = EtherCATState::PreOp;
+                        self.state.store(EtherCATState::PreOp as u8, Ordering::Release);
                         send_response(msg.response_channel, ChannelResponse::ChangeState(Ok(())));
                     };
                 }
-                EtherCATState::PreOp => {
+                PRE_OP => {
                     let maindev = maindevice.as_ref().unwrap();
                     let mut preop_group = group.as_mut().unwrap();
-
                     let mut i = 0;
                     for subdevice in preop_group.iter(&maindev) {
                         let bytes = subdevice.name().as_bytes();
@@ -222,7 +251,7 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                         self.subdevices[i].device_address = subdevice.configured_address();
                         i += 1;
                     }
-                    self.subdevice_count = i;
+                    self.subdevice_count.store(i, std::sync::atomic::Ordering::Release );
                     let msg = match self.rx_channel.try_recv() {
                         Ok(value) => value,
                         Err(_e) => continue,
@@ -230,15 +259,6 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
 
                     match msg.channel_request {
                         ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {
-                            EtherCATState::NoInterface => {
-                                self.state = ether_catstate;
-                                send_response(
-                                    msg.response_channel,
-                                    ChannelResponse::ChangeState(Ok(())),
-                                );
-                                continue; // end the loop here -> go back to NoInterface state
-                            }
-                            EtherCATState::PreOp => continue,
                             EtherCATState::Op => (),
                             _ => continue,
                         },
@@ -304,6 +324,18 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                             send_response(
                                 msg.response_channel,
                                 ChannelResponse::MachineDeviceInfoResponse(res),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::WriteMachineIdent(identifications) => {
+                            let res = write_device_identifications(
+                                preop_group,
+                                maindev,
+                                &identifications,
+                            );
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::WriteMachineInfoResponse(res),
                             );
                             continue;
                         }
@@ -399,9 +431,9 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                         ))
                         .unwrap(),
                     );
-                    self.state = EtherCATState::PreopPdi;
+                    self.state.store(EtherCATState::PreopPdi as u8, std::sync::atomic::Ordering::Release);
                 }
-                EtherCATState::PreopPdi => {
+                PRE_OP_PDI => {
                     // State machine to handle transition to SafeOp with process data
                     enum GroupState {
                         PreOp(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, PreOpPdi, HasDc>),
@@ -455,6 +487,22 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
 
                                 if is_all_safe {
                                     println!("SAFE-OP");
+                                    // --- Calculate and map offsets here ---
+                                    let mut rx_offset = 0;
+                                    let mut tx_offset = 0;
+                                    for (i, subdevice) in group_back.iter(device).enumerate() {
+                                        let length_tx = subdevice.io_raw().inputs().len();
+                                        let length_rx = subdevice.io_raw().outputs().len();
+
+                                        self.subdevices[i].start_tx = tx_offset;
+                                        self.subdevices[i].end_tx = tx_offset + length_tx;
+
+                                        self.subdevices[i].start_rx = rx_offset;
+                                        self.subdevices[i].end_rx = rx_offset + length_rx;
+
+                                        rx_offset += length_rx;
+                                        tx_offset += length_tx;
+                                    }
                                     break group_back;
                                 } else {
                                     group_container = Some(GroupState::SafeOp(group_back));
@@ -467,38 +515,22 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                     group_op = Some(
                         rt.block_on(group_safe_op.request_into_op(&maindevice.as_ref().unwrap()))
                             .expect("SAFE-OP -> OP"),
-                    );
-
-                    println!("Started Transition to OP");
-                    self.state = EtherCATState::Op;
+                    );                                    
+                    self.state.store(EtherCATState::Op as u8, std::sync::atomic::Ordering::Release);
                 }
-                EtherCATState::Op => {
+                OP => {
                     let rt = get_async_runtime();
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
+                    let subdevice_count = self.subdevice_count.load(std::sync::atomic::Ordering::Acquire);
                     loop {
                         let response = rt
                             .block_on(group_op.as_ref().unwrap().tx_rx_dc(&maindevice))
                             .expect("TX/RX");
+
                         if response.all_op() {
-                            let mut rx_offset = 0;
-                            let mut tx_offset = 0;
-                            let mut i = 0;
-
-                            for subdevice in group.iter(&maindevice) {
-                                let length_tx = subdevice.io_raw().inputs().len();
-                                let length_rx = subdevice.io_raw().outputs().len();
-
+                            for i in 0..subdevice_count {
                                 self.subdevices[i].initialized = true;
-                                self.subdevices[i].start_tx = tx_offset;
-                                self.subdevices[i].end_tx = tx_offset + length_tx;
-
-                                self.subdevices[i].start_rx = rx_offset;
-                                self.subdevices[i].end_rx = rx_offset + length_rx;
-
-                                rx_offset += length_rx;
-                                tx_offset += length_tx;
-                                i += 1;
                             }
                             println!("ALL OP");
                             break;
@@ -514,30 +546,25 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                 set_current_thread_rt_priority(
                                     opt.ethercat_loop_thread_priority as i32,
                                 );
-                                // Pin to the last core (e.g., Core 3 on a 4-core system)
                                 core_affinity::set_for_current(id);
                             }
                             None => (),
                         };
-                        let mut next_wait = Instant::now()
-                            + Duration::from_micros(
-                                self.current_config.target_cycle_time_us as u64,
-                            );
-
+                        let mut output_snapshot = [0u8; ETHERCAT_TX_RX_SIZE];
                         loop {
                             let cycle_start = Instant::now();
-                            let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
-                            next_wait = cycle_start
+                            let _res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                            self.next_cycle = cycle_start
                                 + Duration::from_micros(
                                     self.current_config.target_cycle_time_us as u64,
-                                );
-                            let full_buffer = self.input_producer.input_buffer_mut();
+                            );
+                            let input = self.input_producer.input_buffer_mut().expect("input_producer should always have inputs");
                             // We get a mutable slice to the whole buffer to make sub-slicing easier
                             let mut current_offset = 0;
                             for subdevice in group.iter(&maindevice) {
                                 let len = subdevice.io_raw().inputs().len();
                                 if current_offset + len <= ETHERCAT_TX_RX_SIZE {
-                                    full_buffer[current_offset..current_offset + len]
+                                    input[current_offset..current_offset + len]
                                         .copy_from_slice(subdevice.io_raw().inputs());
                                     current_offset += len;
                                 } else {
@@ -545,26 +572,34 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                                     break;
                                 }
                             }
-
                             self.input_producer.publish();
-                            let full_buffer = self.output_consumer.read();
+
+                            match self.output_consumer.read() {
+                                Some(out) => {
+                                    output_snapshot.copy_from_slice(out);
+                                },
+                                None => (),
+                            };
                             // We get a mutable slice to the whole buffer to make sub-slicing easier
                             let mut current_offset = 0;
                             for subdevice in group.iter(&maindevice) {
                                 let mut output = subdevice.outputs_raw_mut();
                                 let len = output.len();
                                 output.copy_from_slice(
-                                    &full_buffer[current_offset..current_offset + len],
+                                    &output_snapshot[current_offset..current_offset + len],
                                 );
                                 current_offset += len;
                             }
-                            while Instant::now() < next_wait {
+                            self.output_consumer.finish_read();
+                            while Instant::now() < self.next_cycle {
                                 std::hint::spin_loop();
                             }
-                            self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
+                            self.cycle_time_us.store(cycle_start.elapsed().as_micros() as usize, std::sync::atomic::Ordering::Relaxed);
+                            self.cycle.fetch_add(1, std::sync::atomic::Ordering::Relaxed);                                                        
                         }
                     });
                 }
+                _ => (),
             }
             self.requested_state = None;
             std::thread::sleep(std::time::Duration::from_millis(1));

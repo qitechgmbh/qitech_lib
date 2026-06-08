@@ -289,15 +289,23 @@ impl StepperVelocityEL70x1Device for EL7041_0052 {
     }
 
     fn set_position(&mut self, port: usize, position: i128) {
-        let mut output = self.get_output(port).unwrap();
+        let output = self.get_output(port);
+        let mut output = match output {
+            Ok(output) => output,
+            Err(_) => return,
+        };
         output.set_counter = Some(position);
-        self.set_output(port, output).unwrap();
+        let _ = self.set_output(port, output);
     }
 
     fn set_enabled(&mut self, port: usize, enabled: bool) {
-        let mut output = self.get_output(port).unwrap();
+        let output = self.get_output(port);
+        let mut output = match output {
+            Ok(output) => output,
+            Err(_) => return,
+        };
         output.enable = enabled;
-        self.set_output(port, output);
+        let _ = self.set_output(port, output);
     }
 
     fn set_speed(&mut self, port: usize, steps_per_second: f64) -> Result<(), anyhow::Error> {

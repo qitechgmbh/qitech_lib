@@ -68,3 +68,47 @@ pub fn read_device_identifications(
 
     Ok(res?)
 }
+
+pub fn write_device_identifications(
+    group: &SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
+    maindevice: &MainDevice,
+    identifications: &[MachineDeviceInfo],
+) -> Result<(), anyhow::Error> {
+    tracing::info!("writing to device identifications");
+    let addresses = MachineDeviceAddresses::default();
+    let rt = get_async_runtime();
+    let res: Result<(), ethercrab::error::Error> = rt.block_on(async {
+        for subdevice in group.iter(maindevice) {
+            let info = match identifications
+                .iter()
+                .find(|i| i.device_address == subdevice.configured_address())
+            {
+                Some(info) => info,
+                None => {
+                    tracing::debug!(
+                        "No identification found for subdevice at address {}, skipping",
+                        subdevice.configured_address()
+                    );
+                    continue;
+                }
+            };
+
+            subdevice
+                .eeprom_write_dangerously(maindevice, addresses.vendor_word, info.machine_vendor)
+                .await?;
+            subdevice
+                .eeprom_write_dangerously(maindevice, addresses.serial_word, info.machine_serial)
+                .await?;
+            subdevice
+                .eeprom_write_dangerously(maindevice, addresses.machine_word, info.machine_id)
+                .await?;
+            subdevice
+                .eeprom_write_dangerously(maindevice, addresses.role_word, info.role)
+                .await?;
+        }
+
+        Ok(())
+    });
+
+    Ok(res?)
+}

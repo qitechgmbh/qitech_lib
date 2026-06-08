@@ -55,10 +55,10 @@ impl MachineDataRegistry {
     }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub enum MachineError {
     RecoverableFailure(String),
-    IrrecoverableFailure(String), // irrecoverable    
+    IrrecoverableFailure(String), // irrecoverable
 }
 
 pub trait Machine {

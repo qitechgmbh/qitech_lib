@@ -4,29 +4,21 @@ use std::rc::Rc;
 use super::{EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed, NewEthercatDevice};
 use crate::EtherCATThreadChannel;
 use crate::devices::SubDeviceIdentityTuple;
-use crate::devices::wago_modules::wago_750_430::{
-    WAGO_750_430_MODULE_IDENT, WAGO_750_430_PRODUCT_ID,
-};
-use crate::devices::wago_modules::wago_750_460::{
-    WAGO_750_460_MODULE_IDENT, WAGO_750_460_PRODUCT_ID,
-};
-use crate::devices::wago_modules::wago_750_671::{
-    WAGO_750_671_MODULE_IDENT, WAGO_750_671_PRODUCT_ID,
-};
-use crate::devices::wago_modules::wago_750_672::{
-    WAGO_750_672_MODULE_IDENT, WAGO_750_672_PRODUCT_ID,
-};
 use crate::devices::wago_modules::*;
 use crate::devices::{
     DynamicEthercatDevice, Module,
     wago_modules::{
         wago_750_402::{WAGO_750_402_MODULE_IDENT, WAGO_750_402_PRODUCT_ID},
+        wago_750_430::{WAGO_750_430_MODULE_IDENT, WAGO_750_430_PRODUCT_ID},
         wago_750_455::{WAGO_750_455_MODULE_IDENT, WAGO_750_455_PRODUCT_ID},
+        wago_750_460::{WAGO_750_460_MODULE_IDENT, WAGO_750_460_PRODUCT_ID},
         wago_750_501::{WAGO_750_501_MODULE_IDENT, WAGO_750_501_PRODUCT_ID},
         wago_750_530::{WAGO_750_530_MODULE_IDENT, WAGO_750_530_PRODUCT_ID},
         wago_750_531::{WAGO_750_531_MODULE_IDENT, WAGO_750_531_PRODUCT_ID},
         wago_750_553::{WAGO_750_553_MODULE_IDENT, WAGO_750_553_PRODUCT_ID},
         wago_750_652::{WAGO_750_652_MODULE_IDENT, WAGO_750_652_PRODUCT_ID},
+        wago_750_671::{WAGO_750_671_MODULE_IDENT, WAGO_750_671_PRODUCT_ID},
+        wago_750_672::{WAGO_750_672_MODULE_IDENT, WAGO_750_672_PRODUCT_ID},
         wago_750_1506::{WAGO_750_1506_MODULE_IDENT, WAGO_750_1506_PRODUCT_ID},
     },
 };

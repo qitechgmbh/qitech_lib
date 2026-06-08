@@ -1,12 +1,19 @@
+
+#[cfg(not(feature = "mock" ))]
 use crate::{
-    ChannelRequest, ChannelResponse, EtherCATState, EtherCATThreadChannel,
-    EtherCATThreadResponseChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType,
+    ChannelRequest, ChannelResponse,EtherCATThreadResponseChannel
+};
+#[cfg(not(feature = "mock" ))]
+use std::time::Duration;
+
+use crate::{
+    EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType,
     get_async_runtime, machine_ident_read::MachineDeviceInfo,
 };
 use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
 };
-use std::{any::TypeId, time::Duration};
+use std::{any::TypeId};
 
 pub trait EthercatResponseTypedResult: Sized {
     fn from_bool(_v: bool) -> anyhow::Result<Self> {
@@ -193,10 +200,10 @@ impl EtherCATThreadChannel {
 
     pub fn sdo_write<T: 'static>(
         &self,
-        device_address: u16,
-        index: u16,
-        sub_index: u8,
-        value: T,
+        _device_address: u16,
+        _index: u16,
+        _sub_index: u8,
+        _value: T,
     ) -> Result<(), anyhow::Error>
     where
         T: EtherCrabWireWrite + EthercatSdoBytes,
@@ -204,11 +211,11 @@ impl EtherCATThreadChannel {
         Ok(())
     }
 
-    pub fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error> {
+    pub fn request_state_change(&self, _state: EtherCATState) -> Result<(), anyhow::Error> {
         Ok(())
     }
 
-    pub fn enable_dc_sync0(&self, device_address: u16) -> Result<(), anyhow::Error> {
+    pub fn enable_dc_sync0(&self, _device_address: u16) -> Result<(), anyhow::Error> {
         Ok(())
     }
 }
@@ -281,6 +288,33 @@ impl EtherCATThreadChannel {
             ChannelResponse::MachineDeviceInfoResponse(machine_device_infos) => {
                 machine_device_infos
             }
+            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+        }
+    }
+
+    pub fn write_machine_device_info_eeprom(
+        &self,
+        info: Vec<MachineDeviceInfo>,
+    ) -> Result<(), anyhow::Error> {
+        use crate::ChannelRequests;
+
+        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
+        let req: ChannelRequest = ChannelRequest {
+            channel_request: ChannelRequests::WriteMachineIdent(info),
+            response_channel: EtherCATThreadResponseChannel(tx),
+        };
+        let res = self.0.send(req);
+        match res {
+            Ok(response) => response,
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+        let res = rx.recv_timeout(Duration::from_millis(5000));
+        let response: ChannelResponse = match res {
+            Ok(res) => res,
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+        match response {
+            ChannelResponse::WriteMachineInfoResponse(result) => result,
             _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
         }
     }
