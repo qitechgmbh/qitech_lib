@@ -65,6 +65,7 @@ impl EthercatDeviceProcessing for EL1259 {
                 let number_of_events_to_send = self.output_queues[channel].len().min(empty_splots_in_buffer).min(10);
                 let events_to_send: Vec<_> = self.output_queues[channel].drain(0..number_of_events_to_send).collect();
                 rxmto.set_events(&events_to_send);
+                rxmto.force_order = true;
             }
         }
 

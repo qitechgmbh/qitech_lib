@@ -660,6 +660,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let rt = get_async_runtime();
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
+
                     rt.block_on(async {
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
@@ -696,6 +697,22 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     .store(true, Ordering::Release);
                                 println!("ALL OP");
                                 break;
+                            } else {
+                                let mut has_error = false;
+
+                                for index in 0..self.subdevice_count {
+                                    let subdevice = group.subdevice(maindevice, index).expect("No subdevice at index");
+                                    let error_code: u16 = subdevice.register_read(0x0134u16).await.expect("Failed to read error code");
+
+                                    if error_code != 0 {
+                                        has_error = true;
+                                        println!("Subdevice at index {} failed to Op! Error code: {:#02x}", index, error_code);
+                                    }
+                                }
+
+                                if has_error {
+                                    panic!("Failed to go into Op!");
+                                }
                             }
                         }
 
