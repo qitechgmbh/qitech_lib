@@ -13,7 +13,10 @@ fn main() {
         .expect("Channel was not ready");
 
     std::thread::sleep(Duration::from_secs(1));
-    assert_eq!(eth_control.controller.get_state(), EtherCATState::PreOp);
+
+    if !matches!(eth_control.controller.state, EtherCATState::PreOp) {
+        panic!("Not yet in Pre Op!");
+    }
 
     println!("Subdevices:");
     for subdevice in eth_control.controller.get_subdevices() {
@@ -27,7 +30,7 @@ fn main() {
         .expect("Channel was not ready");
     std::thread::sleep(Duration::from_secs(1));
 
-    if eth_control.controller.get_state() != EtherCATState::Op {
+    if !matches!(eth_control.controller.state, EtherCATState::Op) {
         panic!("Not yet in Op, maybe a device needs DC Sync");
     }
 
