@@ -566,7 +566,26 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         }
 
                         loop {
+                            
                             let cycle_start = Instant::now();
+                            
+                            match self.output_consumer.read() {
+                                Some(full_buffer) => {
+                                // We get a mutable slice to the whole buffer to make sub-slicing easier
+                                let mut current_offset = 0;
+                                for subdevice in group.iter(&maindevice) {
+                                    let mut output = subdevice.outputs_raw_mut();
+                                    let len = output.len();
+                                    output.copy_from_slice(
+                                        &full_buffer[current_offset..current_offset + len],
+                                    );
+                                    current_offset += len;
+                                }
+                                self.output_consumer.finish_read();
+                                },
+                                None => {},
+                            };
+                            
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
                             match self.input_producer.input_buffer_mut() {
@@ -587,24 +606,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 },
                                 None => {},
                             }
-
-                            match self.output_consumer.read() {
-                                Some(full_buffer) => {
-                                // We get a mutable slice to the whole buffer to make sub-slicing easier
-                                let mut current_offset = 0;
-                                for subdevice in group.iter(&maindevice) {
-                                    let mut output = subdevice.outputs_raw_mut();
-                                    let len = output.len();
-                                    output.copy_from_slice(
-                                        &full_buffer[current_offset..current_offset + len],
-                                    );
-                                    current_offset += len;
-                                }
-                                self.output_consumer.finish_read();
-                                },
-                                None => {},
-                            };
-
                             
                             while Instant::now() < self.next_cycle {
                                 std::hint::spin_loop();

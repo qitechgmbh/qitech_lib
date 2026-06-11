@@ -192,6 +192,10 @@ where
         self.input_consumer.read()
     }
 
+    pub fn finish_read(&mut self) {
+        self.input_consumer.finish_read();
+    }
+
     pub fn write_outputs(&mut self) -> Option<&mut [u8; ETHERCAT_TX_RX_SIZE]> {
         self.output_producer.input_buffer_mut()
     }
