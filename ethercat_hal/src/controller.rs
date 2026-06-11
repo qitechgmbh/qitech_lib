@@ -102,6 +102,23 @@ where
     pub fn get_subdevices(&self) -> &[MetaSubdevice] {
         &self.subdevices[0..self.subdevice_count]
     }
+
+    pub fn get_subdevice_count(&self) -> usize {
+        self.subdevice_count
+    }
+
+    pub fn get_state(&self) -> EtherCATState {
+        self.state
+    }
+
+    pub fn get_cycle(&self) -> u64 {
+        self.cycle
+    }
+
+    pub fn get_cycle_time_us(&self) -> u64 {
+        self.cycle_time_us
+    }
+
 }
 
 unsafe impl Sync for EtherCATController<Arc<Mailbox>, TripleBufProducer> {}
