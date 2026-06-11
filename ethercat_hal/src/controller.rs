@@ -1,11 +1,11 @@
 use crate::{
     ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState,
     MAX_SUBDEVICES, MasterConfiguration, MetaSubdevice, PDI_LEN, PDU_STORAGE, Producer, SdoType,
-    TripleBufConsumer, TripleBufProducer,
+    TripleBufProducer,
     ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::{
-        MachineDeviceInfo, read_device_identifications, write_device_identifications,
+        read_device_identifications, write_device_identifications,
     },
     send_response,
 };
@@ -40,7 +40,6 @@ where
     pub current_config: MasterConfiguration,
     requested_state: Option<EtherCATState>,
     rx_channel: Receiver<ChannelRequest>,
-    machine_device_infos: Option<Vec<MachineDeviceInfo>>,
     input_producer: P,
     output_consumer: C,
 }
@@ -96,7 +95,6 @@ where
             rx_channel: rx,
             input_producer: input,
             output_consumer: output,
-            machine_device_infos: None,
             current_config: config,
         }
     }
@@ -109,7 +107,7 @@ where
 unsafe impl Sync for EtherCATController<Arc<Mailbox>, TripleBufProducer> {}
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
     pub fn ethercat_state_machine(&mut self) {
-        let mut ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
+        let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> = None;
         let mut group_preop_pdi: SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, NoDc>;
         let mut group_preop_pdi_dc: Option<
@@ -149,7 +147,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         let pdu_rx = rx;
                         let interface = self.interface.clone().unwrap();
                         let opt = self.current_config.realtime_optimizations.clone();
-                        ethercat_tx_rx_handle = std::thread::Builder::new()
+                        _ethercat_tx_rx_handle = std::thread::Builder::new()
                             .name("EthercatTxRxThread".to_owned())
                             .spawn(move || {
                                 match opt {
@@ -518,21 +516,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let rt = get_async_runtime();
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
-                    loop {
-                        let cycle_start = Instant::now();
-                        let response = rt
-                            .block_on(group_op.as_ref().unwrap().tx_rx_dc(&maindevice))
-                            .expect("TX/RX");
-
-                        if response.all_op() {
-                            for i in 0..self.subdevice_count {
-                                self.subdevices[i].initialized = true;
-                            }
-                            println!("ALL OP");
-                            break;
-                        }
-                    }
-
                     rt.block_on(async {
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
@@ -546,6 +529,24 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             }
                             None => (),
                         };
+
+                        loop {
+                            let cycle_start = Instant::now();
+                            let res = group_op.as_ref().unwrap().tx_rx_dc(&maindevice).await.expect("TX/RX");
+                            self.next_cycle = cycle_start + res.extra.next_cycle_wait;
+                        
+                            while Instant::now() < self.next_cycle {
+                                std::hint::spin_loop();
+                            }
+                        
+                            if res.all_op() {
+                                for i in 0..self.subdevice_count {
+                                    self.subdevices[i].initialized = true;
+                                }
+                                println!("ALL OP");
+                                break;
+                            }
+                        }
 
                         loop {
                             let cycle_start = Instant::now();
