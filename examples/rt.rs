@@ -98,7 +98,7 @@ fn main() {
 
     let min_time = cycle_times.iter().min().unwrap();
     let max_time = cycle_times.iter().max().unwrap();
-    let sum_time: usize = cycle_times.iter().sum::<usize>();
+    let sum_time: u64 = cycle_times.iter().sum::<u64>();
     let avg_time = sum_time as f64 / total_cycles as f64;
 
     // Calculate standard deviation
