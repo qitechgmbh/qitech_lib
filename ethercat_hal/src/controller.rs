@@ -9,7 +9,8 @@ use crate::{
     },
     send_response,
 };
-
+use std::sync::Arc;
+use crate::Mailbox;
 use common::set_irq_affinity;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
@@ -105,8 +106,8 @@ where
     }
 }
 
-unsafe impl Sync for EtherCATController<TripleBufConsumer, TripleBufProducer> {}
-impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
+unsafe impl Sync for EtherCATController<Arc<Mailbox>, TripleBufProducer> {}
+impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
     pub fn ethercat_state_machine(&mut self) {
         let mut ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> = None;
@@ -518,6 +519,7 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
                     loop {
+                        let cycle_start = Instant::now();
                         let response = rt
                             .block_on(group_op.as_ref().unwrap().tx_rx_dc(&maindevice))
                             .expect("TX/RX");
@@ -548,40 +550,48 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                         loop {
                             let cycle_start = Instant::now();
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
-                            self.next_cycle = cycle_start
-                                + Duration::from_micros(
-                                    self.current_config.target_cycle_time_us as u64,
-                                );
-                            let full_buffer = self.input_producer.input_buffer_mut();
-                            // We get a mutable slice to the whole buffer to make sub-slicing easier
-                            let mut current_offset = 0;
-                            for subdevice in group.iter(&maindevice) {
-                                let len = subdevice.io_raw().inputs().len();
-                                if current_offset + len <= ETHERCAT_TX_RX_SIZE {
-                                    full_buffer[current_offset..current_offset + len]
-                                        .copy_from_slice(subdevice.io_raw().inputs());
-                                    current_offset += len;
-                                } else {
-                                    println!("Data exceeds buffer");
-                                    break;
-                                }
+                            self.next_cycle = cycle_start + res.extra.next_cycle_wait;
+                            match self.input_producer.input_buffer_mut() {
+                                Some(buffer) => {
+                                    // We get a mutable slice to the whole buffer to make sub-slicing easier
+                                    let mut current_offset = 0;
+                                    for subdevice in group.iter(&maindevice) {
+                                        let len = subdevice.io_raw().inputs().len();
+                                        if current_offset + len <= ETHERCAT_TX_RX_SIZE {
+                                            buffer[current_offset..current_offset + len]
+                                                .copy_from_slice(subdevice.io_raw().inputs());
+                                            current_offset += len;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                    self.input_producer.publish();
+                                },
+                                None => {},
                             }
 
-                            self.input_producer.publish();
-                            let full_buffer = self.output_consumer.read();
-                            // We get a mutable slice to the whole buffer to make sub-slicing easier
-                            let mut current_offset = 0;
-                            for subdevice in group.iter(&maindevice) {
-                                let mut output = subdevice.outputs_raw_mut();
-                                let len = output.len();
-                                output.copy_from_slice(
-                                    &full_buffer[current_offset..current_offset + len],
-                                );
-                                current_offset += len;
-                            }
+                            match self.output_consumer.read() {
+                                Some(full_buffer) => {
+                                // We get a mutable slice to the whole buffer to make sub-slicing easier
+                                let mut current_offset = 0;
+                                for subdevice in group.iter(&maindevice) {
+                                    let mut output = subdevice.outputs_raw_mut();
+                                    let len = output.len();
+                                    output.copy_from_slice(
+                                        &full_buffer[current_offset..current_offset + len],
+                                    );
+                                    current_offset += len;
+                                }
+                                self.output_consumer.finish_read();
+                                },
+                                None => {},
+                            };
+
+                            
                             while Instant::now() < self.next_cycle {
                                 std::hint::spin_loop();
                             }
+
                             self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
                             if self.cycle == u64::MAX {
                                 self.cycle = 0;
