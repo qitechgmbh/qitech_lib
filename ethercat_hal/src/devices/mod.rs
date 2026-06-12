@@ -89,13 +89,7 @@ pub trait MockEtherCatSdos {
 /// provides interface to read and write the PDO data
 pub trait EthercatDevice
 where
-    Self: NewEthercatDevice
-        + EthercatDeviceProcessing
-        + EthercatDeviceUsed
-        + Any
-        + Send
-        + Sync
-        + Debug,
+    Self: NewEthercatDevice + EthercatDeviceProcessing + EthercatDeviceUsed + Any + Debug,
 {
     /// Input data from the last cycle
     /// `ts` is the timestamp when the input data was sent by the device
@@ -287,6 +281,22 @@ pub fn downcast_rc_refcell<T: 'static>(
     // Since we verified the type above, we can use raw pointers.
     let raw_trait_ptr = Rc::into_raw(dev);
     // We cast the fat pointer to a thin pointer of the concrete RefCell<T>
+    let raw_concrete_ptr = raw_trait_ptr as *const RefCell<T>;
+    unsafe { Ok(Rc::from_raw(raw_concrete_ptr)) }
+}
+
+/// Same as [`downcast_rc_refcell`] but for `dyn DynamicEthercatDevice`.
+/// `Rc<RefCell<dyn DynamicEthercatDevice>>` cannot be coerced to
+/// `Rc<RefCell<dyn EthercatDevice>>` through the `RefCell` wrapper, so a
+/// separate function is required.
+pub fn downcast_rc_refcell_dynamic<T: 'static>(
+    dev: Rc<RefCell<dyn DynamicEthercatDevice>>,
+) -> Result<Rc<RefCell<T>>, anyhow::Error> {
+    let is_t = dev.borrow().as_any().is::<T>();
+    if !is_t {
+        return Err(anyhow::anyhow!("Type mismatch in hardware downcast"));
+    }
+    let raw_trait_ptr = Rc::into_raw(dev);
     let raw_concrete_ptr = raw_trait_ptr as *const RefCell<T>;
     unsafe { Ok(Rc::from_raw(raw_concrete_ptr)) }
 }

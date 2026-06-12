@@ -1,21 +1,25 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use super::{EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed, NewEthercatDevice};
 use crate::EtherCATThreadChannel;
 use crate::devices::SubDeviceIdentityTuple;
-use crate::devices::wago_modules::wago_750_430::{
-    WAGO_750_430_MODULE_IDENT, WAGO_750_430_PRODUCT_ID,
-};
 use crate::devices::wago_modules::*;
 use crate::devices::{
     DynamicEthercatDevice, Module,
     wago_modules::{
         wago_750_402::{WAGO_750_402_MODULE_IDENT, WAGO_750_402_PRODUCT_ID},
+        wago_750_430::{WAGO_750_430_MODULE_IDENT, WAGO_750_430_PRODUCT_ID},
         wago_750_455::{WAGO_750_455_MODULE_IDENT, WAGO_750_455_PRODUCT_ID},
+        wago_750_460::{WAGO_750_460_MODULE_IDENT, WAGO_750_460_PRODUCT_ID},
         wago_750_501::{WAGO_750_501_MODULE_IDENT, WAGO_750_501_PRODUCT_ID},
         wago_750_530::{WAGO_750_530_MODULE_IDENT, WAGO_750_530_PRODUCT_ID},
+        wago_750_531::{WAGO_750_531_MODULE_IDENT, WAGO_750_531_PRODUCT_ID},
+        wago_750_553::{WAGO_750_553_MODULE_IDENT, WAGO_750_553_PRODUCT_ID},
         wago_750_652::{WAGO_750_652_MODULE_IDENT, WAGO_750_652_PRODUCT_ID},
-        wago_750_1506::{WAGO_750_1506_MODULE_IDENT, WAGO_750_1506_PRODUCT_ID},
         wago_750_671::{WAGO_750_671_MODULE_IDENT, WAGO_750_671_PRODUCT_ID},
-        wago_750_672::{WAGO_750_672_MODULE_IDENT, WAGO_750_672_PRODUCT_ID}
+        wago_750_672::{WAGO_750_672_MODULE_IDENT, WAGO_750_672_PRODUCT_ID},
+        wago_750_1506::{WAGO_750_1506_MODULE_IDENT, WAGO_750_1506_PRODUCT_ID},
     },
 };
 use anyhow::Error;
@@ -33,7 +37,7 @@ struct ModulePdoMapping {
 pub struct Wago750_354 {
     is_used: bool,
     pub slots: [Option<Module>; 64],
-    pub slot_devices: [Option<Box<dyn DynamicEthercatDevice>>; 64],
+    pub slot_devices: [Option<Rc<RefCell<dyn DynamicEthercatDevice>>>; 64],
     pub dev_count: usize,
     pub module_count: usize,
     rx_pdo_mappings: Vec<ModulePdoMapping>,
@@ -53,7 +57,7 @@ impl EthercatDevice for Wago750_354 {
         for slot_device in &mut self.slot_devices {
             match slot_device {
                 Some(device) => {
-                    let _ = device.input(input);
+                    let _ = device.borrow_mut().input(input);
                 }
                 None => break,
             }
@@ -73,7 +77,7 @@ impl EthercatDevice for Wago750_354 {
         for slot_device in &self.slot_devices {
             match slot_device {
                 Some(device) => {
-                    let _ = device.output(output);
+                    let _ = device.borrow_mut().output(output);
                 }
                 None => break,
             }
@@ -104,8 +108,6 @@ impl EthercatDevice for Wago750_354 {
     fn set_module(&mut self, module: Module) {
         self.slots[self.module_count] = Some(module.clone());
         self.module_count += 1;
-        self.tx_size += module.tx_offset;
-        self.rx_size += module.rx_offset;
     }
 }
 
@@ -145,19 +147,19 @@ impl std::fmt::Debug for Wago750_354 {
 
 impl Wago750_354 {
     pub fn calculate_module_index(pdo_mapping: u32, is_tx: bool) -> u32 {
-        let start_index = match is_tx {
-            true => 0x6000 as u32,
-            false => 0x7000 as u32,
+        let start_index: u32 = if is_tx { 0x6000 } else { 0x7000 };
+        let object_index = (pdo_mapping & 0xFFFF0000) >> 16;
+        let Some(index_in_hex) = object_index.checked_sub(start_index) else {
+            return u32::MAX;
         };
-        let index_in_hex = ((pdo_mapping & 0xFFFF0000) >> 16) - start_index;
         if index_in_hex < 16 {
-            return 0;
+            0
         } else {
-            return index_in_hex / 16;
+            index_in_hex / 16
         }
     }
 
-    pub async fn get_pdo_offsets<'a>(
+    pub fn get_pdo_offsets<'a>(
         &mut self,
         device_address: u16,
         ecat_channel: EtherCATThreadChannel,
@@ -167,7 +169,6 @@ impl Wago750_354 {
         let mut bit_offset = 0;
 
         let mut module_i;
-        let start_subindex = 0x2;
 
         let index = match get_tx {
             true => (TX_MAPPING_INDEX.0, TX_MAPPING_INDEX.1),
@@ -175,36 +176,22 @@ impl Wago750_354 {
         };
 
         let count_mappings = ecat_channel.sdo_read::<u8>(device_address, index.0, index.1)?;
-        let pdo_index = ecat_channel.sdo_read::<u16>(device_address, index.0, 1)?;
-        let pdo_map_count = ecat_channel.sdo_read::<u8>(device_address, pdo_index, 0)?;
 
-        for i in 0..pdo_map_count {
-            let pdo_mapping: u32 = ecat_channel.sdo_read(device_address, pdo_index, 1 + i)?;
-            let bit_length = (pdo_mapping & 0xFF) as u8;
-            bit_offset += bit_length as usize;
-        }
-
-        let mut mappings_without_coupler: Vec<u32> = vec![];
-        for i in start_subindex..count_mappings {
-            let pdo_index = ecat_channel.sdo_read(device_address, index.0, i)?;
+        for sub in 1..=count_mappings {
+            let pdo_index = ecat_channel.sdo_read::<u16>(device_address, index.0, sub)?;
             let pdo_map_count = ecat_channel.sdo_read::<u8>(device_address, pdo_index, 0)?;
             for j in 0..pdo_map_count {
                 let pdo_mapping: u32 = ecat_channel.sdo_read(device_address, pdo_index, 1 + j)?;
-                mappings_without_coupler.push(pdo_mapping);
+                module_i = Wago750_354::calculate_module_index(pdo_mapping, get_tx);
+                let bit_length = (pdo_mapping & 0xFF) as u8;
+                if module_i < 64 {
+                    vec.push(ModulePdoMapping {
+                        offset: bit_offset,
+                        module_i,
+                    });
+                }
+                bit_offset += bit_length as usize;
             }
-        }
-        mappings_without_coupler.sort();
-
-        for pdo_mapping in mappings_without_coupler {
-            module_i = Wago750_354::calculate_module_index(pdo_mapping, get_tx);
-            let bit_length = (pdo_mapping & 0xFF) as u8;
-            if module_i < 64 {
-                vec.push(ModulePdoMapping {
-                    offset: bit_offset,
-                    module_i,
-                });
-            }
-            bit_offset += bit_length as usize;
         }
 
         vec.sort_by_key(|e| (e.module_i, e.offset));
@@ -284,6 +271,16 @@ impl Wago750_354 {
                     module.has_rx = true;
                     module.name = "750-530".to_string();
                 }
+                WAGO_750_531_PRODUCT_ID => {
+                    module.has_tx = false;
+                    module.has_rx = true;
+                    module.name = "750-531".to_string();
+                }
+                WAGO_750_553_PRODUCT_ID => {
+                    module.has_tx = true;
+                    module.has_rx = true;
+                    module.name = "750-553".to_string();
+                }
                 WAGO_750_652_PRODUCT_ID => {
                     module.has_tx = true;
                     module.has_rx = true;
@@ -298,6 +295,11 @@ impl Wago750_354 {
                     module.has_tx = true;
                     module.has_rx = false;
                     module.name = "750-430".to_string();
+                }
+                WAGO_750_460_PRODUCT_ID => {
+                    module.has_tx = true;
+                    module.has_rx = false;
+                    module.name = "750-460".to_string();
                 }
                 WAGO_750_671_PRODUCT_ID => {
                     module.has_tx = true;
@@ -329,33 +331,64 @@ impl Wago750_354 {
         if self.dev_count != 0 {
             return;
         }
-        smol::block_on(async {
-            let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), true);
-            let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), false);
-        });
+        let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), true);
+        let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), false);
+
+        fn pdo_object_steps(product_id: u32, is_tx: bool) -> u32 {
+            match product_id {
+                // 4-channel analog input: 4 separate TX objects, no RX
+                WAGO_750_455_PRODUCT_ID => {
+                    if is_tx {
+                        4
+                    } else {
+                        1
+                    }
+                }
+                // 4-channel analog RTD input: 4 separate TX objects, no RX
+                WAGO_750_460_PRODUCT_ID => {
+                    if is_tx {
+                        4
+                    } else {
+                        1
+                    }
+                }
+                // 2-channel analog input: 2 separate TX objects, no RX
+                WAGO_750_402_PRODUCT_ID => {
+                    if is_tx {
+                        2
+                    } else {
+                        1
+                    }
+                }
+                // 4-channel analog output: 4 separate objects in both directions
+                WAGO_750_553_PRODUCT_ID => 4,
+                // All digital/byte-based modules: 1 object per direction
+                _ => 1,
+            }
+        }
+
+        let mut tx_step: u32 = 0;
+        let mut rx_step: u32 = 0;
         for module in &mut self.slots {
             match module {
                 Some(m) => {
-                    let tx_pdo_mapping = self
-                        .tx_pdo_mappings
-                        .iter()
-                        .find(|map| map.module_i == m.slot.into());
                     if m.has_tx {
-                        m.tx_offset = match tx_pdo_mapping {
-                            Some(map) => map.offset,
-                            None => 0,
-                        }
+                        m.tx_offset = self
+                            .tx_pdo_mappings
+                            .iter()
+                            .find(|map| map.module_i == tx_step)
+                            .map(|map| map.offset)
+                            .unwrap_or(0);
+                        tx_step += pdo_object_steps(m.product_id, true);
                     }
-
-                    let rx_pdo_mapping = self
-                        .rx_pdo_mappings
-                        .iter()
-                        .find(|map| map.module_i == m.slot.into());
                     if m.has_rx {
-                        m.rx_offset = match rx_pdo_mapping {
-                            Some(map) => map.offset,
-                            None => 0,
-                        }
+                        m.rx_offset = self
+                            .rx_pdo_mappings
+                            .iter()
+                            .find(|map| map.module_i == rx_step)
+                            .map(|map| map.offset)
+                            .unwrap_or(0);
+                        rx_step += pdo_object_steps(m.product_id, false);
                     }
                 }
                 None => break,
@@ -366,17 +399,46 @@ impl Wago750_354 {
             match module {
                 Some(m) => {
                     // Map ModuleIdent's to Terminals
-                    let mut dev: Box<dyn DynamicEthercatDevice> = match (m.vendor_id, m.product_id)
-                    {
-                        WAGO_750_455_MODULE_IDENT => Box::new(wago_750_455::Wago750_455::new()),
-                        WAGO_750_501_MODULE_IDENT => Box::new(wago_750_501::Wago750_501::new()),
-                        WAGO_750_530_MODULE_IDENT => Box::new(wago_750_530::Wago750_530::new()),
-                        WAGO_750_1506_MODULE_IDENT => Box::new(wago_750_1506::Wago750_1506::new()),
-                        WAGO_750_652_MODULE_IDENT => Box::new(wago_750_652::Wago750_652::new()),
-                        WAGO_750_402_MODULE_IDENT => Box::new(wago_750_402::Wago750_402::new()),
-                        WAGO_750_430_MODULE_IDENT => Box::new(wago_750_430::Wago750_430::new()),
-                        WAGO_750_671_MODULE_IDENT => Box::new(wago_750_671::Wago750_671::new()),
-                        WAGO_750_672_MODULE_IDENT => Box::new(wago_750_672::Wago750_672::new()),
+                    let dev: Rc<RefCell<dyn DynamicEthercatDevice>> = match (
+                        m.vendor_id,
+                        m.product_id,
+                    ) {
+                        WAGO_750_455_MODULE_IDENT => {
+                            Rc::new(RefCell::new(wago_750_455::Wago750_455::new()))
+                        }
+                        WAGO_750_501_MODULE_IDENT => {
+                            Rc::new(RefCell::new(wago_750_501::Wago750_501::new()))
+                        }
+                        WAGO_750_530_MODULE_IDENT => {
+                            Rc::new(RefCell::new(wago_750_530::Wago750_530::new()))
+                        }
+                        WAGO_750_531_MODULE_IDENT => {
+                            Rc::new(RefCell::new(wago_750_531::Wago750_531::new()))
+                        }
+                        WAGO_750_553_MODULE_IDENT => {
+                            Rc::new(RefCell::new(wago_750_553::Wago750_553::new()))
+                        }
+                        WAGO_750_1506_MODULE_IDENT => {
+                            Rc::new(RefCell::new(wago_750_1506::Wago750_1506::new()))
+                        }
+                        WAGO_750_652_MODULE_IDENT => {
+                            Rc::new(RefCell::new(wago_750_652::Wago750_652::new()))
+                        }
+                        WAGO_750_402_MODULE_IDENT => {
+                            Rc::new(RefCell::new(wago_750_402::Wago750_402::new()))
+                        }
+                        WAGO_750_430_MODULE_IDENT => {
+                            Rc::new(RefCell::new(wago_750_430::Wago750_430::new()))
+                        }
+                        WAGO_750_460_MODULE_IDENT => {
+                            Rc::new(RefCell::new(wago_750_460::Wago750_460::new()))
+                        }
+                        WAGO_750_671_MODULE_IDENT => {
+                            Rc::new(RefCell::new(wago_750_671::Wago750_671::new()))
+                        }
+                        WAGO_750_672_MODULE_IDENT => {
+                            Rc::new(RefCell::new(wago_750_672::Wago750_672::new()))
+                        }
 
                         _ => {
                             println!(
@@ -389,10 +451,31 @@ impl Wago750_354 {
                         }
                     };
 
-                    dev.set_tx_offset(m.tx_offset);
-                    dev.set_rx_offset(m.rx_offset);
+                    let mut dev_mut = dev.borrow_mut();
+
+                    // set_module stores the full module identity and derives the
+                    // tx/rx bit offsets from it (all wago module impls do this).
+                    dev_mut.set_module(m.clone());
+                    drop(dev_mut);
+
                     self.slot_devices[self.dev_count] = Some(dev);
                     self.dev_count += 1;
+                }
+                None => break,
+            }
+        }
+
+        // Compute the coupler's total process-image size per direction. Each slot
+        // device sits at its tx/rx bit offset and consumes input_len()/output_len()
+        // bits; the coupler image must be large enough to contain the furthest one.
+        self.tx_size = 0;
+        self.rx_size = 0;
+        for slot_device in &self.slot_devices {
+            match slot_device {
+                Some(device) => {
+                    let d = device.borrow();
+                    self.tx_size = self.tx_size.max(d.get_tx_offset() + d.input_len());
+                    self.rx_size = self.rx_size.max(d.get_rx_offset() + d.output_len());
                 }
                 None => break,
             }

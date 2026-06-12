@@ -218,7 +218,10 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         });
                         group = Some(match res {
                             Ok(group) => {
-                                println!("Initialized {} subdevices", &group.len());
+                                println!(
+                                    "[ethercat_state_machine] initialized {} subdevices",
+                                    &group.len()
+                                );
                                 group
                             }
                             Err(err) => {
