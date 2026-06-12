@@ -160,213 +160,129 @@ pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
     }
 }
 
-// ── macOS BPF (Berkeley Packet Filter) implementation ──────────────────
-// BPF is the native raw-packet mechanism on macOS / BSD.
-// We open /dev/bpfN, bind it to the interface via BIOCSETIF, send the
-// EtherCAT broadcast discovery frame, and check whether a response with
-// EtherType 0x88A4 comes back.  No ethercrab / AF_PACKET required.
+// ── macOS BPF (Berkeley Packet Filter) ────────────────────────────────
+// Native raw-packet I/O via /dev/bpfN.  No ethercrab / AF_PACKET required.
 
 #[cfg(target_os = "macos")]
 use std::{ffi::CString, mem, os::fd::RawFd};
 
-// BPF ioctl request numbers (from <net/bpf.h>, computed for 64-bit macOS).
 #[cfg(target_os = "macos")]
-const BIOCSETIF: libc::c_ulong = 0x8020426C; // _IOW('B', 108, struct ifreq)
+const BIOCSETIF: libc::c_ulong = 0x8020426C;
 #[cfg(target_os = "macos")]
-const BIOCIMMEDIATE: libc::c_ulong = 0x80044272; // _IOW('B', 114, u_int)
-// Note: BIOCGBLEN / BIOCSBLEN omitted — default 4096-byte BPF buffer is
-// sufficient, and macOS libc variadic ioctl ABI breaks _IOWR on aarch64.
-
+const BIOCIMMEDIATE: libc::c_ulong = 0x80044272;
 #[cfg(target_os = "macos")]
 const IFNAMSIZ: usize = 16;
 
-/// `struct ifreq` – macOS definition.
-/// The kernel writes into the union portion during BIOCSETIF, so the struct
-/// must be at least as large as the real `struct ifreq` (144 bytes on 64-bit).
+/// Matches the real `struct ifreq` (144 bytes on 64-bit macOS).
 #[cfg(target_os = "macos")]
 #[repr(C)]
 struct Ifreq {
     ifr_name: [u8; IFNAMSIZ],
-    _pad: [u8; 128], // covers the sockaddr_storage union (128 bytes)
+    _pad: [u8; 128],
 }
 
-/// Try to claim a free BPF device and bind it to `interface_name`.
 #[cfg(target_os = "macos")]
 fn open_bpf(interface_name: &str) -> Result<RawFd, anyhow::Error> {
     unsafe {
         for i in 0..256 {
-            let dev_path =
-                CString::new(format!("/dev/bpf{i}")).map_err(|_| anyhow::anyhow!("CString"))?;
-            let fd = libc::open(dev_path.as_ptr(), libc::O_RDWR | libc::O_NONBLOCK);
+            let dev = CString::new(format!("/dev/bpf{i}")).unwrap();
+            let fd = libc::open(dev.as_ptr(), libc::O_RDWR | libc::O_NONBLOCK);
             if fd < 0 {
-                continue; // device busy or non-existent, try next
+                continue;
             }
+            // Immediate mode — read returns as soon as a packet arrives.
+            libc::ioctl(fd, BIOCIMMEDIATE, &1u32);
 
-            // Immediate mode – read returns as soon as a packet arrives.
-            // Must be set before BIOCSETIF.
-            let enable: libc::c_uint = 1;
-            libc::ioctl(fd, BIOCIMMEDIATE, &enable);
-
-            // Bind to the requested interface.
-            // macOS bpf(4) provides a default buffer if not explicitly set
-            // via BIOCSBLEN before BIOCSETIF — 4096 bytes, sufficient for
-            // our single discovery frame.
             let mut ifr: Ifreq = mem::zeroed();
-            let name_bytes = interface_name.as_bytes();
-            let copy_len = name_bytes.len().min(IFNAMSIZ - 1);
-            ifr.ifr_name[..copy_len].copy_from_slice(&name_bytes[..copy_len]);
+            let name = interface_name.as_bytes();
+            let n = name.len().min(IFNAMSIZ - 1);
+            ifr.ifr_name[..n].copy_from_slice(&name[..n]);
 
             if libc::ioctl(fd, BIOCSETIF, &ifr) == -1 {
                 libc::close(fd);
                 continue;
             }
-
             return Ok(fd);
         }
-        Err(anyhow::anyhow!(
-            "No free BPF device available (tried /dev/bpf0–255)"
-        ))
+        Err(anyhow::anyhow!("No free BPF device"))
     }
 }
 
 #[cfg(target_os = "macos")]
 pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
-    // EtherCAT broadcast discovery frame, padded to 60 bytes.
-    // Ethernet minimum frame is 64 bytes (60 payload + 4 FCS).
-    // macOS BPF requires the caller to pad — undersized frames are
-    // silently dropped by the NIC hardware.
-    const ETHERCAT_DISCOVERY_FRAME: [u8; 60] = [
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // dst MAC (broadcast)
-        0x02, 0x00, 0x00, 0x00, 0x00, 0x01, // src MAC (locally-administered unicast)
-        0x88, 0xa4, // EtherType = EtherCAT
-        0x0d, 0x10, 0x08, 0x01, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00,
-        // padding to 60 bytes (zeros)
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00,
+    // EtherCAT broadcast discovery frame padded to Ethernet minimum (60 bytes).
+    const FRAME: [u8; 60] = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x88, 0xa4, 0x0d, 0x10, 0x08, 0x01, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ];
 
-    eprintln!("[BPF] testing {interface_name}...");
     let fd = open_bpf(interface_name)?;
-
     let result = unsafe {
-        // ── Drain any stale packets (non-blocking) ─────────────────────
-        let mut drain = [0u8; 4096];
-        loop {
-            let mut pfd = libc::pollfd {
-                fd,
-                events: libc::POLLIN,
-                revents: 0,
-            };
-            if libc::poll(&mut pfd, 1, 0) <= 0 {
-                break;
-            }
-            let n = libc::read(fd, drain.as_mut_ptr() as *mut libc::c_void, drain.len());
-            if n <= 0 {
-                break;
-            }
-        }
+        let mut buf = [0u8; 4096];
 
-        // ── Send EtherCAT broadcast discovery frame ────────────────────
-        let sent = libc::write(
-            fd,
-            ETHERCAT_DISCOVERY_FRAME.as_ptr() as *const libc::c_void,
-            ETHERCAT_DISCOVERY_FRAME.len(),
-        );
-        if sent < 0 {
+        // Drain stale packets (non-blocking)
+        while libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) > 0 {}
+
+        // Send discovery frame
+        if libc::write(fd, FRAME.as_ptr() as *const libc::c_void, FRAME.len()) < 0 {
             return Err(anyhow::anyhow!(
-                "BPF write failed: {}",
+                "BPF write: {}",
                 std::io::Error::last_os_error()
             ));
         }
 
-        // ── Wait for a response (500 ms, non-blocking read loop) ───────
-        // macOS poll() is unreliable on BPF descriptors — use non-blocking
-        // read with nanosleep backoff instead.
-        let mut buf = [0u8; 4096];
-        let mut received;
-        let start = libc::timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        };
-        libc::gettimeofday(
-            &start as *const libc::timeval as *mut libc::timeval,
-            std::ptr::null_mut(),
-        );
-        let timeout_us = 500_000i64;
-        loop {
-            received = libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len());
-            if received > 0 {
-                break; // got a packet
+        // Wait for response (500ms timeout, non-blocking read + nanosleep)
+        let mut start = libc::timeval { tv_sec: 0, tv_usec: 0 };
+        libc::gettimeofday(&mut start, std::ptr::null_mut());
+        let received = loop {
+            let n = libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len());
+            if n > 0 {
+                break n;
             }
-            if received < 0 {
-                let err = std::io::Error::last_os_error();
-                if err.raw_os_error() != Some(libc::EAGAIN)
-                    && err.raw_os_error() != Some(libc::EWOULDBLOCK)
-                {
-                    eprintln!("[BPF] read error: {err}");
-                    return Err(anyhow::anyhow!("BPF read failed: {err}"));
+            if n < 0 {
+                let e = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+                if e != libc::EAGAIN && e != libc::EWOULDBLOCK {
+                    return Err(anyhow::anyhow!(
+                        "BPF read: {}",
+                        std::io::Error::last_os_error()
+                    ));
                 }
             }
-            // Check elapsed time
-            let mut now = libc::timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            };
+            let mut now = libc::timeval { tv_sec: 0, tv_usec: 0 };
             libc::gettimeofday(&mut now, std::ptr::null_mut());
             let elapsed =
-                (now.tv_sec - start.tv_sec) as i64 * 1_000_000 + (now.tv_usec - start.tv_usec) as i64;
-            if elapsed >= timeout_us {
-                eprintln!("[BPF] timeout — no response within 500ms");
+                (now.tv_sec - start.tv_sec) * 1_000_000 + (now.tv_usec - start.tv_usec) as i64;
+            if elapsed >= 500_000 {
                 return Err(anyhow::anyhow!(
-                    "No EtherCAT response on {interface_name} (timeout)"
+                    "No EtherCAT response on {interface_name}"
                 ));
             }
-            // Sleep 1ms before retrying
-            let ts = libc::timespec {
-                tv_sec: 0,
-                tv_nsec: 1_000_000,
-            };
-            libc::nanosleep(&ts, std::ptr::null_mut());
-        }
+            libc::nanosleep(
+                &libc::timespec { tv_sec: 0, tv_nsec: 1_000_000 },
+                std::ptr::null_mut(),
+            );
+        };
 
-        // Parse BPF header (macOS uses timeval32 → 18-byte header, hdrlen at offset 16)
-        let hdrlen = u16::from_le_bytes([buf[16], buf[17]]) as usize;
-
-        if hdrlen < 14 || hdrlen > 256 {
-            eprintln!("[BPF] hdrlen {hdrlen} looks invalid, trying fallback hdrlen=18");
-            let hdrlen = 18usize;
-            if (received as usize) <= hdrlen {
-                eprintln!("[BPF] no packet data with fallback hdrlen");
-                return Err(anyhow::anyhow!("No packet data in BPF response"));
-            }
-            let pkt = &buf[hdrlen..];
-            check_ethercat(interface_name, pkt)
-        } else if (received as usize) <= hdrlen {
-            eprintln!("[BPF] no packet data: received={received}, hdrlen={hdrlen}");
+        // Parse BPF header: macOS ARM64 uses timeval32 (18-byte header),
+        // bh_hdrlen is a u16 at offset 16.
+        let hdrlen_raw = u16::from_le_bytes([buf[16], buf[17]]) as usize;
+        let hdrlen = if hdrlen_raw < 14 || hdrlen_raw > 256 { 18 } else { hdrlen_raw };
+        if (received as usize) <= hdrlen {
             return Err(anyhow::anyhow!("No packet data in BPF response"));
+        }
+        let pkt = &buf[hdrlen..];
+        if pkt.len() >= 14 && pkt[12] == 0x88 && pkt[13] == 0xa4 {
+            Ok(())
         } else {
-            let pkt = &buf[hdrlen..];
-            check_ethercat(interface_name, pkt)
+            Err(anyhow::anyhow!("{interface_name:?} is not Ethercat"))
         }
     };
-
-    unsafe {
-        libc::close(fd);
-    }
+    unsafe { libc::close(fd); }
     result
-}
-
-#[cfg(target_os = "macos")]
-fn check_ethercat(interface_name: &str, pkt: &[u8]) -> Result<(), anyhow::Error> {
-    if pkt.len() >= 14 && pkt[12] == 0x88 && pkt[13] == 0xa4 {
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!(
-            "Interface {interface_name:?} is not Ethercat"
-        ))
-    }
 }
 
 // ── Other platforms (neither Linux nor macOS) ─────────────────────────
