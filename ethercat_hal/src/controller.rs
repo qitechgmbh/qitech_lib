@@ -559,10 +559,27 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         tick += 1;
                     };
 
-                    group_op = Some(
-                        rt.block_on(group_safe_op.into_op(&maindevice.as_ref().unwrap()))
-                            .expect("SAFE-OP -> OP"),
-                    );
+                    // Use request_into_op on non-Linux: requests OP state on all
+                    // subdevices without waiting for confirmation. Required on
+                    // non-real-time OSes (macOS) where state-check frames may
+                    // miss timing windows.
+                    #[cfg(target_os = "linux")]
+                    {
+                        group_op = Some(
+                            rt.block_on(group_safe_op.into_op(&maindevice.as_ref().unwrap()))
+                                .expect("SAFE-OP -> OP"),
+                        );
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        group_op = Some(
+                            rt.block_on(
+                                group_safe_op
+                                    .request_into_op(&maindevice.as_ref().unwrap()),
+                            )
+                            .expect("SAFE-OP -> OP (request)"),
+                        );
+                    }
 
                     println!("Started Transition to OP");
                     self.state = EtherCATState::Op;
