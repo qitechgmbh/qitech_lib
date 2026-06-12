@@ -1,6 +1,7 @@
 use libc::{freeifaddrs, getifaddrs, ifaddrs};
 use std::ffi::CStr;
 use std::ptr;
+#[cfg(target_os = "linux")]
 use std::{ffi::CString, mem, os::fd::RawFd};
 
 #[derive(Debug)]
@@ -48,7 +49,13 @@ pub fn list_ethernet_interfaces() -> Result<Vec<Interface>, anyhow::Error> {
                             link_type: LinkType::Ipv6,
                             name,
                         },
+                        #[cfg(target_os = "linux")]
                         libc::AF_PACKET => Interface {
+                            link_type: LinkType::Link,
+                            name,
+                        },
+                        #[cfg(target_os = "macos")]
+                        libc::AF_LINK => Interface {
                             link_type: LinkType::Link,
                             name,
                         },
@@ -73,6 +80,7 @@ pub fn list_ethernet_interfaces() -> Result<Vec<Interface>, anyhow::Error> {
 }
 
 // RawFd is just a c_int (i32 basically)
+#[cfg(target_os = "linux")]
 fn open_raw_socket_libc(iface: &str) -> Result<RawFd, anyhow::Error> {
     unsafe {
         let protocol = (0x88a4u16).to_be() as i32; // EtherCAT EtherType
@@ -120,6 +128,7 @@ fn open_raw_socket_libc(iface: &str) -> Result<RawFd, anyhow::Error> {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn test_discovery(fd: RawFd, packet: &[u8]) -> bool {
     unsafe {
         let sent = libc::send(fd, packet.as_ptr() as *const libc::c_void, packet.len(), 0);
@@ -134,6 +143,7 @@ fn test_discovery(fd: RawFd, packet: &[u8]) -> bool {
     }
 }
 
+#[cfg(target_os = "linux")]
 pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
     const ETHERCAT_DISCOVERY_FRAME: [u8; 29] = [
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x88, 0xa4, 0xd, 0x10,
@@ -148,4 +158,12 @@ pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
             interface_name
         ))
     }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
+    Err(anyhow::anyhow!(
+        "EtherCAT interface discovery is not available on this platform (interface: {})",
+        interface_name
+    ))
 }

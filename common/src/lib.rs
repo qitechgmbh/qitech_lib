@@ -1,8 +1,9 @@
 #[cfg(target_os = "linux")]
 use libc;
+#[cfg(target_os = "linux")]
 use std::ffi::CString;
+#[cfg(target_os = "linux")]
 use std::io;
-use std::str;
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
 
