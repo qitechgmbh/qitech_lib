@@ -45,6 +45,29 @@ use beckhoff_modules::{
 };
 use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;
+use ek1100::{EK1100, EK1100_IDENTITY_A};
+use el1002::{EL1002, EL1002_IDENTITY_A};
+use el1008::{EL1008_IDENTITY_A, EL1008_IDENTITY_B};
+use el2002::{EL2002, EL2002_IDENTITY_A, EL2002_IDENTITY_B};
+use el2004::{EL2004, EL2004_IDENTITY_A};
+use el2008::{EL2008, EL2008_IDENTITY_A, EL2008_IDENTITY_B};
+use el2521::EL2521;
+use el2521::{EL2521_IDENTITY_0000_A, EL2521_IDENTITY_0000_B, EL2521_IDENTITY_0024_A};
+use el2522::{EL2522, EL2522_IDENTITY_A};
+use el3001::EL3001_IDENTITY_A;
+use el3021::EL3021_IDENTITY_A;
+use el3024::EL3024_IDENTITY_A;
+use el3062_0030::EL3062_0030_IDENTITY_A;
+use el3204::EL3204_IDENTITY_A;
+use el3204::EL3204_IDENTITY_B;
+use el4002::EL4002;
+use el4002::EL4002_IDENTITY_A;
+use el5152::{EL5152, EL5152_IDENTITY_A};
+use el6021::{EL6021_IDENTITY_A, EL6021_IDENTITY_B, EL6021_IDENTITY_C, EL6021_IDENTITY_D};
+use el7031::{EL7031_IDENTITY_A, EL7031_IDENTITY_B};
+use el7031_0030::EL7031_0030_IDENTITY_A;
+use el7037::{EL7037, EL7037_IDENTITY_A};
+use el7041_0052::EL7041_0052_IDENTITY_A;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::{any::Any, fmt::Debug};
@@ -185,6 +208,7 @@ pub fn device_from_subdevice_identity(
         EL3204_IDENTITY_A | EL3204_IDENTITY_B => Ok(Box::new(el3204::EL3204::new())),
         EL7031_IDENTITY_A | EL7031_IDENTITY_B => Ok(Box::new(el7031::EL7031::new())),
         EL7031_0030_IDENTITY_A => Ok(Box::new(el7031_0030::EL7031_0030::new())),
+        EL7037_IDENTITY_A => Ok(Box::new(el7037::EL7037::new())),
         EL7041_0052_IDENTITY_A => Ok(Box::new(el7041_0052::EL7041_0052::new())),
         EL2521_IDENTITY_0000_A | EL2521_IDENTITY_0000_B | EL2521_IDENTITY_0024_A => {
             Ok(Box::new(EL2521::new()))
@@ -230,6 +254,7 @@ pub fn device_from_subdevice_identity_rc(
         EL3204_IDENTITY_A | EL3204_IDENTITY_B => Ok(Rc::new(RefCell::new(el3204::EL3204::new()))),
         EL7031_IDENTITY_A | EL7031_IDENTITY_B => Ok(Rc::new(RefCell::new(el7031::EL7031::new()))),
         EL7031_0030_IDENTITY_A => Ok(Rc::new(RefCell::new(el7031_0030::EL7031_0030::new()))),
+        EL7037_IDENTITY_A => Ok(Rc::new(RefCell::new(el7037::EL7037::new()))),
         EL7041_0052_IDENTITY_A => Ok(Rc::new(RefCell::new(el7041_0052::EL7041_0052::new()))),
         EL9505_IDENTITY_A => Ok(Rc::new(RefCell::new(el9505::EL9505::new()))),
         EL1124_IDENTITY_A => Ok(Rc::new(RefCell::new(el1124::EL1124::new()))),
