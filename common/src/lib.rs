@@ -2,9 +2,10 @@ use std::sync::OnceLock;
 use tokio::runtime::Runtime;
 #[cfg(target_os = "linux")]
 use libc;
+#[cfg(target_os = "linux")]
 use std::ffi::CString;
+#[cfg(target_os = "linux")]
 use std::io;
-use std::str;
 
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 pub fn get_async_runtime() -> &'static Runtime {

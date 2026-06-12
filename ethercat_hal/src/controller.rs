@@ -11,6 +11,7 @@ use crate::{
 };
 use std::sync::Arc;
 use crate::Mailbox;
+#[cfg(target_os = "linux")]
 use common::set_irq_affinity;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
@@ -44,6 +45,7 @@ where
     output_consumer: C,
 }
 
+#[cfg(target_os = "linux")]
 fn set_current_thread_rt_priority(priority: i32) {
     unsafe {
         let thread_id = libc::pthread_self();
@@ -69,6 +71,13 @@ fn set_current_thread_rt_priority(priority: i32) {
             println!("Thread priority set to SCHED_FIFO with level {}", priority);
         }
     }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn set_current_thread_rt_priority(_priority: i32) {
+    eprintln!(
+        "set_current_thread_rt_priority: real-time scheduling is not available on this platform"
+    );
 }
 
 impl<C, P> EtherCATController<C, P>
@@ -157,41 +166,70 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         _ => continue,
                     }
 
+                    #[cfg(target_os = "linux")]
                     use ethercrab::std::tx_rx_task_io_uring;
+                    #[cfg(not(target_os = "linux"))]
+                    use ethercrab::std::tx_rx_task;
                     if self.interface.is_some() {
                         let (tx, rx, pdu) = PDU_STORAGE.try_split().expect("can only split once");
-                        let pdu_tx = tx;
-                        let pdu_rx = rx;
                         let interface = self.interface.clone().unwrap();
-                        let opt = self.current_config.realtime_optimizations.clone();
-                        _ethercat_tx_rx_handle = std::thread::Builder::new()
-                            .name("EthercatTxRxThread".to_owned())
-                            .spawn(move || {
-                                match opt {
-                                    Some(opt) => {
-                                        let id = core_affinity::CoreId {
-                                            id: opt.ethercat_io_thread_core,
-                                        };
-                                        set_current_thread_rt_priority(
-                                            opt.ethercat_io_thread_priority as i32,
-                                        );
-                                        // Pin to the last core (e.g., Core 3 on a 4-core system)
-                                        core_affinity::set_for_current(id);
-                                        if let Some(irq_core) = opt.pin_irq_core {
-                                            let res = set_irq_affinity(&interface, irq_core as u32);
-                                            if res.is_err() {
-                                                println!("set_irq_affinity failed: {:?}", res);
-                                            }else {
-                                                println!("set irq_affinity of {} to core {}",&interface,irq_core);
-                                            }
 
+                        #[cfg(target_os = "linux")]
+                        {
+                            let pdu_tx = tx;
+                            let pdu_rx = rx;
+                            let opt = self.current_config.realtime_optimizations.clone();
+                            _ethercat_tx_rx_handle = std::thread::Builder::new()
+                                .name("EthercatTxRxThread".to_owned())
+                                .spawn(move || {
+                                    match opt {
+                                        Some(opt) => {
+                                            let id = core_affinity::CoreId {
+                                                id: opt.ethercat_io_thread_core,
+                                            };
+                                            set_current_thread_rt_priority(
+                                                opt.ethercat_io_thread_priority as i32,
+                                            );
+                                            // Pin to the last core (e.g., Core 3 on a 4-core system)
+                                            core_affinity::set_for_current(id);
+                                            if let Some(irq_core) = opt.pin_irq_core {
+                                                let res = set_irq_affinity(&interface, irq_core as u32);
+                                                if res.is_err() {
+                                                    println!("set_irq_affinity failed: {:?}", res);
+                                                }else {
+                                                    println!("set irq_affinity of {} to core {}",&interface,irq_core);
+                                                }
+
+                                            }
                                         }
-                                    }
-                                    None => (),
-                                };
-                                tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
-                                    .expect("Failed to run TX/RX task (io_uring)");
-                            });
+                                        None => (),
+                                    };
+                                    tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
+                                        .expect("Failed to run TX/RX task (io_uring)");
+                                });
+                        }
+
+                        #[cfg(not(target_os = "linux"))]
+                        {
+                            let pdu_tx = tx;
+                            let pdu_rx = rx;
+                            _ethercat_tx_rx_handle = std::thread::Builder::new()
+                                .name("EthercatTxRxThread".to_owned())
+                                .spawn(move || {
+                                    get_async_runtime().block_on(async {
+                                        match tx_rx_task(&interface, pdu_tx, pdu_rx) {
+                                            Ok(task) => {
+                                                if let Err(e) = task.await {
+                                                    eprintln!("TX/RX task error: {}", e);
+                                                }
+                                            }
+                                            Err(e) => {
+                                                eprintln!("TX/RX task creation failed: {}", e);
+                                            }
+                                        }
+                                    });
+                                });
+                        }
 
                         maindevice = Some(MainDevice::new(
                             pdu,
