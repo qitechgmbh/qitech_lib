@@ -559,10 +559,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         tick += 1;
                     };
 
-                    // Use request_into_op on non-Linux: requests OP state on all
-                    // subdevices without waiting for confirmation. Required on
-                    // non-real-time OSes (macOS) where state-check frames may
-                    // miss timing windows.
+                    // Use request_into_op on non-Linux (non-real-time OS) to skip
+                    // blocking state-confirmation wait.
                     #[cfg(target_os = "linux")]
                     {
                         group_op = Some(
