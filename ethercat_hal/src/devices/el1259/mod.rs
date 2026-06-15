@@ -11,6 +11,12 @@ use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple}
 mod pdo;
 use pdo::{EL1259RxPdo, EL1259TxPdo};
 
+enum State {
+    ResetOn,
+    ResetOff,
+    Initialized,
+}
+
 /// EL1259 8-channel Multi-Timestamp Input / 8-channel Multi-Timestamp Output
 /// 24V DC, 0.5A per channel
 #[derive(EthercatDevice)]
@@ -20,6 +26,7 @@ pub struct EL1259 {
     is_used: bool,
     input_queues: [VecDeque<MultiTimestampEvent>; 8],
     output_queues: [VecDeque<MultiTimestampEvent>; 8],
+    state: State,
 }
 
 impl EthercatDeviceProcessing for EL1259 {
@@ -56,20 +63,39 @@ impl EthercatDeviceProcessing for EL1259 {
     }
 
     fn output_pre_process(&mut self) -> Result<(), anyhow::Error> {
-        for channel in 0..8 {
-            let txmto = self.txpdo.get_mto(channel);
-            let rxmto = self.rxpdo.get_mto_mut(channel);
-            let queue = &mut self.output_queues[channel];
+        match self.state {
+            State::ResetOn => {
+                for channel in 0..8 {
+                    self.rxpdo.get_mto_mut(channel).output_buffer_reset = true;
+                }
+                self.state = State::ResetOff;
+            }
 
-            if !queue.is_empty() && rxmto.output_order_count == txmto.output_order_feedback {
+            State::ResetOff => {
+                for channel in 0..8 {
+                    self.rxpdo.get_mto_mut(channel).output_buffer_reset = false;
+                }
+                self.state = State::Initialized;
+            }
 
-                let empty_splots_in_buffer = 32 - txmto.events_in_output_buffer as usize;
-                let number_of_events_to_send = queue.len().min(empty_splots_in_buffer).min(10);
-                let events_to_send: Vec<_> = queue.drain(0..number_of_events_to_send).collect();
+            State::Initialized => {
+                for channel in 0..8 {
+                    let txmto = self.txpdo.get_mto(channel);
+                    let rxmto = self.rxpdo.get_mto_mut(channel);
+                    let queue = &mut self.output_queues[channel];
 
-                rxmto.set_events(&events_to_send);
-                rxmto.output_order_count = txmto.output_order_feedback.wrapping_add(1);
-                rxmto.force_order = true;
+                    let empty_splots_in_buffer = 32 - txmto.events_in_output_buffer as usize;
+                    let number_of_events_to_send = queue.len().min(empty_splots_in_buffer).min(10);
+
+                    if number_of_events_to_send > 0 && rxmto.output_order_count == txmto.output_order_feedback {
+                        let events_to_send: Vec<_> = queue.drain(0..number_of_events_to_send).collect();
+                        rxmto.set_events(&events_to_send);
+                        rxmto.output_order_count = txmto.output_order_feedback.wrapping_add(1);
+                        rxmto.force_order = false;
+                    } else {
+                        rxmto.number_of_output_events = 0;
+                    }
+                }
             }
         }
 
@@ -141,6 +167,7 @@ impl NewEthercatDevice for EL1259 {
             is_used: false,
             input_queues: Default::default(),
             output_queues: Default::default(),
+            state: State::ResetOn,
         }
     }
 }
