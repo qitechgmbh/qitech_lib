@@ -191,9 +191,10 @@ impl EL1259MtoRxChannel {
 
     pub(super) fn set_events(&mut self, events: &[MultiTimestampEvent]) {
         let len = events.len();
-        assert!(len < 10);
+        assert!(len <= 10);
         self.number_of_output_events = len as u8;
-        self.output_events.copy_from_slice(events);
+        self.output_events[..len].clone_from_slice(events);
+        println!("self.number_of_output_events={}, self.output_events={:?}", self.number_of_output_events, self.output_events);
     }
 }
 
