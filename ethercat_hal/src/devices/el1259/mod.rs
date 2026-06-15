@@ -59,12 +59,16 @@ impl EthercatDeviceProcessing for EL1259 {
         for channel in 0..8 {
             let txmto = self.txpdo.get_mto(channel);
             let rxmto = self.rxpdo.get_mto_mut(channel);
+            let queue = &mut self.output_queues[channel];
 
-            if rxmto.output_order_count == txmto.output_order_feedback {
+            if !queue.is_empty() && rxmto.output_order_count == txmto.output_order_feedback {
+
                 let empty_splots_in_buffer = 32 - txmto.events_in_output_buffer as usize;
-                let number_of_events_to_send = self.output_queues[channel].len().min(empty_splots_in_buffer).min(10);
-                let events_to_send: Vec<_> = self.output_queues[channel].drain(0..number_of_events_to_send).collect();
+                let number_of_events_to_send = queue.len().min(empty_splots_in_buffer).min(10);
+                let events_to_send: Vec<_> = queue.drain(0..number_of_events_to_send).collect();
+
                 rxmto.set_events(&events_to_send);
+                rxmto.output_order_count = txmto.output_order_feedback.wrapping_add(1);
                 rxmto.force_order = true;
             }
         }
