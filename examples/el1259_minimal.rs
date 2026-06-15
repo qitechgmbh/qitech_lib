@@ -6,8 +6,26 @@ use ethercat_hal::{
 };
 use std::{env, time::Duration};
 
+
+const INIT_DELAY_NS:  u64 = 22_000_000;
+const PULSE_DELAY_NS: u64 = Duration::from_millis(700).as_nanos() as u64;
+const PULSE_WIDTH_NS: u64 = Duration::from_millis(500).as_nanos() as u64;
+const PULSE_BURST_NS: u64 = Duration::from_secs(4).as_nanos() as u64;
+
+const PULSES_PER_BURST: usize = 5;
+const N_CHANNELS: usize = 8;
+
+#[derive(Debug, Default)]
+struct Channel {
+    burst_start_ns: u64,
+    pulse_width_ns: u64,
+    pulse_delay_ns: u64,
+}
+
 /// This example showcases a very bare bones example to toggle the leds on an EL1259
 fn main() {
+    let mut channels: [Channel; N_CHANNELS] = Default::default();
+
     let mut el1259: EL1259 = EL1259::new();
 
     let interface = env::args().nth(1).expect("No Interface-name given");
@@ -38,11 +56,22 @@ fn main() {
         .request_state_change(EtherCATState::Op)
         .expect("Channel was not ready");
 
-    loop {
-        if matches!(eth_control.controller.state, EtherCATState::Op) {
-            break;
-        }
+    'outer: loop {
         std::thread::sleep(Duration::from_millis(10));
+        for subdevice in eth_control.controller.get_subdevices() {
+            if !subdevice.initialized {
+                continue 'outer;
+            }
+        }
+        break;
+    }
+
+    let dc_system_start_ns = eth_control.controller.get_dc_system_time_ns();
+    println!("DC System Start Time {} ns", dc_system_start_ns);
+    for channel in &mut channels {
+        channel.burst_start_ns = dc_system_start_ns + INIT_DELAY_NS;
+        channel.pulse_width_ns = PULSE_WIDTH_NS;
+        channel.pulse_delay_ns = PULSE_DELAY_NS;
     }
 
     loop {
@@ -52,22 +81,36 @@ fn main() {
                 if subdevice.product_id == EL1259_PRODUCT_ID {
                     let input = &input[subdevice.start_tx..subdevice.end_tx];
                     el1259.input(BitSlice::from_slice(input)).expect("Failed to read input");
-                    el1259.input_post_process().expect("Failed to process inputs");
+                    el1259.input_post_process().expect("Failed to process input");
                 }
             }
         }
 
-        let event = MultiTimestampEvent {
-            value: true,
-            dc_timestamp_ns: eth_control.controller.get_dc_system_time_ns().wrapping_add(Duration::from_secs(1).as_nanos() as u64),
-        };
-        el1259.push(0, event);
+        for (channel_index, channel) in channels.iter_mut().enumerate() {
+            if channel.burst_start_ns < eth_control.controller.get_dc_system_time_ns() {
+                for pulse_index in 0..PULSES_PER_BURST {
+                    let pulse_begin_ns = channel.burst_start_ns.wrapping_add(channel.pulse_delay_ns * pulse_index as u64);
+                    let pulse_end_ns = pulse_begin_ns.wrapping_add(channel.pulse_width_ns);
+
+                    el1259.push(channel_index, MultiTimestampEvent {
+                        value: true,
+                        dc_timestamp_ns: pulse_begin_ns,
+                    });
+                    el1259.push(channel_index, MultiTimestampEvent {
+                        value: false,
+                        dc_timestamp_ns: pulse_end_ns,
+                    });
+                }
+
+                channel.burst_start_ns = channel.burst_start_ns.wrapping_add(PULSE_BURST_NS);
+            }
+        }
 
         if let Some(output) = eth_control.app_handle.write_outputs() {
 
             for subdevice in eth_control.controller.get_subdevices() {
                 if subdevice.product_id == EL1259_PRODUCT_ID {
-                    el1259.output_pre_process().expect("Failed to prepare outputs");
+                    el1259.output_pre_process().expect("Failed to prepare output");
                     let output = &mut output[subdevice.start_rx..subdevice.end_rx];
                     el1259.output(BitSlice::from_slice_mut(output)).expect("Failed to write output");
                 }
@@ -76,6 +119,6 @@ fn main() {
 
         eth_control.app_handle.send_outputs();
 
-        std::thread::sleep(Duration::from_secs(1));
+        std::hint::spin_loop();
     }
 }

@@ -71,19 +71,19 @@ impl Default for EL1259RxPdo {
 
 impl EL1259RxPdo {
 
-    pub(super) fn get_mti(&self, channel: usize) -> &EL1259MtiRxChannel {
-        match channel {
-            0 => self.mti_channel1.as_ref().expect(EXPECT_TEXT),
-            1 => self.mti_channel2.as_ref().expect(EXPECT_TEXT),
-            2 => self.mti_channel3.as_ref().expect(EXPECT_TEXT),
-            3 => self.mti_channel4.as_ref().expect(EXPECT_TEXT),
-            4 => self.mti_channel5.as_ref().expect(EXPECT_TEXT),
-            5 => self.mti_channel6.as_ref().expect(EXPECT_TEXT),
-            6 => self.mti_channel7.as_ref().expect(EXPECT_TEXT),
-            7 => self.mti_channel8.as_ref().expect(EXPECT_TEXT),
-            _ => panic!("Channel index out of range {}", channel),
-        }
-    }
+    // pub(super) fn get_mti(&self, channel: usize) -> &EL1259MtiRxChannel {
+    //     match channel {
+    //         0 => self.mti_channel1.as_ref().expect(EXPECT_TEXT),
+    //         1 => self.mti_channel2.as_ref().expect(EXPECT_TEXT),
+    //         2 => self.mti_channel3.as_ref().expect(EXPECT_TEXT),
+    //         3 => self.mti_channel4.as_ref().expect(EXPECT_TEXT),
+    //         4 => self.mti_channel5.as_ref().expect(EXPECT_TEXT),
+    //         5 => self.mti_channel6.as_ref().expect(EXPECT_TEXT),
+    //         6 => self.mti_channel7.as_ref().expect(EXPECT_TEXT),
+    //         7 => self.mti_channel8.as_ref().expect(EXPECT_TEXT),
+    //         _ => panic!("Channel index out of range {}", channel),
+    //     }
+    // }
 
     pub(super) fn get_mti_mut(&mut self, channel: usize) -> &mut EL1259MtiRxChannel {
         match channel {
@@ -99,19 +99,19 @@ impl EL1259RxPdo {
         }
     }
 
-    pub(super) fn get_mto(&self, channel: usize) -> &EL1259MtoRxChannel {
-        match channel {
-            0 => self.mto_channel1.as_ref().expect(EXPECT_TEXT),
-            1 => self.mto_channel2.as_ref().expect(EXPECT_TEXT),
-            2 => self.mto_channel3.as_ref().expect(EXPECT_TEXT),
-            3 => self.mto_channel4.as_ref().expect(EXPECT_TEXT),
-            4 => self.mto_channel5.as_ref().expect(EXPECT_TEXT),
-            5 => self.mto_channel6.as_ref().expect(EXPECT_TEXT),
-            6 => self.mto_channel7.as_ref().expect(EXPECT_TEXT),
-            7 => self.mto_channel8.as_ref().expect(EXPECT_TEXT),
-            _ => panic!("Channel index out of range {}", channel),
-        }
-    }
+    // pub(super) fn get_mto(&self, channel: usize) -> &EL1259MtoRxChannel {
+    //     match channel {
+    //         0 => self.mto_channel1.as_ref().expect(EXPECT_TEXT),
+    //         1 => self.mto_channel2.as_ref().expect(EXPECT_TEXT),
+    //         2 => self.mto_channel3.as_ref().expect(EXPECT_TEXT),
+    //         3 => self.mto_channel4.as_ref().expect(EXPECT_TEXT),
+    //         4 => self.mto_channel5.as_ref().expect(EXPECT_TEXT),
+    //         5 => self.mto_channel6.as_ref().expect(EXPECT_TEXT),
+    //         6 => self.mto_channel7.as_ref().expect(EXPECT_TEXT),
+    //         7 => self.mto_channel8.as_ref().expect(EXPECT_TEXT),
+    //         _ => panic!("Channel index out of range {}", channel),
+    //     }
+    // }
 
     pub(super) fn get_mto_mut(&mut self, channel: usize) -> &mut EL1259MtoRxChannel {
         match channel {
@@ -178,7 +178,7 @@ impl RxPdoObject for EL1259MtoRxChannel {
 
         for i in 0..self.number_of_output_events as usize {
             // 0x7001:21..2A (bit 32..41)
-            bits.set(32, self.output_events[i].value);
+            bits.set(32 + i, self.output_events[i].value);
 
             // 0x7001:41..4A (bit 64..383)
             let offset = i * 32;
@@ -194,7 +194,6 @@ impl EL1259MtoRxChannel {
         assert!(len <= 10);
         self.number_of_output_events = len as u8;
         self.output_events[..len].clone_from_slice(events);
-        println!("self.number_of_output_events={}, self.output_events={:?}", self.number_of_output_events, self.output_events);
     }
 }
 
@@ -328,19 +327,19 @@ impl EL1259TxPdo {
         }
     }
 
-    pub(super) fn get_mto_mut(&mut self, channel: usize) -> &mut EL1259MtoTxChannel {
-        match channel {
-            0 => self.mto_channel1.as_mut().expect(EXPECT_TEXT),
-            1 => self.mto_channel2.as_mut().expect(EXPECT_TEXT),
-            2 => self.mto_channel3.as_mut().expect(EXPECT_TEXT),
-            3 => self.mto_channel4.as_mut().expect(EXPECT_TEXT),
-            4 => self.mto_channel5.as_mut().expect(EXPECT_TEXT),
-            5 => self.mto_channel6.as_mut().expect(EXPECT_TEXT),
-            6 => self.mto_channel7.as_mut().expect(EXPECT_TEXT),
-            7 => self.mto_channel8.as_mut().expect(EXPECT_TEXT),
-            _ => panic!("Channel index out of range {}", channel),
-        }
-    }
+    // pub(super) fn get_mto_mut(&mut self, channel: usize) -> &mut EL1259MtoTxChannel {
+    //     match channel {
+    //         0 => self.mto_channel1.as_mut().expect(EXPECT_TEXT),
+    //         1 => self.mto_channel2.as_mut().expect(EXPECT_TEXT),
+    //         2 => self.mto_channel3.as_mut().expect(EXPECT_TEXT),
+    //         3 => self.mto_channel4.as_mut().expect(EXPECT_TEXT),
+    //         4 => self.mto_channel5.as_mut().expect(EXPECT_TEXT),
+    //         5 => self.mto_channel6.as_mut().expect(EXPECT_TEXT),
+    //         6 => self.mto_channel7.as_mut().expect(EXPECT_TEXT),
+    //         7 => self.mto_channel8.as_mut().expect(EXPECT_TEXT),
+    //         _ => panic!("Channel index out of range {}", channel),
+    //     }
+    // }
 }
 
 /// This PDO object is used read the status of the multi-timestamp output channel.
@@ -440,6 +439,7 @@ impl TxPdoObject for EL1259MtiTxChannel {
         for i in 0..self.number_of_input_events as usize {
             // 0x6081:21..2A (bit 32..41)
             self.input_events[i].value = bits[32 + i];
+
             // 0x6081:41..4A (bit 64..383)
             let offset = i * 32;
             self.input_events[i].dc_timestamp_ns = bits[64+offset ..96 + offset].load_le();
