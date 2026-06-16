@@ -258,6 +258,12 @@ pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
     unsafe {
         libc::close(fd);
     }
+    if let Err(ref e) = result {
+        warn!(
+            "Interface '{}' does not respond to EtherCAT discovery: {}",
+            interface_name, e
+        );
+    }
     result
 }
 
@@ -271,6 +277,11 @@ fn probe_ethercat(fd: RawFd, interface_name: &str, frame: &[u8]) -> Result<(), a
 
         // Send discovery frame
         if libc::write(fd, frame.as_ptr() as *const libc::c_void, frame.len()) < 0 {
+            error!(
+                "BPF write on '{}': {}",
+                interface_name,
+                std::io::Error::last_os_error()
+            );
             return Err(anyhow::anyhow!(
                 "BPF write: {}",
                 std::io::Error::last_os_error()
@@ -292,6 +303,11 @@ fn probe_ethercat(fd: RawFd, interface_name: &str, frame: &[u8]) -> Result<(), a
             } else if n < 0 {
                 let e = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
                 if e != libc::EAGAIN && e != libc::EWOULDBLOCK {
+                    error!(
+                        "BPF read on '{}': {}",
+                        interface_name,
+                        std::io::Error::last_os_error()
+                    );
                     return Err(anyhow::anyhow!(
                         "BPF read: {}",
                         std::io::Error::last_os_error()
