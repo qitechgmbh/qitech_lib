@@ -213,8 +213,25 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                             debug!("TX/RX thread running without RT optimizations");
                                         },
                                     };
-                                    tx_rx_task_io_uring(&iface, pdu_tx, pdu_rx)
-                                        .expect("Failed to run TX/RX task (io_uring)");
+                                    match tx_rx_task_io_uring(&iface, pdu_tx, pdu_rx) {
+                                        Ok(()) => {
+                                            info!("EtherCAT TX/RX task (io_uring) exited normally");
+                                        }
+                                        Err(e) => {
+                                            // The TX/RX task is the network I/O loop. If it dies,
+                                            // PDU exchange stops and the master is unusable. PDU_STORAGE
+                                            // can only be split once per process, so the task cannot be
+                                            // respawned in-process. Exit cleanly so systemd restarts the
+                                            // service from a fresh state instead of unwinding via panic.
+                                            error!(
+                                                "EtherCAT TX/RX task (io_uring) failed: {:?}. \
+                                                 PDU storage cannot be re-split in-process; \
+                                                 exiting for a clean restart.",
+                                                e
+                                            );
+                                            std::process::exit(1);
+                                        }
+                                    }
                                 });
                         }
 
@@ -610,10 +627,21 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     #[cfg(target_os = "linux")]
                     {
                         info!("Transitioning SafeOp -> Op (waiting for confirmation)...");
-                        group_op = Some(
-                            rt.block_on(group_safe_op.into_op(&maindevice.as_ref().unwrap()))
-                                .expect("SAFE-OP -> OP"),
-                        );
+                        match rt.block_on(group_safe_op.into_op(&maindevice.as_ref().unwrap())) {
+                            Ok(group) => group_op = Some(group),
+                            Err(e) => {
+                                // into_op consumes the group, so there is no in-process retry;
+                                // a failure here usually means the TX/RX task died (PDU storage
+                                // cannot be re-split). Exit cleanly for a systemd restart instead
+                                // of panicking and leaving a half-initialized master behind.
+                                error!(
+                                    "EtherCAT SAFE-OP -> OP transition failed: {:?}. \
+                                     Exiting for a clean restart.",
+                                    e
+                                );
+                                std::process::exit(1);
+                            }
+                        }
                     }
                     #[cfg(not(target_os = "linux"))]
                     {
