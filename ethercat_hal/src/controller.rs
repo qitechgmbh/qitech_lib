@@ -559,24 +559,27 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         tick += 1;
                     };
 
-                    // Use request_into_op on non-Linux (non-real-time OS) to skip
-                    // blocking state-confirmation wait.
-                    #[cfg(target_os = "linux")]
+                    // Use the non-blocking request_into_op + manual tx_rx_dc polling loop
+                    // (handled below in the EtherCATState::Op branch via `all_op()`) on all
+                    // platforms. The blocking `into_op()` call was tried on Linux but its
+                    // internal polling pattern reliably triggered a latent io_uring TX/RX
+                    // race (Pdu(InvalidIndex) during the transition) that this older,
+                    // explicit-loop pattern does not hit.
+                    match rt.block_on(group_safe_op.request_into_op(&maindevice.as_ref().unwrap()))
                     {
-                        group_op = Some(
-                            rt.block_on(group_safe_op.into_op(&maindevice.as_ref().unwrap()))
-                                .expect("SAFE-OP -> OP"),
-                        );
-                    }
-                    #[cfg(not(target_os = "linux"))]
-                    {
-                        group_op = Some(
-                            rt.block_on(
-                                group_safe_op
-                                    .request_into_op(&maindevice.as_ref().unwrap()),
-                            )
-                            .expect("SAFE-OP -> OP (request)"),
-                        );
+                        Ok(group) => group_op = Some(group),
+                        Err(e) => {
+                            // request_into_op consumes the group, so there is no in-process
+                            // retry; a failure here usually means the TX/RX task died (PDU
+                            // storage cannot be re-split). Exit cleanly for a systemd restart
+                            // instead of panicking and leaving a half-initialized master behind.
+                            eprintln!(
+                                "EtherCAT SAFE-OP -> OP transition failed: {:?}. \
+                                 Exiting for a clean restart.",
+                                e
+                            );
+                            std::process::exit(1);
+                        }
                     }
 
                     println!("Started Transition to OP");
