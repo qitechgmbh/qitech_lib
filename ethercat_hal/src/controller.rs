@@ -1,22 +1,20 @@
+use crate::Mailbox;
 use crate::{
     ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState,
     MAX_SUBDEVICES, MasterConfiguration, MetaSubdevice, PDI_LEN, PDU_STORAGE, Producer, SdoType,
     TripleBufProducer,
     ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
     get_async_runtime,
-    machine_ident_read::{
-        read_device_identifications, write_device_identifications,
-    },
+    machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
 };
-use std::sync::Arc;
-use crate::Mailbox;
 use common::set_irq_affinity;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
     std::ethercat_now,
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
 };
+use std::sync::Arc;
 use std::{
     sync::mpsc::Receiver,
     thread::JoinHandle,
@@ -118,19 +116,27 @@ where
     pub fn get_cycle_time_us(&self) -> u64 {
         self.cycle_time_us
     }
-
 }
 
 unsafe impl Sync for EtherCATController<Arc<Mailbox>, TripleBufProducer> {}
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
     pub fn ethercat_state_machine(&mut self) {
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
-        let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> = None;
-        let mut group_preop_pdi: SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, NoDc>;
+        let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> =
+            None;
+        let mut group_preop_pdi: SubDeviceGroup<
+            MAX_SUBDEVICES,
+            PDI_LEN,
+            ethercrab::DefaultLock,
+            PreOpPdi,
+            NoDc,
+        >;
         let mut group_preop_pdi_dc: Option<
             SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, HasDc>,
         > = None;
-        let mut group_op: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, Op, HasDc>> = None;
+        let mut group_op: Option<
+            SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, Op, HasDc>,
+        > = None;
         let mut maindevice: Option<MainDevice> = None;
         loop {
             match self.state {
@@ -181,10 +187,12 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                             let res = set_irq_affinity(&interface, irq_core as u32);
                                             if res.is_err() {
                                                 println!("set_irq_affinity failed: {:?}", res);
-                                            }else {
-                                                println!("set irq_affinity of {} to core {}",&interface,irq_core);
+                                            } else {
+                                                println!(
+                                                    "set irq_affinity of {} to core {}",
+                                                    &interface, irq_core
+                                                );
                                             }
-
                                         }
                                     }
                                     None => (),
@@ -445,8 +453,24 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                 EtherCATState::PreopPdi => {
                     // State machine to handle transition to SafeOp with process data
                     enum GroupState {
-                        PreOp(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, HasDc>),
-                        SafeOp(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, SafeOp, HasDc>),
+                        PreOp(
+                            SubDeviceGroup<
+                                MAX_SUBDEVICES,
+                                PDI_LEN,
+                                ethercrab::DefaultLock,
+                                PreOpPdi,
+                                HasDc,
+                            >,
+                        ),
+                        SafeOp(
+                            SubDeviceGroup<
+                                MAX_SUBDEVICES,
+                                PDI_LEN,
+                                ethercrab::DefaultLock,
+                                SafeOp,
+                                HasDc,
+                            >,
+                        ),
                     }
 
                     let mut group_container = Some(GroupState::PreOp(
@@ -549,13 +573,18 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                         loop {
                             let cycle_start = Instant::now();
-                            let res = group_op.as_ref().unwrap().tx_rx_dc(&maindevice).await.expect("TX/RX");
+                            let res = group_op
+                                .as_ref()
+                                .unwrap()
+                                .tx_rx_dc(&maindevice)
+                                .await
+                                .expect("TX/RX");
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
-                        
+
                             while Instant::now() < self.next_cycle {
                                 std::hint::spin_loop();
                             }
-                        
+
                             if res.all_op() {
                                 for i in 0..self.subdevice_count {
                                     self.subdevices[i].initialized = true;
@@ -566,26 +595,25 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         }
 
                         loop {
-                            
                             let cycle_start = Instant::now();
-                            
+
                             match self.output_consumer.read() {
                                 Some(full_buffer) => {
-                                // We get a mutable slice to the whole buffer to make sub-slicing easier
-                                let mut current_offset = 0;
-                                for subdevice in group.iter(&maindevice) {
-                                    let mut output = subdevice.outputs_raw_mut();
-                                    let len = output.len();
-                                    output.copy_from_slice(
-                                        &full_buffer[current_offset..current_offset + len],
-                                    );
-                                    current_offset += len;
+                                    // We get a mutable slice to the whole buffer to make sub-slicing easier
+                                    let mut current_offset = 0;
+                                    for subdevice in group.iter(&maindevice) {
+                                        let mut output = subdevice.outputs_raw_mut();
+                                        let len = output.len();
+                                        output.copy_from_slice(
+                                            &full_buffer[current_offset..current_offset + len],
+                                        );
+                                        current_offset += len;
+                                    }
+                                    self.output_consumer.finish_read();
                                 }
-                                self.output_consumer.finish_read();
-                                },
-                                None => {},
+                                None => {}
                             };
-                            
+
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
                             match self.input_producer.input_buffer_mut() {
@@ -603,10 +631,10 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                         }
                                     }
                                     self.input_producer.publish();
-                                },
-                                None => {},
+                                }
+                                None => {}
                             }
-                            
+
                             while Instant::now() < self.next_cycle {
                                 std::hint::spin_loop();
                             }
@@ -614,10 +642,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
                             if self.cycle == u64::MAX {
                                 self.cycle = 0;
-                            }else{
+                            } else {
                                 self.cycle += 1;
                             }
-
                         }
                     });
                 }

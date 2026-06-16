@@ -78,13 +78,13 @@ pub trait StepperVelocityEL70x1Device: EthercatDevice {
 
     fn get_port_count(&self) -> usize;
     fn is_enabled(&self, port: usize) -> bool;
-    
+
     fn set_enabled(&mut self, port: usize, enabled: bool) {
         let mut output = self.get_output(port).unwrap();
         output.enable = enabled;
         let _ = self.set_output(port, output);
     }
-    
+
     fn get_position(&self, port: usize) -> i128;
     fn set_position(&mut self, port: usize, position: i128);
 
