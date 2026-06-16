@@ -20,8 +20,8 @@ use std::sync::{Arc, OnceLock, mpsc::Sender};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
-use triple_buffer::{Input, Output};
 use tracing::{debug, info, warn};
+use triple_buffer::{Input, Output};
 
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -76,21 +76,16 @@ impl Consumer for MockConsumer {
     fn read(&mut self) -> Option<&[u8]> {
         Some(&self.buffer)
     }
-    fn finish_read(&mut self) {
-        
-    }
+    fn finish_read(&mut self) {}
 }
-
-
 
 unsafe impl Sync for Mailbox {}
 unsafe impl Send for Mailbox {}
 
 pub struct Mailbox {
-    pub data : UnsafeCell<[u8;ETHERCAT_TX_RX_SIZE]>,
-    pub full : AtomicBool,
+    pub data: UnsafeCell<[u8; ETHERCAT_TX_RX_SIZE]>,
+    pub full: AtomicBool,
 }
-
 
 impl Consumer for std::sync::Arc<Mailbox> {
     fn read(&mut self) -> Option<&[u8]> {
@@ -101,7 +96,9 @@ impl Consumer for std::sync::Arc<Mailbox> {
 
     fn finish_read(&mut self) {
         let ptr = std::sync::Arc::as_ptr(self) as *mut Mailbox;
-        unsafe { (&mut *ptr).finish_read(); }
+        unsafe {
+            (&mut *ptr).finish_read();
+        }
     }
 }
 
@@ -113,7 +110,9 @@ impl Producer for std::sync::Arc<Mailbox> {
 
     fn publish(&mut self) {
         let ptr = std::sync::Arc::as_ptr(self) as *mut Mailbox;
-        unsafe { (&mut *ptr).publish(); }
+        unsafe {
+            (&mut *ptr).publish();
+        }
     }
 }
 
@@ -127,7 +126,7 @@ impl Consumer for Mailbox {
     }
 
     fn finish_read(&mut self) {
-        // We are completely done reading. 
+        // We are completely done reading.
         // We store `false` to release the buffer back to the producer.
         self.full.store(false, Ordering::Release);
     }
@@ -143,12 +142,11 @@ impl Producer for Mailbox {
     }
 
     fn publish(&mut self) {
-        // We are completely done writing. 
+        // We are completely done writing.
         // We store `true` to release the buffer to the consumer.
         self.full.store(true, Ordering::Release);
     }
 }
-
 
 pub struct TripleBufConsumer {
     pub input_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
@@ -162,7 +160,7 @@ impl Consumer for TripleBufConsumer {
     fn read(&mut self) -> Option<&[u8]> {
         Some(self.input_consumer.read())
     }
-    fn finish_read(&mut self) { }
+    fn finish_read(&mut self) {}
 }
 
 impl Producer for TripleBufProducer {
@@ -238,8 +236,8 @@ pub struct EtherCATControl<C1, P1, C2, P2>
 where
     C1: Consumer,
     P1: Producer,
-    C2 : Consumer,
-    P2 : Producer,
+    C2: Consumer,
+    P2: Producer,
 {
     pub controller: Arc<EtherCATController<C1, P1>>,
     pub channel: EtherCATThreadChannel,
@@ -298,7 +296,7 @@ impl Default for MetaSubdevice {
     }
 }
 
-#[derive(Debug,Clone,Copy,PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u8)]
 pub enum EtherCATState {
     NoInterface = 0,
@@ -311,7 +309,7 @@ pub enum EtherCATState {
 
 impl From<u8> for EtherCATState {
     fn from(value: u8) -> Self {
-        match value {            
+        match value {
             1 => Self::Boot,
             2 => Self::Init,
             3 => Self::PreOp,
@@ -404,7 +402,10 @@ pub fn init_ethercat_mock(
     faked_subdevices: Vec<MetaSubdevice>,
     _machine_infos: Option<Vec<MachineDeviceInfo>>,
 ) -> EtherCATControl<MockConsumer, MockProducer> {
-    info!("Initializing EtherCAT mock with {} fake subdevices", faked_subdevices.len());
+    info!(
+        "Initializing EtherCAT mock with {} fake subdevices",
+        faked_subdevices.len()
+    );
     let (_, rx) = mpsc::channel(); // wont actually get used in any way, just here to avoid handling options in the controller ...
     let mock_producer = [0u8; ETHERCAT_TX_RX_SIZE];
     let mock_consumer = [0u8; ETHERCAT_TX_RX_SIZE];
@@ -432,7 +433,13 @@ pub fn init_ethercat_mock(
         output_producer: producer,
     };
 
-    let mut controller = EtherCATController::new(producer_c, consumer_c, rx, None, MasterConfiguration::default());
+    let mut controller = EtherCATController::new(
+        producer_c,
+        consumer_c,
+        rx,
+        None,
+        MasterConfiguration::default(),
+    );
 
     controller.subdevice_count = faked_subdevices.len();
     for i in 0..faked_subdevices.len() {
@@ -531,23 +538,28 @@ impl Default for MasterConfiguration {
 pub fn init_ethercat(
     interface_name: &str,
     config: Option<MasterConfiguration>,
-) -> EtherCATControl<Arc<Mailbox>, TripleBufProducer, TripleBufConsumer,Arc<Mailbox>> {
+) -> EtherCATControl<Arc<Mailbox>, TripleBufProducer, TripleBufConsumer, Arc<Mailbox>> {
     info!("Initializing EtherCAT on interface '{}'", interface_name);
     let (tx, rx) = mpsc::channel();
     let (input_producer, input_consumer) =
-        triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);    
-    debug!("Created triple buffer for PDO data (size={} bytes)", ETHERCAT_TX_RX_SIZE);
-    
-    let mailbox = Arc::new(Mailbox { 
-        data: [0u8; ETHERCAT_TX_RX_SIZE].into(), 
-        full: AtomicBool::new(false),         
+        triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
+    debug!(
+        "Created triple buffer for PDO data (size={} bytes)",
+        ETHERCAT_TX_RX_SIZE
+    );
+
+    let mailbox = Arc::new(Mailbox {
+        data: [0u8; ETHERCAT_TX_RX_SIZE].into(),
+        full: AtomicBool::new(false),
     });
     debug!("Created mailbox for output data");
-    
+
     let controller = match config {
         Some(conf) => {
-            info!("Using provided MasterConfiguration: cycle_time={}us, tx_rx={:?}",
-                conf.target_cycle_time_us, conf.tx_rx_config);
+            info!(
+                "Using provided MasterConfiguration: cycle_time={}us, tx_rx={:?}",
+                conf.target_cycle_time_us, conf.tx_rx_config
+            );
             Arc::new(EtherCATController::new(
                 TripleBufProducer {
                     output_producer: input_producer,
@@ -557,7 +569,7 @@ pub fn init_ethercat(
                 Some(interface_name.to_string()),
                 conf,
             ))
-        },
+        }
         None => {
             info!("Using default MasterConfiguration");
             Arc::new(EtherCATController::new(
@@ -569,7 +581,7 @@ pub fn init_ethercat(
                 Some(interface_name.to_string()),
                 MasterConfiguration::default(),
             ))
-        },
+        }
     };
 
     let app_handle = EtherCATAppHandle {
@@ -581,14 +593,15 @@ pub fn init_ethercat(
     let controller_for_thread = Arc::clone(&controller);
     info!("Spawning EtherCAT state machine thread");
     let join_handle = std::thread::Builder::new()
-    .name("EthercatStateMachine".into())
-    .spawn(move || {
-        let ptr = Arc::as_ptr(&controller_for_thread) 
-            as *mut EtherCATController<std::sync::Arc<Mailbox>, TripleBufProducer>;
-        unsafe {
-            (&mut *ptr).ethercat_state_machine();
-        }
-    }).expect("Failed to spawn thread");
+        .name("EthercatStateMachine".into())
+        .spawn(move || {
+            let ptr = Arc::as_ptr(&controller_for_thread)
+                as *mut EtherCATController<std::sync::Arc<Mailbox>, TripleBufProducer>;
+            unsafe {
+                (&mut *ptr).ethercat_state_machine();
+            }
+        })
+        .expect("Failed to spawn thread");
     info!("EtherCAT initialization complete");
     EtherCATControl {
         controller: controller,

@@ -1,19 +1,16 @@
-
-#[cfg(not(feature = "mock" ))]
-use crate::{
-    ChannelRequest, ChannelResponse,EtherCATThreadResponseChannel
-};
-#[cfg(not(feature = "mock" ))]
+#[cfg(not(feature = "mock"))]
+use crate::{ChannelRequest, ChannelResponse, EtherCATThreadResponseChannel};
+#[cfg(not(feature = "mock"))]
 use std::time::Duration;
 
 use crate::{
-    EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType,
-    get_async_runtime, machine_ident_read::MachineDeviceInfo,
+    EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest,
+    SdoType, get_async_runtime, machine_ident_read::MachineDeviceInfo,
 };
 use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
 };
-use std::{any::TypeId};
+use std::any::TypeId;
 use tracing::{debug, error, info, warn};
 
 pub trait EthercatResponseTypedResult: Sized {
@@ -257,7 +254,10 @@ impl EtherCATThreadChannel {
         let response: ChannelResponse = match res {
             Ok(res) => res,
             Err(e) => {
-                warn!("sdo_read timed out: device=0x{:04X}, index=0x{:04X}", device_address, index);
+                warn!(
+                    "sdo_read timed out: device=0x{:04X}, index=0x{:04X}",
+                    device_address, index
+                );
                 return Err(anyhow::anyhow!(e));
             }
         };
@@ -272,7 +272,10 @@ impl EtherCATThreadChannel {
             _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
         };
         if let Err(ref e) = res {
-            error!("sdo_read failed: device=0x{:04X}, index=0x{:04X}, err={}", device_address, index, e);
+            error!(
+                "sdo_read failed: device=0x{:04X}, index=0x{:04X}, err={}",
+                device_address, index, e
+            );
         }
         return res;
     }
@@ -383,7 +386,10 @@ impl EtherCATThreadChannel {
         let response: ChannelResponse = match res {
             Ok(res) => res,
             Err(e) => {
-                warn!("sdo_write timed out: device=0x{:04X}, index=0x{:04X}", device_address, index);
+                warn!(
+                    "sdo_write timed out: device=0x{:04X}, index=0x{:04X}",
+                    device_address, index
+                );
                 return Err(anyhow::anyhow!(e));
             }
         };
@@ -422,7 +428,10 @@ impl EtherCATThreadChannel {
         let response: ChannelResponse = match res {
             Ok(res) => res,
             Err(e) => {
-                warn!("enable_dc_sync0 timed out for device 0x{:04X}", device_address);
+                warn!(
+                    "enable_dc_sync0 timed out for device 0x{:04X}",
+                    device_address
+                );
                 return Err(anyhow::anyhow!(e));
             }
         };
@@ -440,11 +449,17 @@ impl EtherCATThreadChannel {
         const BECKHOFF_EEPROM_LOCK_CODEWORD: u32 = 0x12345678;
         const BECKHOFF_CODEWORD_INDEX: u16 = 0xF008;
 
-        debug!("Unlocking Beckhoff EEPROM for device 0x{:04X}", device_address);
+        debug!(
+            "Unlocking Beckhoff EEPROM for device 0x{:04X}",
+            device_address
+        );
         let code_word = match self.sdo_read::<u32>(device_address, BECKHOFF_CODEWORD_INDEX, 0) {
             Ok(code_word) => code_word,
             Err(_) => {
-                debug!("No mailbox for device 0x{:04X} — EEPROM lock skipped", device_address);
+                debug!(
+                    "No mailbox for device 0x{:04X} — EEPROM lock skipped",
+                    device_address
+                );
                 return Ok(());
             }
         };
@@ -461,9 +476,15 @@ impl EtherCATThreadChannel {
                 0,
                 BECKHOFF_EEPROM_LOCK_CODEWORD,
             )?;
-            debug!("Beckhoff EEPROM unlocked for device 0x{:04X}", device_address);
+            debug!(
+                "Beckhoff EEPROM unlocked for device 0x{:04X}",
+                device_address
+            );
         } else {
-            debug!("Beckhoff EEPROM already unlocked for device 0x{:04X}", device_address);
+            debug!(
+                "Beckhoff EEPROM already unlocked for device 0x{:04X}",
+                device_address
+            );
         }
 
         Ok(())

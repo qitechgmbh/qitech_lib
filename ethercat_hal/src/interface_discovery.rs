@@ -154,13 +154,19 @@ pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x88, 0xa4, 0xd, 0x10,
         0x8, 0x1, 0x0, 0x0, 0x3, 0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
     ];
-    debug!("Testing EtherCAT on interface '{}' via raw socket", interface_name);
+    debug!(
+        "Testing EtherCAT on interface '{}' via raw socket",
+        interface_name
+    );
     let fd = open_raw_socket_libc(interface_name)?;
     let result = if test_discovery(fd, &ETHERCAT_DISCOVERY_FRAME) {
         info!("EtherCAT confirmed on interface '{}'", interface_name);
         Ok(())
     } else {
-        warn!("Interface '{}' does not respond to EtherCAT discovery", interface_name);
+        warn!(
+            "Interface '{}' does not respond to EtherCAT discovery",
+            interface_name
+        );
         Err(anyhow::anyhow!(
             "Interface {:?} is not Ethercat",
             interface_name
@@ -270,7 +276,10 @@ pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
     }
     match &result {
         Ok(()) => info!("EtherCAT confirmed on interface '{}'", interface_name),
-        Err(e) => warn!("Interface '{}' does not respond to EtherCAT discovery: {}", interface_name, e),
+        Err(e) => warn!(
+            "Interface '{}' does not respond to EtherCAT discovery: {}",
+            interface_name, e
+        ),
     }
     result
 }
@@ -286,7 +295,11 @@ fn probe_ethercat(fd: RawFd, interface_name: &str, frame: &[u8]) -> Result<(), a
         // Send discovery frame
         debug!("Sending EtherCAT discovery frame on '{}'", interface_name);
         if libc::write(fd, frame.as_ptr() as *const libc::c_void, frame.len()) < 0 {
-            error!("BPF write on '{}': {}", interface_name, std::io::Error::last_os_error());
+            error!(
+                "BPF write on '{}': {}",
+                interface_name,
+                std::io::Error::last_os_error()
+            );
             return Err(anyhow::anyhow!(
                 "BPF write: {}",
                 std::io::Error::last_os_error()
@@ -308,7 +321,11 @@ fn probe_ethercat(fd: RawFd, interface_name: &str, frame: &[u8]) -> Result<(), a
             } else if n < 0 {
                 let e = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
                 if e != libc::EAGAIN && e != libc::EWOULDBLOCK {
-                    error!("BPF read on '{}': {}", interface_name, std::io::Error::last_os_error());
+                    error!(
+                        "BPF read on '{}': {}",
+                        interface_name,
+                        std::io::Error::last_os_error()
+                    );
                     return Err(anyhow::anyhow!(
                         "BPF read: {}",
                         std::io::Error::last_os_error()

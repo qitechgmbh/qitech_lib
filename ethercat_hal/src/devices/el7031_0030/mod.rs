@@ -12,7 +12,7 @@ use crate::{
         counter_wrapper_u16_i128::CounterWrapperU16U128, signing_converter_u16::U16SigningConverter,
     },
     io::{
-        analog_input::{AnalogInputInput, physical::AnalogInputRange},        
+        analog_input::{AnalogInputInput, physical::AnalogInputRange},
         stepper_velocity_el70x1::{
             StepperVelocityEL70x1Device, StepperVelocityEL70x1Input, StepperVelocityEL70x1Output,
         },
