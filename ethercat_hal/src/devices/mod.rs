@@ -63,6 +63,7 @@ use el7041_0052::EL7041_0052_IDENTITY_A;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::{any::Any, fmt::Debug};
+use tracing::{debug, error};
 use wago_750_354::{WAGO_750_354_IDENTITY_A, Wago750_354};
 use wago_modules::ip20_ec_di8_do8::{IP20_EC_DI8_DO8_IDENTITY, IP20EcDi8Do8};
 
@@ -175,6 +176,11 @@ pub fn device_from_subdevice_identity(
     dev: MetaSubdevice,
 ) -> Result<Box<dyn EthercatDevice>, anyhow::Error> {
     let ident_tuple: (u32, u32, u32) = (dev.vendor, dev.product_id, dev.revision);
+    let dev_name = dev.get_name().unwrap_or_else(|_| "unknown".into());
+    debug!(
+        "Creating device for '{}': vendor=0x{:08X}, product=0x{:08X}, rev=0x{:08X}",
+        dev_name, ident_tuple.0, ident_tuple.1, ident_tuple.2
+    );
     match ident_tuple {
         WAGO_750_354_IDENTITY_A => Ok(Box::new(Wago750_354::new())),
         IP20_EC_DI8_DO8_IDENTITY => Ok(Box::new(IP20EcDi8Do8::new())),
@@ -205,13 +211,19 @@ pub fn device_from_subdevice_identity(
         }
         EP2339_0021_IDENTITY_A => Ok(Box::new(ep2339_0021::EP2339_0021::new())),
         MINAS_A6_IDENTITY_A => Ok(Box::new(minas_a6::MinasA6BMotor::new())),
-        _ => Err(anyhow::anyhow!(
-            "[{}::device_from_subdevice] No Driver: vendor_id: 0x{:x}, product_id: 0x{:x}, revision: 0x{:x}",
-            module_path!(),
-            ident_tuple.0,
-            ident_tuple.1,
-            ident_tuple.2,
-        )),
+        _ => {
+            error!(
+                "No driver for subdevice '{}': vendor=0x{:08X}, product=0x{:08X}, rev=0x{:08X}",
+                dev_name, ident_tuple.0, ident_tuple.1, ident_tuple.2
+            );
+            Err(anyhow::anyhow!(
+                "[{}::device_from_subdevice] No Driver: vendor_id: 0x{:x}, product_id: 0x{:x}, revision: 0x{:x}",
+                module_path!(),
+                ident_tuple.0,
+                ident_tuple.1,
+                ident_tuple.2,
+            ))
+        }
     }
 }
 
@@ -266,27 +278,37 @@ where
     T: EthercatDevice,
 {
     let any_dev = dev.into_any_boxed();
-    // Attempt to downcast to the concrete type Box<T>
     match any_dev.downcast::<T>() {
-        Ok(concrete_box) => Ok(concrete_box),
-        Err(_) => Err(anyhow::anyhow!(
-            "Downcast failed: device is not of type {}",
-            std::any::type_name::<T>()
-        )),
+        Ok(concrete_box) => {
+            debug!("Downcast to {} succeeded", std::any::type_name::<T>());
+            Ok(concrete_box)
+        },
+        Err(_) => {
+            error!(
+                "Downcast to {} failed — device type mismatch",
+                std::any::type_name::<T>()
+            );
+            Err(anyhow::anyhow!(
+                "Downcast failed: device is not of type {}",
+                std::any::type_name::<T>()
+            ))
+        },
     }
 }
 
 pub fn downcast_rc_refcell<T: 'static>(
     dev: Rc<RefCell<dyn EthercatDevice>>,
 ) -> Result<Rc<RefCell<T>>, anyhow::Error> {
-    // Check if the inner type is actually T
     let is_t = dev.borrow().as_any().is::<T>();
     if !is_t {
+        error!(
+            "RC downcast to {} failed — device type mismatch",
+            std::any::type_name::<T>()
+        );
         return Err(anyhow::anyhow!("Type mismatch in hardware downcast"));
     }
-    // Since we verified the type above, we can use raw pointers.
+    debug!("RC downcast to {} succeeded", std::any::type_name::<T>());
     let raw_trait_ptr = Rc::into_raw(dev);
-    // We cast the fat pointer to a thin pointer of the concrete RefCell<T>
     let raw_concrete_ptr = raw_trait_ptr as *const RefCell<T>;
     unsafe { Ok(Rc::from_raw(raw_concrete_ptr)) }
 }

@@ -14,6 +14,7 @@ use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
 };
 use std::{any::TypeId};
+use tracing::{debug, error, info, warn};
 
 pub trait EthercatResponseTypedResult: Sized {
     fn from_bool(_v: bool) -> anyhow::Result<Self> {
@@ -231,6 +232,10 @@ impl EtherCATThreadChannel {
     where
         T: EthercatSdoBytes + EthercatResponseTypedResult,
     {
+        debug!(
+            "sdo_read: device=0x{:04X}, index=0x{:04X}, sub_index=0x{:02X}",
+            device_address, index, sub_index
+        );
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let sdo_type = type_id_to_sdo_type::<T>()?;
         let sdo_request: SdoReadRequest = SdoReadRequest {
@@ -251,7 +256,10 @@ impl EtherCATThreadChannel {
         let res = rx.recv_timeout(Duration::from_millis(500));
         let response: ChannelResponse = match res {
             Ok(res) => res,
-            Err(e) => return Err(anyhow::anyhow!(e)),
+            Err(e) => {
+                warn!("sdo_read timed out: device=0x{:04X}, index=0x{:04X}", device_address, index);
+                return Err(anyhow::anyhow!(e));
+            }
         };
 
         let res: Result<T, anyhow::Error> = match response {
@@ -263,10 +271,14 @@ impl EtherCATThreadChannel {
             ChannelResponse::SdoResponseI32(r) => T::from_i32(r?),
             _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
         };
+        if let Err(ref e) = res {
+            error!("sdo_read failed: device=0x{:04X}, index=0x{:04X}, err={}", device_address, index, e);
+        }
         return res;
     }
 
     pub fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, anyhow::Error> {
+        debug!("Reading device identifications");
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::ReadMachineIdent(),
@@ -282,11 +294,18 @@ impl EtherCATThreadChannel {
         let res = rx.recv_timeout(Duration::from_millis(5000));
         let response: ChannelResponse = match res {
             Ok(res) => res,
-            Err(e) => return Err(anyhow::anyhow!(e)),
+            Err(e) => {
+                warn!("read_device_identifications timed out");
+                return Err(anyhow::anyhow!(e));
+            }
         };
         match response {
-            ChannelResponse::MachineDeviceInfoResponse(machine_device_infos) => {
-                machine_device_infos
+            ChannelResponse::MachineDeviceInfoResponse(result) => {
+                match &result {
+                    Ok(infos) => info!("Read {} device identifications", infos.len()),
+                    Err(e) => error!("Failed to read device identifications: {}", e),
+                }
+                result
             }
             _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
         }
@@ -298,6 +317,7 @@ impl EtherCATThreadChannel {
     ) -> Result<(), anyhow::Error> {
         use crate::ChannelRequests;
 
+        info!("Writing {} device identifications to EEPROM", info.len());
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: ChannelRequests::WriteMachineIdent(info),
@@ -311,7 +331,10 @@ impl EtherCATThreadChannel {
         let res = rx.recv_timeout(Duration::from_millis(5000));
         let response: ChannelResponse = match res {
             Ok(res) => res,
-            Err(e) => return Err(anyhow::anyhow!(e)),
+            Err(e) => {
+                warn!("write_machine_device_info_eeprom timed out");
+                return Err(anyhow::anyhow!(e));
+            }
         };
         match response {
             ChannelResponse::WriteMachineInfoResponse(result) => result,
@@ -329,6 +352,10 @@ impl EtherCATThreadChannel {
     where
         T: EtherCrabWireWrite + EthercatSdoBytes,
     {
+        debug!(
+            "sdo_write: device=0x{:04X}, index=0x{:04X}, sub_index=0x{:02X}",
+            device_address, index, sub_index
+        );
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let bytes: [u8; 4] = T::to_bytes(&value);
         let sdo_type = type_id_to_sdo_type::<T>()?;
@@ -355,7 +382,10 @@ impl EtherCATThreadChannel {
         let res = rx.recv_timeout(Duration::from_millis(500));
         let response: ChannelResponse = match res {
             Ok(res) => res,
-            Err(e) => return Err(anyhow::anyhow!(e)),
+            Err(e) => {
+                warn!("sdo_write timed out: device=0x{:04X}, index=0x{:04X}", device_address, index);
+                return Err(anyhow::anyhow!(e));
+            }
         };
         match response {
             ChannelResponse::SdoWriteResponse(result) => result,
@@ -364,6 +394,7 @@ impl EtherCATThreadChannel {
     }
 
     pub fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error> {
+        info!("Requesting state change to {:?}", state);
         let (tx, _rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::ChangeState(state),
@@ -374,6 +405,7 @@ impl EtherCATThreadChannel {
     }
 
     pub fn enable_dc_sync0(&self, device_address: u16) -> Result<(), anyhow::Error> {
+        debug!("Enabling DC Sync0 for device 0x{:04X}", device_address);
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::EnableDCSync0(device_address.into()),
@@ -389,7 +421,10 @@ impl EtherCATThreadChannel {
         let res = rx.recv_timeout(Duration::from_millis(500));
         let response: ChannelResponse = match res {
             Ok(res) => res,
-            Err(e) => return Err(anyhow::anyhow!(e)),
+            Err(e) => {
+                warn!("enable_dc_sync0 timed out for device 0x{:04X}", device_address);
+                return Err(anyhow::anyhow!(e));
+            }
         };
 
         match response {
@@ -405,13 +440,13 @@ impl EtherCATThreadChannel {
         const BECKHOFF_EEPROM_LOCK_CODEWORD: u32 = 0x12345678;
         const BECKHOFF_CODEWORD_INDEX: u16 = 0xF008;
 
+        debug!("Unlocking Beckhoff EEPROM for device 0x{:04X}", device_address);
         let code_word = match self.sdo_read::<u32>(device_address, BECKHOFF_CODEWORD_INDEX, 0) {
             Ok(code_word) => code_word,
-            // This happens when the subdevice has no mailbox
-            // There is NO check in ethercrab for Mailbox presence, so we just have to pray that it has one and send a request
-            // If there is no Mailbox to write Coe Request to, then there is also no EEPROM meaning we achieved our goal in a sense
-            // This is why it returns OK on an error for sdo_read
-            Err(_) => return Ok(()),
+            Err(_) => {
+                debug!("No mailbox for device 0x{:04X} — EEPROM lock skipped", device_address);
+                return Ok(());
+            }
         };
 
         let eeprom_lock_toggled = match code_word {
@@ -426,6 +461,9 @@ impl EtherCATThreadChannel {
                 0,
                 BECKHOFF_EEPROM_LOCK_CODEWORD,
             )?;
+            debug!("Beckhoff EEPROM unlocked for device 0x{:04X}", device_address);
+        } else {
+            debug!("Beckhoff EEPROM already unlocked for device 0x{:04X}", device_address);
         }
 
         Ok(())
@@ -462,6 +500,10 @@ pub fn sdo_write(
     group: &SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
     request: SdoRequest,
 ) -> Result<(), anyhow::Error> {
+    debug!(
+        "sdo_write internal: device=0x{:04X}, index=0x{:04X}, sub_index={}",
+        request.device_address, request.index, request.sub_index
+    );
     for device in group.iter(maindevice) {
         if device.configured_address() == request.device_address {
             let runtime = get_async_runtime();
@@ -500,6 +542,10 @@ pub fn sdo_write(
             return Ok(res?);
         }
     }
+    error!(
+        "sdo_write: unknown subdevice 0x{:04X} (index=0x{:04X})",
+        request.device_address, request.index
+    );
     Err(anyhow::anyhow!("Unknown Subdevice"))
 }
 
@@ -511,6 +557,10 @@ pub fn sdo_read<T>(
 where
     T: EtherCrabWireRead + EtherCrabWireSized,
 {
+    debug!(
+        "sdo_read internal: device=0x{:04X}, index=0x{:04X}, sub_index={}",
+        request.device_address, request.index, request.sub_index
+    );
     for device in group.iter(maindevice) {
         if device.configured_address() == request.device_address {
             let runtime = get_async_runtime();
@@ -519,6 +569,10 @@ where
             return Ok(res?);
         }
     }
+    error!(
+        "sdo_read: unknown subdevice 0x{:04X} (index=0x{:04X})",
+        request.device_address, request.index
+    );
     Err(anyhow::anyhow!("Unknown Subdevice"))
 }
 
@@ -531,10 +585,12 @@ pub fn enable_dc_sync(
     rt.block_on(async {
         for mut subdevice in group.iter_mut(maindevice) {
             if subdevice.configured_address() == device_address as u16 {
+                debug!("Enabling DC Sync0 for device 0x{:04X}", device_address);
                 subdevice.set_dc_sync(DcSync::Sync0);
                 return Ok(());
             }
         }
+        error!("enable_dc_sync: unknown subdevice 0x{:04X}", device_address);
         return Err(anyhow::anyhow!("Unknown Subdevice"));
     })
 }

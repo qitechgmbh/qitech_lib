@@ -3,6 +3,7 @@ use std::ffi::CStr;
 use std::ptr;
 #[cfg(target_os = "linux")]
 use std::{ffi::CString, mem, os::fd::RawFd};
+use tracing::{debug, error, info, warn};
 
 #[derive(Debug)]
 pub enum LinkType {
@@ -19,11 +20,11 @@ pub struct Interface {
 }
 
 pub fn list_ethernet_interfaces() -> Result<Vec<Interface>, anyhow::Error> {
+    debug!("Listing network interfaces...");
     let mut ifaddr: *mut ifaddrs = ptr::null_mut();
-    // getifaddrs populates a linked list of interface structures.
     unsafe {
         if getifaddrs(&mut ifaddr) == -1 {
-            eprintln!("Error calling getifaddrs");
+            error!("Error calling getifaddrs");
             return Err(anyhow::anyhow!("Error calling getifaddrs"));
         }
         let mut vec: Vec<Interface> = vec![];
@@ -32,10 +33,10 @@ pub fn list_ethernet_interfaces() -> Result<Vec<Interface>, anyhow::Error> {
         while !curr.is_null() {
             let interface = *curr;
             let flags = interface.ifa_flags;
-            // Convert the C string name to a Rust &str
             if !interface.ifa_name.is_null() {
                 let name = CStr::to_string_lossy(CStr::from_ptr(interface.ifa_name)).into_owned();
                 if (flags & libc::IFF_LOOPBACK as u32) != 0 {
+                    debug!("Skipping loopback interface '{}'", name);
                     curr = interface.ifa_next;
                     continue;
                 }
@@ -75,6 +76,10 @@ pub fn list_ethernet_interfaces() -> Result<Vec<Interface>, anyhow::Error> {
             curr = interface.ifa_next;
         }
         freeifaddrs(ifaddr);
+        info!("Found {} non-loopback interfaces", vec.len());
+        for iface in &vec {
+            debug!("Interface: {} ({:?})", iface.name, iface.link_type);
+        }
         Ok(vec)
     }
 }
@@ -149,10 +154,13 @@ pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x88, 0xa4, 0xd, 0x10,
         0x8, 0x1, 0x0, 0x0, 0x3, 0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
     ];
+    debug!("Testing EtherCAT on interface '{}' via raw socket", interface_name);
     let fd = open_raw_socket_libc(interface_name)?;
     let result = if test_discovery(fd, &ETHERCAT_DISCOVERY_FRAME) {
+        info!("EtherCAT confirmed on interface '{}'", interface_name);
         Ok(())
     } else {
+        warn!("Interface '{}' does not respond to EtherCAT discovery", interface_name);
         Err(anyhow::anyhow!(
             "Interface {:?} is not Ethercat",
             interface_name
@@ -246,6 +254,7 @@ fn contains_ethercat_frame(data: &[u8]) -> bool {
 
 #[cfg(target_os = "macos")]
 pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
+    debug!("Testing EtherCAT on interface '{}' via BPF", interface_name);
     // EtherCAT broadcast discovery frame padded to Ethernet minimum (60 bytes).
     const FRAME: [u8; 60] = [
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x88, 0xa4, 0x0d,
@@ -259,6 +268,10 @@ pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
     unsafe {
         libc::close(fd);
     }
+    match &result {
+        Ok(()) => info!("EtherCAT confirmed on interface '{}'", interface_name),
+        Err(e) => warn!("Interface '{}' does not respond to EtherCAT discovery: {}", interface_name, e),
+    }
     result
 }
 
@@ -271,7 +284,9 @@ fn probe_ethercat(fd: RawFd, interface_name: &str, frame: &[u8]) -> Result<(), a
         while libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) > 0 {}
 
         // Send discovery frame
+        debug!("Sending EtherCAT discovery frame on '{}'", interface_name);
         if libc::write(fd, frame.as_ptr() as *const libc::c_void, frame.len()) < 0 {
+            error!("BPF write on '{}': {}", interface_name, std::io::Error::last_os_error());
             return Err(anyhow::anyhow!(
                 "BPF write: {}",
                 std::io::Error::last_os_error()
@@ -290,10 +305,10 @@ fn probe_ethercat(fd: RawFd, interface_name: &str, frame: &[u8]) -> Result<(), a
                 if contains_ethercat_frame(&buf[..n as usize]) {
                     return Ok(());
                 }
-                // Non-EtherCAT traffic — keep waiting until the timeout.
             } else if n < 0 {
                 let e = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
                 if e != libc::EAGAIN && e != libc::EWOULDBLOCK {
+                    error!("BPF read on '{}': {}", interface_name, std::io::Error::last_os_error());
                     return Err(anyhow::anyhow!(
                         "BPF read: {}",
                         std::io::Error::last_os_error()
@@ -308,6 +323,7 @@ fn probe_ethercat(fd: RawFd, interface_name: &str, frame: &[u8]) -> Result<(), a
             let elapsed =
                 (now.tv_sec - start.tv_sec) * 1_000_000 + (now.tv_usec - start.tv_usec) as i64;
             if elapsed >= 500_000 {
+                warn!("No EtherCAT response on '{}' within 500ms", interface_name);
                 return Err(anyhow::anyhow!("No EtherCAT response on {interface_name}"));
             }
             libc::nanosleep(
