@@ -5,10 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
-# Pinned to the v0.7.1 release tag instead of the moving `main` branch.
-# `main` regressed the Linux io_uring TX/RX path (Pdu(InvalidIndex(0)) during
-# the SAFE-OP -> OP transition), which crash-looped the NixOS HMI.
-ethercrab = { git = "https://github.com/ethercrab-rs/ethercrab", rev = "800f412d5e7c61df1c819c7c597da75a317df463" }
+ethercrab = { git = "https://github.com/ethercrab-rs/ethercrab", branch = "main" }
 ethercat_hal_derive = { version = "0.1.0", path = "../ethercat_hal_derive" }
 units = { path = "../units" }
 bitvec = { version = "1.0.1", features = ["alloc"] }
