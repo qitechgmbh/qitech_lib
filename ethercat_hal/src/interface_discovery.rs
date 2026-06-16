@@ -170,95 +170,71 @@ use std::{ffi::CString, mem, os::fd::RawFd};
 
 #[cfg(target_os = "macos")]
 fn open_bpf(interface_name: &str) -> Result<RawFd, anyhow::Error> {
-    let name = interface_name.as_bytes();
-    if name.len() >= libc::IFNAMSIZ {
-        return Err(anyhow::anyhow!("Interface name too long: {interface_name}"));
-    }
     unsafe {
-        for i in 0..256 {
+        for i in 0..16 {
             let dev = CString::new(format!("/dev/bpf{i}")).unwrap();
             let fd = libc::open(dev.as_ptr(), libc::O_RDWR | libc::O_NONBLOCK);
             if fd < 0 {
-                let err = std::io::Error::last_os_error();
-                match err.raw_os_error() {
-                    // Device in use — try the next one.
-                    Some(libc::EBUSY) => continue,
-                    // Past the last existing BPF node — all devices busy.
-                    Some(libc::ENOENT) => {
-                        return Err(anyhow::anyhow!(
-                            "No free BPF device (checked /dev/bpf0../dev/bpf{i})"
-                        ));
-                    }
-                    // EPERM/EACCES etc. — retrying other nodes won't help.
-                    _ => return Err(anyhow::anyhow!("Failed to open /dev/bpf{i}: {err}")),
+                if std::io::Error::last_os_error().raw_os_error() == Some(libc::EBUSY) {
+                    continue;
                 }
+                return Err(anyhow::anyhow!("Failed to open /dev/bpf{i}"));
             }
-            // Immediate mode — read returns as soon as a packet arrives.
-            let immediate: libc::c_uint = 1;
-            if libc::ioctl(fd, libc::BIOCIMMEDIATE, &immediate) == -1 {
-                let err = std::io::Error::last_os_error();
+
+            let one: libc::c_uint = 1;
+            if libc::ioctl(fd, libc::BIOCIMMEDIATE, &one) == -1 {
                 libc::close(fd);
-                return Err(anyhow::anyhow!(
-                    "BIOCIMMEDIATE on /dev/bpf{i} failed: {err}"
-                ));
+                return Err(anyhow::anyhow!("BIOCIMMEDIATE failed"));
             }
 
             let mut ifr: libc::ifreq = mem::zeroed();
-            for (dst, &src) in ifr.ifr_name.iter_mut().zip(name) {
+            for (dst, &src) in ifr.ifr_name.iter_mut().zip(interface_name.as_bytes()) {
                 *dst = src as libc::c_char;
             }
 
             if libc::ioctl(fd, libc::BIOCSETIF, &ifr) == -1 {
-                let err = std::io::Error::last_os_error();
                 libc::close(fd);
-                return Err(anyhow::anyhow!(
-                    "BIOCSETIF({interface_name}) on /dev/bpf{i} failed: {err}"
-                ));
+                return Err(anyhow::anyhow!("BIOCSETIF({interface_name}) failed"));
             }
+
             return Ok(fd);
         }
         Err(anyhow::anyhow!("No free BPF device"))
     }
 }
 
-/// Scans a BPF read buffer (which may hold several concatenated records)
-/// for a captured frame with the EtherCAT EtherType (0x88a4).
 #[cfg(target_os = "macos")]
 fn contains_ethercat_frame(data: &[u8]) -> bool {
-    let align = libc::BPF_ALIGNMENT as usize;
-    let mut off = 0usize;
-    while off + mem::size_of::<libc::bpf_hdr>() <= data.len() {
-        let hdr =
-            unsafe { std::ptr::read_unaligned(data.as_ptr().add(off) as *const libc::bpf_hdr) };
-        let hdrlen = hdr.bh_hdrlen as usize;
-        let caplen = hdr.bh_caplen as usize;
-        if hdrlen < mem::size_of::<libc::bpf_hdr>() || off + hdrlen + caplen > data.len() {
+    let mut pos = 0;
+    while pos + 18 <= data.len() {
+        let hdrlen = u16::from_le_bytes([data[pos + 16], data[pos + 17]]) as usize;
+        let caplen = u32::from_le_bytes([
+            data[pos + 12], data[pos + 13], data[pos + 14], data[pos + 15],
+        ]) as usize;
+        if hdrlen < 18 || pos + hdrlen + caplen > data.len() {
             break;
         }
-        let pkt = &data[off + hdrlen..off + hdrlen + caplen];
+        let pkt = &data[pos + hdrlen..pos + hdrlen + caplen];
         if pkt.len() >= 14 && pkt[12] == 0x88 && pkt[13] == 0xa4 {
             return true;
         }
-        off += (hdrlen + caplen + align - 1) & !(align - 1);
+        pos += (hdrlen + caplen + 3) & !3;
     }
     false
 }
 
 #[cfg(target_os = "macos")]
 pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
-    // EtherCAT broadcast discovery frame padded to Ethernet minimum (60 bytes).
     const FRAME: [u8; 60] = [
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x88, 0xa4, 0x0d,
-        0x10, 0x08, 0x01, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x88, 0xa4, 0x0d, 0x10, 0x08, 0x01, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ];
-
     let fd = open_bpf(interface_name)?;
     let result = probe_ethercat(fd, interface_name, &FRAME);
-    unsafe {
-        libc::close(fd);
-    }
+    unsafe { libc::close(fd); }
     result
 }
 
@@ -266,57 +242,23 @@ pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
 fn probe_ethercat(fd: RawFd, interface_name: &str, frame: &[u8]) -> Result<(), anyhow::Error> {
     unsafe {
         let mut buf = [0u8; 4096];
-
-        // Drain stale packets (non-blocking)
         while libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) > 0 {}
 
-        // Send discovery frame
-        if libc::write(fd, frame.as_ptr() as *const libc::c_void, frame.len()) < 0 {
-            return Err(anyhow::anyhow!(
-                "BPF write: {}",
-                std::io::Error::last_os_error()
-            ));
+        let n = libc::write(fd, frame.as_ptr() as *const libc::c_void, frame.len());
+        if n != frame.len() as isize {
+            return Err(anyhow::anyhow!("BPF write: sent {n}/{}", frame.len()));
         }
 
-        // Wait for response (500ms timeout, non-blocking read + nanosleep)
-        let mut start = libc::timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        };
-        libc::gettimeofday(&mut start, std::ptr::null_mut());
+        let start = std::time::Instant::now();
         loop {
             let n = libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len());
-            if n > 0 {
-                if contains_ethercat_frame(&buf[..n as usize]) {
-                    return Ok(());
-                }
-                // Non-EtherCAT traffic — keep waiting until the timeout.
-            } else if n < 0 {
-                let e = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
-                if e != libc::EAGAIN && e != libc::EWOULDBLOCK {
-                    return Err(anyhow::anyhow!(
-                        "BPF read: {}",
-                        std::io::Error::last_os_error()
-                    ));
-                }
+            if n > 0 && contains_ethercat_frame(&buf[..n as usize]) {
+                return Ok(());
             }
-            let mut now = libc::timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            };
-            libc::gettimeofday(&mut now, std::ptr::null_mut());
-            let elapsed =
-                (now.tv_sec - start.tv_sec) * 1_000_000 + (now.tv_usec - start.tv_usec) as i64;
-            if elapsed >= 500_000 {
+            if start.elapsed() >= std::time::Duration::from_secs(2) {
                 return Err(anyhow::anyhow!("No EtherCAT response on {interface_name}"));
             }
-            libc::nanosleep(
-                &libc::timespec {
-                    tv_sec: 0,
-                    tv_nsec: 1_000_000,
-                },
-                std::ptr::null_mut(),
-            );
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }
 }
