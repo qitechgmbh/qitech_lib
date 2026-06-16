@@ -214,7 +214,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                         },
                                     };
                                     match tx_rx_task_io_uring(&iface, pdu_tx, pdu_rx) {
-                                        Ok(()) => {
+                                        Ok(_) => {
                                             info!("EtherCAT TX/RX task (io_uring) exited normally");
                                         }
                                         Err(e) => {
