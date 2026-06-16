@@ -23,7 +23,7 @@ use std::{
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::time::interval;
-use tracing::{debug, error, info, info_span, warn};
+use tracing::{error, info, warn};
 
 pub struct EtherCATController<C, P>
 where
@@ -157,7 +157,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     // Do Nothing
                 }
                 EtherCATState::Init => {
-                    let _span = info_span!("Init");
                     let msg = match self.rx_channel.try_recv() {
                         Ok(value) => value,
                         Err(_) => continue,
@@ -168,10 +167,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             EtherCATState::PreOp => (),
                             _ => continue,
                         },
-                        ChannelRequests::Shutdown() => {
-                            info!("Shutdown requested in Init state, exiting");
-                            return;
-                        }
+                        ChannelRequests::Shutdown() => return,
                         _ => continue,
                     }
 
@@ -182,7 +178,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     if self.interface.is_some() {
                         let (tx, rx, pdu) = PDU_STORAGE.try_split().expect("can only split once");
                         let interface = self.interface.clone().unwrap();
-                        info!("Splitting PDU storage for interface '{}'", &interface);
 
                         #[cfg(target_os = "linux")]
                         {
@@ -202,10 +197,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                                 opt.ethercat_io_thread_priority as i32,
                                             );
                                             core_affinity::set_for_current(id);
-                                            info!(
-                                                "TX/RX thread pinned to core {}",
-                                                opt.ethercat_io_thread_core
-                                            );
                                             if let Some(irq_core) = opt.pin_irq_core {
                                                 let res = set_irq_affinity(&iface, irq_core as u32);
                                                 if res.is_err() {
@@ -218,14 +209,10 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                                 }
                                             }
                                         }
-                                        None => {
-                                            debug!("TX/RX thread running without RT optimizations");
-                                        }
+                                        None => {}
                                     };
                                     match tx_rx_task_io_uring(&iface, pdu_tx, pdu_rx) {
-                                        Ok(_) => {
-                                            info!("EtherCAT TX/RX task (io_uring) exited normally");
-                                        }
+                                        Ok(_) => {}
                                         Err(e) => {
                                             // The TX/RX task is the network I/O loop. If it dies,
                                             // PDU exchange stops and the master is unusable. PDU_STORAGE
@@ -267,11 +254,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 });
                         }
 
-                        info!(
-                            "Creating MainDevice with timeouts: state_transition={:?}, pdu={:?}",
-                            Duration::from_millis(20000),
-                            Duration::from_micros(30_000)
-                        );
                         maindevice = Some(MainDevice::new(
                             pdu,
                             Timeouts {
@@ -288,10 +270,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             },
                         ));
                         let rt = get_async_runtime();
-                        debug!(
-                            "Initializing single group with MAX_SUBDEVICES={}, PDI_LEN={}",
-                            MAX_SUBDEVICES, PDI_LEN
-                        );
                         let res = rt.block_on(async {
                             maindevice
                                 .as_ref()
@@ -319,11 +297,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     };
                 }
                 EtherCATState::PreOp => {
-                    let _span = info_span!("PreOp").entered();
                     let maindev = maindevice.as_ref().unwrap();
                     let mut preop_group = group.as_mut().unwrap();
 
-                    info!("Discovering subdevices...");
                     let mut i = 0;
                     for subdevice in preop_group.iter(&maindev) {
                         let bytes = subdevice.name().as_bytes();
@@ -333,19 +309,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         self.subdevices[i].revision = subdevice.identity().revision;
                         self.subdevices[i].vendor = subdevice.identity().vendor_id;
                         self.subdevices[i].device_address = subdevice.configured_address();
-                        debug!(
-                            "Found subdevice {}: name={}, vendor=0x{:08X}, product=0x{:08X}, rev=0x{:08X}, addr=0x{:04X}",
-                            i,
-                            String::from_utf8_lossy(&bytes[..len]),
-                            subdevice.identity().vendor_id,
-                            subdevice.identity().product_id,
-                            subdevice.identity().revision,
-                            subdevice.configured_address(),
-                        );
                         i += 1;
                     }
                     self.subdevice_count = i;
-                    info!("Discovered {} subdevices total", i);
                     let msg = match self.rx_channel.try_recv() {
                         Ok(value) => value,
                         Err(_e) => continue,
@@ -470,23 +436,17 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                     let group_to_transition = group.take().expect("Group missing in PreOp");
                     let device_ref = maindevice.as_ref().expect("MainDevice missing");
-                    let rt = get_async_runtime();
-                    info!("Transitioning group into PreOpPdi...");
                     let res = rt
                         .block_on(async { group_to_transition.into_pre_op_pdi(device_ref).await });
 
                     group_preop_pdi = match res {
-                        Ok(group) => {
-                            info!("Successfully entered PreOpPdi");
-                            group
-                        }
+                        Ok(group) => group,
                         Err(e) => {
                             error!("Failed to transition to PreOpPdi: {:?}", e);
                             todo!();
                         }
                     };
 
-                    info!("Waiting for DC system time to settle (max deviation < 100)...");
                     loop {
                         rt.block_on(
                             group_preop_pdi.tx_rx_sync_system_time(&maindevice.as_ref().unwrap()),
@@ -530,9 +490,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             }
                             if max_deviation < 100 {
                                 info!(
-                                    "DC clocks settled after {} ms (max deviation: {})",
-                                    start.elapsed().as_millis(),
-                                    max_deviation
+                                    "Clocks settled after {} ms",
+                                    start.elapsed().as_millis()
                                 );
                                 break;
                             }
@@ -540,12 +499,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         rt.block_on(tick_interval.tick());
                     }
                     let device = maindevice.as_ref().unwrap();
-                    info!(
-                        "Configuring DC sync: start_delay={:?}, sync0_period={:?}, sync0_shift={:?}",
-                        self.current_config.dc_config.start_delay,
-                        self.current_config.dc_config.sync0_period,
-                        self.current_config.dc_config.sync0_shift
-                    );
                     group_preop_pdi_dc = Some(
                         rt.block_on(group_preop_pdi.configure_dc_sync(
                             device,
@@ -557,11 +510,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         ))
                         .unwrap(),
                     );
-                    info!("Transitioned to PreOpPdi");
                     self.state = EtherCATState::PreopPdi;
                 }
                 EtherCATState::PreopPdi => {
-                    let _span = info_span!("PreopPdi").entered();
                     // State machine to handle transition to SafeOp with process data
                     enum GroupState {
                         PreOp(
@@ -590,10 +541,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                     let mut tick = 0;
                     let rt = get_async_runtime();
-                    info!(
-                        "Synchronizing DC clocks and waiting for SafeOp (max {} ticks)...",
-                        self.current_config.dc_config.target_dc_tick
-                    );
                     let group_safe_op = loop {
                         match group_container.take().unwrap() {
                             GroupState::PreOp(group) => {
@@ -614,7 +561,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     let group_res = rt.block_on(group.into_safe_op(device));
                                     let group = group_res.expect("Failed SafeOp");
                                     group_container = Some(GroupState::SafeOp(group));
-                                    info!("Requested SAFE-OP (tick {})", tick);
+                                    info!("Requested SAFE-OP");
                                 } else {
                                     group_container = Some(GroupState::PreOp(group));
                                 }
@@ -634,7 +581,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 });
 
                                 if is_all_safe {
-                                    info!("All subdevices in SAFE-OP");
+                                    info!("SAFE-OP");
                                     // --- Calculate and map offsets here ---
                                     let mut rx_offset = 0;
                                     let mut tx_offset = 0;
@@ -648,22 +595,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                         self.subdevices[i].start_rx = rx_offset;
                                         self.subdevices[i].end_rx = rx_offset + length_rx;
 
-                                        debug!(
-                                            "Subdevice {} PDO offsets: TX=[{}, {}], RX=[{}, {}]",
-                                            i,
-                                            tx_offset,
-                                            tx_offset + length_tx,
-                                            rx_offset,
-                                            rx_offset + length_rx
-                                        );
-
                                         rx_offset += length_rx;
                                         tx_offset += length_tx;
                                     }
-                                    info!(
-                                        "Total PDO mapping: TX={} bytes, RX={} bytes",
-                                        tx_offset, rx_offset
-                                    );
                                     break group_back;
                                 } else {
                                     group_container = Some(GroupState::SafeOp(group_back));
@@ -679,7 +613,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     // internal polling pattern reliably triggered a latent io_uring TX/RX
                     // race (Pdu(InvalidIndex) during the transition) that this older,
                     // explicit-loop pattern does not hit.
-                    info!("Transitioning SafeOp -> Op (non-blocking request)...");
                     match rt.block_on(group_safe_op.request_into_op(&maindevice.as_ref().unwrap()))
                     {
                         Ok(group) => group_op = Some(group),
@@ -701,16 +634,12 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     self.state = EtherCATState::Op;
                 }
                 EtherCATState::Op => {
-                    let _span = info_span!("Op").entered();
                     let rt = get_async_runtime();
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
                     rt.block_on(async {
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
-                                info!("Applying RT optimizations: loop_core={}, loop_prio={}, io_core={}, io_prio={}",
-                                    opt.ethercat_loop_thread_core, opt.ethercat_loop_thread_priority,
-                                    opt.ethercat_io_thread_core, opt.ethercat_io_thread_priority);
                                 let id = core_affinity::CoreId {
                                     id: opt.ethercat_loop_thread_core,
                                 };
@@ -719,9 +648,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 );
                                 core_affinity::set_for_current(id);
                             }
-                            None => {
-                                debug!("Starting OP loop without RT optimizations");
-                            },
+                            None => {},
                         };
 
                         loop {
@@ -737,7 +664,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 for i in 0..self.subdevice_count {
                                     self.subdevices[i].initialized = true;
                                 }
-                                info!("ALL OP — all {} subdevices operational", self.subdevice_count);
+                                info!("ALL OP");
                                 break;
                             }
                         }

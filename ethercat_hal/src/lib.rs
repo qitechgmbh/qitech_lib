@@ -20,7 +20,7 @@ use std::sync::{Arc, OnceLock, mpsc::Sender};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
-use tracing::{debug, info, warn};
+use tracing::warn;
 use triple_buffer::{Input, Output};
 
 // A global, lazily-initialized Runtime
@@ -391,7 +391,6 @@ pub struct EncoderResolution {
 }
 
 pub fn send_response(response_channel: EtherCATThreadResponseChannel, response: ChannelResponse) {
-    debug!("Sending {:?}", &response);
     if let Err(_e) = response_channel.0.send(response) {
         warn!("Failed to send ChannelResponse (receiver dropped)");
     }
@@ -402,10 +401,6 @@ pub fn init_ethercat_mock(
     faked_subdevices: Vec<MetaSubdevice>,
     _machine_infos: Option<Vec<MachineDeviceInfo>>,
 ) -> EtherCATControl<MockConsumer, MockProducer> {
-    info!(
-        "Initializing EtherCAT mock with {} fake subdevices",
-        faked_subdevices.len()
-    );
     let (_, rx) = mpsc::channel(); // wont actually get used in any way, just here to avoid handling options in the controller ...
     let mock_producer = [0u8; ETHERCAT_TX_RX_SIZE];
     let mock_consumer = [0u8; ETHERCAT_TX_RX_SIZE];
@@ -444,12 +439,6 @@ pub fn init_ethercat_mock(
     controller.subdevice_count = faked_subdevices.len();
     for i in 0..faked_subdevices.len() {
         controller.subdevices[i] = faked_subdevices[i];
-        debug!(
-            "Mock subdevice {}: name={:?}, addr=0x{:04X}",
-            i,
-            controller.subdevices[i].get_name(),
-            controller.subdevices[i].device_address,
-        );
     }
 
     let controller = Arc::new(controller);
@@ -539,27 +528,17 @@ pub fn init_ethercat(
     interface_name: &str,
     config: Option<MasterConfiguration>,
 ) -> EtherCATControl<Arc<Mailbox>, TripleBufProducer, TripleBufConsumer, Arc<Mailbox>> {
-    info!("Initializing EtherCAT on interface '{}'", interface_name);
     let (tx, rx) = mpsc::channel();
     let (input_producer, input_consumer) =
         triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
-    debug!(
-        "Created triple buffer for PDO data (size={} bytes)",
-        ETHERCAT_TX_RX_SIZE
-    );
 
     let mailbox = Arc::new(Mailbox {
         data: [0u8; ETHERCAT_TX_RX_SIZE].into(),
         full: AtomicBool::new(false),
     });
-    debug!("Created mailbox for output data");
 
     let controller = match config {
         Some(conf) => {
-            info!(
-                "Using provided MasterConfiguration: cycle_time={}us, tx_rx={:?}",
-                conf.target_cycle_time_us, conf.tx_rx_config
-            );
             Arc::new(EtherCATController::new(
                 TripleBufProducer {
                     output_producer: input_producer,
@@ -571,7 +550,6 @@ pub fn init_ethercat(
             ))
         }
         None => {
-            info!("Using default MasterConfiguration");
             Arc::new(EtherCATController::new(
                 TripleBufProducer {
                     output_producer: input_producer,
@@ -591,7 +569,6 @@ pub fn init_ethercat(
 
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx);
     let controller_for_thread = Arc::clone(&controller);
-    info!("Spawning EtherCAT state machine thread");
     let join_handle = std::thread::Builder::new()
         .name("EthercatStateMachine".into())
         .spawn(move || {
@@ -602,7 +579,6 @@ pub fn init_ethercat(
             }
         })
         .expect("Failed to spawn thread");
-    info!("EtherCAT initialization complete");
     EtherCATControl {
         controller: controller,
         channel,
