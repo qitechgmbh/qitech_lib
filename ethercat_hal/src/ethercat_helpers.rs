@@ -1,19 +1,16 @@
-
-#[cfg(not(feature = "mock" ))]
-use crate::{
-    ChannelRequest, ChannelResponse,EtherCATThreadResponseChannel
-};
-#[cfg(not(feature = "mock" ))]
+#[cfg(not(feature = "mock"))]
+use crate::{ChannelRequest, ChannelResponse, EtherCATThreadResponseChannel};
+#[cfg(not(feature = "mock"))]
 use std::time::Duration;
 
 use crate::{
-    EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType,
-    get_async_runtime, machine_ident_read::MachineDeviceInfo,
+    EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest,
+    SdoType, get_async_runtime, machine_ident_read::MachineDeviceInfo,
 };
 use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
 };
-use std::{any::TypeId};
+use std::any::TypeId;
 
 pub trait EthercatResponseTypedResult: Sized {
     fn from_bool(_v: bool) -> anyhow::Result<Self> {

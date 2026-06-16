@@ -1,6 +1,7 @@
 pub mod ek1100;
 pub mod el1002;
 pub mod el1008;
+mod el1124;
 pub mod el2002;
 pub mod el2004;
 pub mod el2008;
@@ -20,12 +21,11 @@ pub mod el6021;
 pub mod el7031;
 pub mod el7031_0030;
 pub mod el7041_0052;
+mod el9505;
 pub mod ep2339_0021;
 pub mod panasonic_modules;
 pub mod wago_750_354;
 pub mod wago_modules;
-mod el9505;
-mod el1124;
 use crate::MetaSubdevice;
 
 #[cfg(feature = "mock")]

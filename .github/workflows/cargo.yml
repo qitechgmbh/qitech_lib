@@ -60,7 +60,7 @@ jobs:
       - *setup-rust
 
       - name: Format
-        run: cargo fmt --check --verbose
+        run: cargo fmt --all --check --verbose
 
   examples:
     runs-on: ubuntu-latest

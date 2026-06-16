@@ -75,21 +75,16 @@ impl Consumer for MockConsumer {
     fn read(&mut self) -> Option<&[u8]> {
         Some(&self.buffer)
     }
-    fn finish_read(&mut self) {
-        
-    }
+    fn finish_read(&mut self) {}
 }
-
-
 
 unsafe impl Sync for Mailbox {}
 unsafe impl Send for Mailbox {}
 
 pub struct Mailbox {
-    pub data : UnsafeCell<[u8;ETHERCAT_TX_RX_SIZE]>,
-    pub full : AtomicBool,
+    pub data: UnsafeCell<[u8; ETHERCAT_TX_RX_SIZE]>,
+    pub full: AtomicBool,
 }
-
 
 impl Consumer for std::sync::Arc<Mailbox> {
     fn read(&mut self) -> Option<&[u8]> {
@@ -100,7 +95,9 @@ impl Consumer for std::sync::Arc<Mailbox> {
 
     fn finish_read(&mut self) {
         let ptr = std::sync::Arc::as_ptr(self) as *mut Mailbox;
-        unsafe { (&mut *ptr).finish_read(); }
+        unsafe {
+            (&mut *ptr).finish_read();
+        }
     }
 }
 
@@ -112,7 +109,9 @@ impl Producer for std::sync::Arc<Mailbox> {
 
     fn publish(&mut self) {
         let ptr = std::sync::Arc::as_ptr(self) as *mut Mailbox;
-        unsafe { (&mut *ptr).publish(); }
+        unsafe {
+            (&mut *ptr).publish();
+        }
     }
 }
 
@@ -126,7 +125,7 @@ impl Consumer for Mailbox {
     }
 
     fn finish_read(&mut self) {
-        // We are completely done reading. 
+        // We are completely done reading.
         // We store `false` to release the buffer back to the producer.
         self.full.store(false, Ordering::Release);
     }
@@ -142,12 +141,11 @@ impl Producer for Mailbox {
     }
 
     fn publish(&mut self) {
-        // We are completely done writing. 
+        // We are completely done writing.
         // We store `true` to release the buffer to the consumer.
         self.full.store(true, Ordering::Release);
     }
 }
-
 
 pub struct TripleBufConsumer {
     pub input_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
@@ -161,7 +159,7 @@ impl Consumer for TripleBufConsumer {
     fn read(&mut self) -> Option<&[u8]> {
         Some(self.input_consumer.read())
     }
-    fn finish_read(&mut self) { }
+    fn finish_read(&mut self) {}
 }
 
 impl Producer for TripleBufProducer {
@@ -237,8 +235,8 @@ pub struct EtherCATControl<C1, P1, C2, P2>
 where
     C1: Consumer,
     P1: Producer,
-    C2 : Consumer,
-    P2 : Producer,
+    C2: Consumer,
+    P2: Producer,
 {
     pub controller: Arc<EtherCATController<C1, P1>>,
     pub channel: EtherCATThreadChannel,
@@ -297,7 +295,7 @@ impl Default for MetaSubdevice {
     }
 }
 
-#[derive(Debug,Clone,Copy,PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u8)]
 pub enum EtherCATState {
     NoInterface = 0,
@@ -310,7 +308,7 @@ pub enum EtherCATState {
 
 impl From<u8> for EtherCATState {
     fn from(value: u8) -> Self {
-        match value {            
+        match value {
             1 => Self::Boot,
             2 => Self::Init,
             3 => Self::PreOp,
@@ -427,7 +425,13 @@ pub fn init_ethercat_mock(
         output_producer: producer,
     };
 
-    let mut controller = EtherCATController::new(producer_c, consumer_c, rx, None, MasterConfiguration::default());
+    let mut controller = EtherCATController::new(
+        producer_c,
+        consumer_c,
+        rx,
+        None,
+        MasterConfiguration::default(),
+    );
 
     controller.subdevice_count = faked_subdevices.len();
     for i in 0..faked_subdevices.len() {
@@ -520,16 +524,16 @@ impl Default for MasterConfiguration {
 pub fn init_ethercat(
     interface_name: &str,
     config: Option<MasterConfiguration>,
-) -> EtherCATControl<Arc<Mailbox>, TripleBufProducer, TripleBufConsumer,Arc<Mailbox>> {
+) -> EtherCATControl<Arc<Mailbox>, TripleBufProducer, TripleBufConsumer, Arc<Mailbox>> {
     let (tx, rx) = mpsc::channel();
     let (input_producer, input_consumer) =
-        triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);    
-    
-    let mailbox = Arc::new(Mailbox { 
-        data: [0u8; ETHERCAT_TX_RX_SIZE].into(), 
-        full: AtomicBool::new(false),         
+        triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
+
+    let mailbox = Arc::new(Mailbox {
+        data: [0u8; ETHERCAT_TX_RX_SIZE].into(),
+        full: AtomicBool::new(false),
     });
-    
+
     let controller = match config {
         Some(conf) => Arc::new(EtherCATController::new(
             TripleBufProducer {
@@ -559,14 +563,15 @@ pub fn init_ethercat(
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx);
     let controller_for_thread = Arc::clone(&controller);
     let join_handle = std::thread::Builder::new()
-    .name("EthercatStateMachine".into())
-    .spawn(move || {
-        let ptr = Arc::as_ptr(&controller_for_thread) 
-            as *mut EtherCATController<std::sync::Arc<Mailbox>, TripleBufProducer>;
-        unsafe {
-            (&mut *ptr).ethercat_state_machine();
-        }
-    }).expect("Failed to spawn thread");
+        .name("EthercatStateMachine".into())
+        .spawn(move || {
+            let ptr = Arc::as_ptr(&controller_for_thread)
+                as *mut EtherCATController<std::sync::Arc<Mailbox>, TripleBufProducer>;
+            unsafe {
+                (&mut *ptr).ethercat_state_machine();
+            }
+        })
+        .expect("Failed to spawn thread");
     EtherCATControl {
         controller: controller,
         channel,
