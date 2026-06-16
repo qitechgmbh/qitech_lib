@@ -150,14 +150,16 @@ pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
         0x8, 0x1, 0x0, 0x0, 0x3, 0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
     ];
     let fd = open_raw_socket_libc(interface_name)?;
-    if test_discovery(fd, &ETHERCAT_DISCOVERY_FRAME) {
+    let result = if test_discovery(fd, &ETHERCAT_DISCOVERY_FRAME) {
         Ok(())
     } else {
         Err(anyhow::anyhow!(
             "Interface {:?} is not Ethercat",
             interface_name
         ))
-    }
+    };
+    unsafe { libc::close(fd) };
+    result
 }
 
 // ── macOS BPF (Berkeley Packet Filter) ────────────────────────────────
