@@ -8,8 +8,6 @@ use crate::{
     machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
 };
-use std::sync::Arc;
-use crate::Mailbox;
 #[cfg(target_os = "linux")]
 use common::set_irq_affinity;
 use ethercrab::{
@@ -174,10 +172,10 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         _ => continue,
                     }
 
-                    #[cfg(target_os = "linux")]
-                    use ethercrab::std::tx_rx_task_io_uring;
                     #[cfg(not(target_os = "linux"))]
                     use ethercrab::std::tx_rx_task;
+                    #[cfg(target_os = "linux")]
+                    use ethercrab::std::tx_rx_task_io_uring;
                     if self.interface.is_some() {
                         let (tx, rx, pdu) = PDU_STORAGE.try_split().expect("can only split once");
                         let interface = self.interface.clone().unwrap();
@@ -201,13 +199,16 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                             // Pin to the last core (e.g., Core 3 on a 4-core system)
                                             core_affinity::set_for_current(id);
                                             if let Some(irq_core) = opt.pin_irq_core {
-                                                let res = set_irq_affinity(&interface, irq_core as u32);
+                                                let res =
+                                                    set_irq_affinity(&interface, irq_core as u32);
                                                 if res.is_err() {
                                                     println!("set_irq_affinity failed: {:?}", res);
-                                                }else {
-                                                    println!("set irq_affinity of {} to core {}",&interface,irq_core);
+                                                } else {
+                                                    println!(
+                                                        "set irq_affinity of {} to core {}",
+                                                        &interface, irq_core
+                                                    );
                                                 }
-
                                             }
                                         }
                                         None => (),
@@ -583,20 +584,14 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         tick += 1;
                     };
 
-                    // Use the non-blocking request_into_op + manual tx_rx_dc polling loop
-                    // (handled below in the EtherCATState::Op branch via `all_op()`) on all
-                    // platforms. The blocking `into_op()` call was tried on Linux but its
-                    // internal polling pattern reliably triggered a latent io_uring TX/RX
-                    // race (Pdu(InvalidIndex) during the transition) that this older,
-                    // explicit-loop pattern does not hit.
+                    // Use the non-blocking request_into_op + manual tx_rx_dc polling
+                    // loop. The blocking `into_op()` can hit an io_uring TX/RX race on Linux.
                     match rt.block_on(group_safe_op.request_into_op(&maindevice.as_ref().unwrap()))
                     {
                         Ok(group) => group_op = Some(group),
                         Err(e) => {
-                            // request_into_op consumes the group, so there is no in-process
-                            // retry; a failure here usually means the TX/RX task died (PDU
-                            // storage cannot be re-split). Exit cleanly for a systemd restart
-                            // instead of panicking and leaving a half-initialized master behind.
+                            // request_into_op consumes the group — no retry possible.
+                            // Exit cleanly for a systemd restart.
                             eprintln!(
                                 "EtherCAT SAFE-OP -> OP transition failed: {:?}. \
                                  Exiting for a clean restart.",
