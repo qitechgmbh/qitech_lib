@@ -213,8 +213,15 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                         }
                                         None => (),
                                     };
-                                    tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
-                                        .expect("Failed to run TX/RX task (io_uring)");
+                                    if let Err(e) =
+                                        tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
+                                    {
+                                        eprintln!(
+                                            "TX/RX task (io_uring) failed: {:?}. Exiting for clean restart.",
+                                            e
+                                        );
+                                        std::process::exit(1);
+                                    }
                                 });
                         }
 
