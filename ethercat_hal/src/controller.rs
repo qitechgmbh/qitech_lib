@@ -624,12 +624,21 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                         loop {
                             let cycle_start = Instant::now();
-                            let res = group_op
-                                .as_ref()
-                                .unwrap()
-                                .tx_rx_dc(&maindevice)
-                                .await
-                                .expect("TX/RX");
+                            let res = match group_op.as_ref().unwrap().tx_rx_dc(&maindevice).await {
+                                Ok(res) => res,
+                                Err(e) => {
+                                    // EtherCAT link lost while waiting for all-OP.
+                                    // Exit cleanly so the supervisor (systemd)
+                                    // restarts us, instead of panicking the
+                                    // real-time thread.
+                                    eprintln!(
+                                        "EtherCAT TX/RX failed in OP (waiting for all-OP): {:?}. \
+                                         Exiting for a clean restart.",
+                                        e
+                                    );
+                                    std::process::exit(1);
+                                }
+                            };
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
 
                             while Instant::now() < self.next_cycle {
@@ -665,7 +674,20 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 None => {}
                             };
 
-                            let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                            let res = match group.tx_rx_dc(&maindevice).await {
+                                Ok(res) => res,
+                                Err(e) => {
+                                    // EtherCAT link lost during operation. Exit
+                                    // cleanly for a supervisor restart rather
+                                    // than panicking the real-time thread.
+                                    eprintln!(
+                                        "EtherCAT TX/RX failed in OP: {:?}. \
+                                         Exiting for a clean restart.",
+                                        e
+                                    );
+                                    std::process::exit(1);
+                                }
+                            };
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
                             match self.input_producer.input_buffer_mut() {
                                 Some(buffer) => {
