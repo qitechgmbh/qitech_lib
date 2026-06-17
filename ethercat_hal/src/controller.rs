@@ -17,7 +17,10 @@ use ethercrab::{
 };
 use std::sync::Arc;
 use std::{
-    sync::mpsc::Receiver,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::Receiver,
+    },
     thread::JoinHandle,
     time::{Duration, Instant},
 };
@@ -36,6 +39,7 @@ where
     pub subdevices: [MetaSubdevice; 256],
     pub subdevice_count: usize,
     pub state: EtherCATState,
+    pub all_subdevices_operational: Arc<AtomicBool>,
     pub current_config: MasterConfiguration,
     requested_state: Option<EtherCATState>,
     rx_channel: Receiver<ChannelRequest>,
@@ -98,6 +102,7 @@ where
             subdevices: [MetaSubdevice::default(); 256],
             subdevice_count: 0,
             state: EtherCATState::NoInterface,
+            all_subdevices_operational: Arc::new(AtomicBool::new(false)),
             requested_state: None,
             rx_channel: rx,
             input_producer: input,
@@ -116,6 +121,10 @@ where
 
     pub fn get_state(&self) -> EtherCATState {
         self.state
+    }
+
+    pub fn is_all_operational(&self) -> bool {
+        self.all_subdevices_operational.load(Ordering::Acquire)
     }
 
     pub fn get_cycle(&self) -> u64 {
@@ -647,6 +656,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 for i in 0..self.subdevice_count {
                                     self.subdevices[i].initialized = true;
                                 }
+                                self.all_subdevices_operational.store(true, Ordering::Release);
                                 println!("ALL OP");
                                 break;
                             }
