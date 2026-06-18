@@ -79,10 +79,7 @@ pub fn write_device_identifications(
     let res: Result<(), ethercrab::error::Error> = rt.block_on(async {
         for subdevice in group.iter(maindevice) {
             let addr = subdevice.configured_address();
-            let info = match identifications
-                .iter()
-                .find(|i| i.device_address == addr)
-            {
+            let info = match identifications.iter().find(|i| i.device_address == addr) {
                 Some(info) => info,
                 None => {
                     debug!(

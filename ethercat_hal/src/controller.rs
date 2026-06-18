@@ -489,10 +489,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 max_deviation = max_deviation.max(ema_next.abs() as u32);
                             }
                             if max_deviation < 100 {
-                                info!(
-                                    "Clocks settled after {} ms",
-                                    start.elapsed().as_millis()
-                                );
+                                info!("Clocks settled after {} ms", start.elapsed().as_millis());
                                 break;
                             }
                         }
@@ -648,12 +645,17 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 );
                                 core_affinity::set_for_current(id);
                             }
-                            None => {},
+                            None => {}
                         };
 
                         loop {
                             let cycle_start = Instant::now();
-                            let res = group_op.as_ref().unwrap().tx_rx_dc(&maindevice).await.expect("TX/RX");
+                            let res = group_op
+                                .as_ref()
+                                .unwrap()
+                                .tx_rx_dc(&maindevice)
+                                .await
+                                .expect("TX/RX");
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
 
                             while Instant::now() < self.next_cycle {
@@ -674,19 +676,19 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                             match self.output_consumer.read() {
                                 Some(full_buffer) => {
-                                // We get a mutable slice to the whole buffer to make sub-slicing easier
-                                let mut current_offset = 0;
-                                for subdevice in group.iter(&maindevice) {
-                                    let mut output = subdevice.outputs_raw_mut();
-                                    let len = output.len();
-                                    output.copy_from_slice(
-                                        &full_buffer[current_offset..current_offset + len],
-                                    );
-                                    current_offset += len;
+                                    // We get a mutable slice to the whole buffer to make sub-slicing easier
+                                    let mut current_offset = 0;
+                                    for subdevice in group.iter(&maindevice) {
+                                        let mut output = subdevice.outputs_raw_mut();
+                                        let len = output.len();
+                                        output.copy_from_slice(
+                                            &full_buffer[current_offset..current_offset + len],
+                                        );
+                                        current_offset += len;
+                                    }
+                                    self.output_consumer.finish_read();
                                 }
-                                self.output_consumer.finish_read();
-                                },
-                                None => {},
+                                None => {}
                             };
 
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
@@ -706,8 +708,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                         }
                                     }
                                     self.input_producer.publish();
-                                },
-                                None => {},
+                                }
+                                None => {}
                             }
 
                             while Instant::now() < self.next_cycle {
@@ -717,10 +719,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
                             if self.cycle == u64::MAX {
                                 self.cycle = 0;
-                            }else{
+                            } else {
                                 self.cycle += 1;
                             }
-
                         }
                     });
                 }

@@ -538,28 +538,24 @@ pub fn init_ethercat(
     });
 
     let controller = match config {
-        Some(conf) => {
-            Arc::new(EtherCATController::new(
-                TripleBufProducer {
-                    output_producer: input_producer,
-                },
-                mailbox.clone(),
-                rx,
-                Some(interface_name.to_string()),
-                conf,
-            ))
-        }
-        None => {
-            Arc::new(EtherCATController::new(
-                TripleBufProducer {
-                    output_producer: input_producer,
-                },
-                mailbox.clone(),
-                rx,
-                Some(interface_name.to_string()),
-                MasterConfiguration::default(),
-            ))
-        }
+        Some(conf) => Arc::new(EtherCATController::new(
+            TripleBufProducer {
+                output_producer: input_producer,
+            },
+            mailbox.clone(),
+            rx,
+            Some(interface_name.to_string()),
+            conf,
+        )),
+        None => Arc::new(EtherCATController::new(
+            TripleBufProducer {
+                output_producer: input_producer,
+            },
+            mailbox.clone(),
+            rx,
+            Some(interface_name.to_string()),
+            MasterConfiguration::default(),
+        )),
     };
 
     let app_handle = EtherCATAppHandle {

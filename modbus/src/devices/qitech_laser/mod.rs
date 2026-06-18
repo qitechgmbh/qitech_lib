@@ -201,10 +201,7 @@ impl std::error::Error for LaserError {
 
 /// The long-running asynchronous worker loop.
 /// This completely owns and keeps the `Context` alive.
-async fn run_modbus_actor(
-    mut rx: mpsc::Receiver<ActorMessage>,
-    mut ctx: Context,
-) {
+async fn run_modbus_actor(mut rx: mpsc::Receiver<ActorMessage>, mut ctx: Context) {
     let timeout_duration = Duration::from_secs(2);
 
     // Loop until the LaserDevice front-end is dropped (closing the mpsc channel)
