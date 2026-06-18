@@ -10,15 +10,15 @@ pub mod pdo;
 pub mod shared_config;
 //#[cfg(feature = "legacy_code")]
 pub mod machine_ident_read;
-use crate::controller::EtherCATController;
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
 use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
+use std::sync::atomic::Ordering::Relaxed;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, OnceLock, mpsc::Sender};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::runtime::{Builder, Runtime};
 use triple_buffer::{Input, Output};
 
@@ -37,11 +37,68 @@ fn get_async_runtime() -> &'static Runtime {
 
 pub const BECKHOFF_VENDOR_ID: u32 = 0x2;
 pub const ETHERCAT_TX_RX_SIZE: usize = 4096;
-pub const MAX_SUBDEVICES: usize = 16;
+pub const MAX_SUBDEVICES: usize = 32;
 pub const MAX_PDU_DATA: usize = PduStorage::element_size(512);
-pub const MAX_FRAMES: usize = 16;
+pub const MAX_FRAMES: usize = 32;
 pub const PDI_LEN: usize = 1024;
+
+
 static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
+pub struct EtherCATController<C, P>
+where
+    C: Consumer,
+    P: Producer,
+{
+    cycle: Arc<AtomicU64>,
+    cycle_time_us: Arc<AtomicU64>,
+    subdevice_count: Arc<AtomicU64>, // maybe a Mailbox<Status> or smth like that makes more sense?
+    next_cycle_us: Arc<AtomicU64>,
+    next_cycle: Instant,
+    interface: Option<String>,
+    pub subdevices: [MetaSubdevice; MAX_SUBDEVICES],
+    state: Arc<AtomicU8>,
+    current_config: MasterConfiguration,
+    requested_state: Option<EtherCATState>,
+    rx_channel: Receiver<ChannelRequest>,
+    input_producer: P,
+    output_consumer: C,
+}
+
+impl<C, P> EtherCATController<C, P>
+where
+    C: Consumer,
+    P: Producer,
+{
+    pub fn new(
+        input: P,
+        output: C,
+        rx: Receiver<ChannelRequest>,
+        interface: Option<String>,
+        config: MasterConfiguration,
+        cycle : Arc<AtomicU64>,
+        cycle_time_us : Arc<AtomicU64>,
+        subdevice_count : Arc<AtomicU64>,
+        next_cycle_us : Arc<AtomicU64>,
+        state : Arc<AtomicU8>,
+    ) -> Self {
+        Self {
+            cycle,
+            cycle_time_us,
+            next_cycle_us,
+            interface,
+            subdevice_count,
+            next_cycle: std::time::Instant::now(),
+            subdevices: [MetaSubdevice::default(); MAX_SUBDEVICES],            
+            state,
+            requested_state: None,
+            rx_channel: rx,
+            input_producer: input,
+            output_consumer: output,
+            current_config: config,
+        }
+    }
+}
+
 
 pub trait Consumer {
     fn read(&mut self) -> Option<&[u8]>;
@@ -179,6 +236,11 @@ where
 {
     pub input_consumer: C,
     pub output_producer: P,
+    cycle           : Arc<AtomicU64>,
+    cycle_time_us   : Arc<AtomicU64>,
+    next_cycle_us   : Arc<AtomicU64>,
+    subdevice_count : Arc<AtomicU64>,
+    state           : Arc<AtomicU8>,
 }
 
 impl<C, P> EtherCATAppHandle<C, P>
@@ -201,6 +263,27 @@ where
     pub fn send_outputs(&mut self) {
         self.output_producer.publish();
     }
+
+    pub fn get_current_cycle(&self) -> u64 {
+        self.cycle.load(Relaxed)
+    }
+    
+    pub fn get_cycle_time_us(&self) -> u64 {
+        self.cycle_time_us.load(Relaxed)
+    }
+
+    pub fn get_next_cycle_us(&self) -> u64 {
+        self.next_cycle_us.load(Relaxed)
+    }
+
+    pub fn get_subdevice_count(&self) -> u64 {
+        self.subdevice_count.load(Relaxed)
+    }
+
+    pub fn get_state(&self) -> EtherCATState {
+        self.state.load(Relaxed).into()
+    }
+
 }
 
 #[derive(Hash, Eq, PartialEq, PartialOrd, Clone)]
@@ -231,17 +314,14 @@ pub struct EtherCATThreadChannel {
 #[derive(Clone)]
 pub struct EtherCATThreadResponseChannel(pub Sender<ChannelResponse>);
 
-pub struct EtherCATControl<C1, P1, C2, P2>
+pub struct EtherCATControl<C, P>
 where
-    C1: Consumer,
-    P1: Producer,
-    C2: Consumer,
-    P2: Producer,
+    C: Consumer,
+    P: Producer,
 {
-    pub controller: Arc<EtherCATController<C1, P1>>,
     pub channel: EtherCATThreadChannel,
-    pub app_handle: EtherCATAppHandle<C2, P2>,
-    pub join_handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
+    pub app_handle: EtherCATAppHandle<C, P>,
+    pub join_handle: Option<JoinHandle<()>>,
 }
 
 pub type StandardEtherCATAppHandle = EtherCATAppHandle<TripleBufConsumer, TripleBufProducer>;
@@ -319,6 +399,19 @@ impl From<u8> for EtherCATState {
     }
 }
 
+impl From<EtherCATState> for u8 {
+    fn from(value: EtherCATState) -> Self {
+        match value {
+            EtherCATState::Boot => 1,
+            EtherCATState::Init => 2,
+            EtherCATState::PreOp => 3 ,
+            EtherCATState::PreopPdi => 4,
+            EtherCATState::Op => 5,
+            _ => 6,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum SdoType {
     BOOL,
@@ -362,8 +455,6 @@ pub enum ChannelResponse {
     MachineDeviceInfoResponse(Result<Vec<MachineDeviceInfo>, anyhow::Error>),
     WriteMachineInfoResponse(Result<(), anyhow::Error>),
     EnableDCSync0Response(Result<(), anyhow::Error>),
-    EnableDCSync01Response(Result<(), anyhow::Error>),
-    ConfigureOversamplingResponse(Result<(), anyhow::Error>),
 }
 
 #[derive(Debug)]
@@ -373,8 +464,6 @@ pub enum ChannelRequests {
     ChangeState(EtherCATState),
     // usize in this case is the device_address
     EnableDCSync0(usize),
-    EnableDCSync01(usize, Duration),
-    ConfigureOversampling(usize, u16),
     Shutdown(),
     // Legacy code, only usable when feature legacy_code is set
     ReadMachineIdent(),
@@ -449,6 +538,34 @@ pub fn init_ethercat_mock(
         app_handle,
         join_handle: None,
     };
+}
+
+
+pub fn set_current_thread_rt_priority(priority: i32) {
+    unsafe {
+        let thread_id = libc::pthread_self();
+        let param = libc::sched_param {
+            sched_priority: priority, // 1 to 99
+        };
+
+        // SCHED_FIFO is the standard for real-time control loops.
+        // It will run until it finishes or is preempted by a higher-priority RT thread.
+        let result = libc::pthread_setschedparam(
+            thread_id,
+            libc::SCHED_FIFO,
+            &param as *const libc::sched_param,
+        );
+
+        if result != 0 {
+            let err = std::io::Error::last_os_error();
+            eprintln!(
+                "Failed to set RT priority: {}. (Are you root / using sudo?)",
+                err
+            );
+        } else {
+            println!("Thread priority set to SCHED_FIFO with level {}", priority);
+        }
+    }
 }
 
 // Currently ignored by controller, but should be used to select driver for txrx
@@ -528,7 +645,9 @@ impl Default for MasterConfiguration {
 pub fn init_ethercat(
     interface_name: &str,
     config: Option<MasterConfiguration>,
-) -> EtherCATControl<Arc<Mailbox>, TripleBufProducer, TripleBufConsumer, Arc<Mailbox>> {
+) -> EtherCATControl<TripleBufConsumer, Arc<Mailbox>> {
+    use std::sync::atomic::AtomicU8;
+
     let (tx, rx) = mpsc::channel();
     let (input_producer, input_consumer) =
         triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
@@ -538,8 +657,15 @@ pub fn init_ethercat(
         full: AtomicBool::new(false),
     });
 
-    let controller = match config {
-        Some(conf) => Arc::new(EtherCATController::new(
+    let cycle           : Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+    let cycle_time_us   : Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+    let next_cycle_us   : Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+    let subdevice_count : Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+    let state           : Arc<AtomicU8>  = Arc::new(AtomicU8::new(EtherCATState::NoInterface.into()));
+    
+    let mut controller = match config {
+        Some(conf) => 
+            EtherCATController::new(
             TripleBufProducer {
                 output_producer: input_producer,
             },
@@ -547,8 +673,9 @@ pub fn init_ethercat(
             rx,
             Some(interface_name.to_string()),
             conf,
-        )),
-        None => Arc::new(EtherCATController::new(
+            cycle.clone(),cycle_time_us.clone(),subdevice_count.clone(),next_cycle_us.clone(),state.clone()
+        ),
+        None =>EtherCATController::new(
             TripleBufProducer {
                 output_producer: input_producer,
             },
@@ -556,26 +683,28 @@ pub fn init_ethercat(
             rx,
             Some(interface_name.to_string()),
             MasterConfiguration::default(),
-        )),
+            cycle.clone(),cycle_time_us.clone(),subdevice_count.clone(),next_cycle_us.clone(),state.clone()
+        ),
     };
 
     let app_handle = EtherCATAppHandle {
         input_consumer: TripleBufConsumer { input_consumer },
         output_producer: mailbox,
+        cycle,
+        cycle_time_us,
+        next_cycle_us,
+        subdevice_count,
+        state
     };
 
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx);
-    let controller_for_thread = Arc::clone(&controller);
     let join_handle = std::thread::Builder::new()
         .name("EthercatStateMachine".into())
         .spawn(move || {
-            let ptr = Arc::as_ptr(&controller_for_thread)
-                as *mut EtherCATController<std::sync::Arc<Mailbox>, TripleBufProducer>;
-            unsafe { (&mut *ptr).ethercat_state_machine() }
+                controller.ethercat_state_machine();
         })
         .expect("Failed to spawn thread");
     EtherCATControl {
-        controller: controller,
         channel,
         app_handle,
         join_handle: Some(join_handle),
