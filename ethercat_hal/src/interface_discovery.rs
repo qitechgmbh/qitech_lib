@@ -3,7 +3,9 @@ use std::ffi::CStr;
 use std::ptr;
 #[cfg(target_os = "linux")]
 use std::{ffi::CString, mem, os::fd::RawFd};
-use tracing::{error, warn};
+use tracing::error;
+#[cfg(target_os = "macos")]
+use tracing::warn;
 
 #[derive(Debug, Clone)]
 pub enum LinkType {
