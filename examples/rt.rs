@@ -1,24 +1,42 @@
 use ethercat_hal::{
     DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig, init_ethercat,
 };
-use std::time::Instant;
 use std::{env, time::Duration};
+use std::fs::File;
+use std::io::Write;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let interface = env::args().nth(1).expect("No Interface-name given");
-    let cycle_time_us: u64 = 200;
+    let cycle_time_us: u64 = env::args()
+    .nth(2)
+    .expect("No Target Cycle time given")
+    .parse()
+    .expect("Target Cycle time must be a valid number");
+
+    let total_cycles: usize = env::args()
+    .nth(3)
+    .expect("No total_cycles given")
+    .parse()
+    .expect("total_cycles must be a valid number");
+
     let mut dc_config = DcConfiguration::default();
     dc_config.start_delay = Duration::from_millis(100);
-    dc_config.sync0_period = Duration::from_micros(cycle_time_us / 2);
-    dc_config.sync0_shift = Duration::from_micros(cycle_time_us);
-    dc_config.target_dc_tick = 100;
+    dc_config.sync0_period = Duration::from_micros(cycle_time_us);
+    dc_config.sync0_shift = Duration::from_micros(cycle_time_us / 2);
+    dc_config.target_dc_tick = 500;
 
+    /*
+        It seems like ethercat_loop_thread_core and ethercat_io_thread_core on the same core works
+        with SCHED_FIFO, however ethercat_loop_thread_priority needs to have a much lower priority, like 50 for example.
+        This means that the io code will never get preempted, while the io only actually runs when triggered through the tx_rx_dc code
+    */
     let rt = RtOptimizationConfig {
-        ethercat_loop_thread_core: 2,
-        ethercat_loop_thread_priority: 99,
+        ethercat_loop_thread_core: 3,
+        ethercat_loop_thread_priority: 50,
         ethercat_io_thread_core: 3,
         ethercat_io_thread_priority: 99,
         pin_irq_core: Some(3),
+        lock_memory: true,
     };
 
     let config = MasterConfiguration {
@@ -30,79 +48,83 @@ fn main() {
 
     let ethercat_control = init_ethercat(&interface, Some(config));
     let ethercat_interface = ethercat_control.channel;
-    let ethercat_controller = ethercat_control.controller;
+    
+    // Rust is playing smart here
+    // and doesnt actually touch any pages here (on linux)
+    let mut cycle_times = vec![0u64;total_cycles];
+    let mut jitters = vec![0u64;total_cycles];
+    let mut last_cycle = 0;
+    let mut cycles_recorded = 0;
+    
+    // Make sure that every index is written to, so that the pages are HOT
+    for val in cycle_times.iter_mut() {
+        *val = 0;
+    }
+
+    for val in jitters.iter_mut() {
+        *val = 0;
+    }
+
+
     let _res = ethercat_interface.request_state_change(EtherCATState::PreOp);
     std::thread::sleep(Duration::from_millis(5000));
 
     println!(
         "found {:?} ethercat terminals: ",
-        ethercat_controller.get_subdevice_count()
+        ethercat_control.app_handle.get_subdevice_count()
     );
-    for i in 0..ethercat_controller.get_subdevice_count() {
-        println!("{:?}", ethercat_controller.subdevices[i].get_name());
+
+    let subdevices = ethercat_control
+        .app_handle
+        .try_get_subdevices_vec_sync()
+        .unwrap();
+
+    for i in 0..ethercat_control.app_handle.get_subdevice_count() {
+        println!("{:?}", subdevices[i as usize].get_name());
+        let addr = subdevices[i as usize].device_address;
+        if subdevices[i as usize].get_name().unwrap() != "EL4008" {
+            ethercat_interface.enable_dc_sync0(addr).unwrap();
+        }
     }
 
     let _res = ethercat_interface.request_state_change(EtherCATState::Op);
     std::thread::sleep(Duration::from_millis(5000));
 
-    let total_cycles: usize = 10000;
-    let mut cycle_times = Vec::with_capacity(total_cycles);
-    let mut jitters = Vec::with_capacity(total_cycles);
-    let mut spike_count = 0;
-    // missed Frames in this case DOES NOT MEAN LOST, it means your consumer was too slow to see the valid state for that cycle
-    // if your application loop runs at 800us but ecat at 200us your app will almost always not see about 3 frames each iteration
-    // In general the library assumes latest state wins for ease of use
-    // if you ALWAYS want to see EVERY state then that is not yet supported
-    // But with a sligthly rewritten ethercat_hal/controller.rs or maybe just a different Producer/Consumer it should be possible
-    // Currently By Default a Triple Buffer Producer/Consumer is used
-    let mut missed_frames: Vec<u64> = vec![];
-    let mut last_cycle = ethercat_controller.get_cycle();
-    let mut cycles_recorded = 0;
-
     while cycles_recorded < total_cycles {
-        // Spin until time is up OR the controller has advanced past our last seen cycle
-        while Instant::now() < ethercat_controller.next_cycle
-            && last_cycle == ethercat_controller.get_cycle()
-        {
-            std::thread::yield_now();
-        }
-        let current_controller_cycle = ethercat_controller.get_cycle();
+        // Spin until io thread has advanced past our last seen cycle
+        while last_cycle == ethercat_control.app_handle.get_current_cycle() {}
+        let current_controller_cycle = ethercat_control.app_handle.get_current_cycle();
         if current_controller_cycle > last_cycle {
-            if current_controller_cycle - last_cycle > 1 {
-                for i in (last_cycle + 1)..current_controller_cycle {
-                    missed_frames.push(i as u64);
-                }
-            }
-
             last_cycle = current_controller_cycle;
-            let cycle_time = ethercat_controller.get_cycle_time_us();
-            cycle_times.push(cycle_time);
-
+            let cycle_time = ethercat_control.app_handle.get_cycle_time_us();
+            cycle_times[cycles_recorded] = cycle_time;
             let jitter = (cycle_time as i64 - cycle_time_us as i64).abs() as u64;
-            jitters.push(jitter);
-
-            if cycle_time > 1000 {
-                spike_count += 1;
-            }
-
+            jitters[cycles_recorded] = jitter;
             cycles_recorded += 1;
         }
     }
-    // --- STATISTICS CALCULATION ---
-    cycle_times.sort_unstable();
-    jitters.sort_unstable();
-    let p99_index = (total_cycles * 99) / 100;
-    let p99_time = cycle_times[p99_index];
-    let p99_jitter = jitters[p99_index];
-    let max_jitter = *jitters.iter().max().unwrap_or(&0);
 
-    let min_time = cycle_times.iter().min().unwrap();
-    let max_time = cycle_times.iter().max().unwrap();
-    let sum_time: u64 = cycle_times.iter().sum::<u64>();
+    std::thread::sleep(Duration::from_millis(1000));
+    
+    // --- STATISTICS CALCULATION ---
+    let mut sorted_cycle_times = cycle_times.clone();
+    sorted_cycle_times.sort_unstable();    
+    
+    let mut sorted_jitters = jitters.clone();
+    sorted_jitters.sort_unstable();
+
+    let p99_index = (total_cycles * 99) / 100;
+    let p99_time = sorted_cycle_times[p99_index];
+    let p99_jitter = sorted_jitters[p99_index];
+    let max_jitter = *sorted_jitters.iter().max().unwrap_or(&0);
+
+    let min_time = sorted_cycle_times.iter().min().unwrap();
+    let max_time = sorted_cycle_times.iter().max().unwrap();
+    let sum_time: u64 = sorted_cycle_times.iter().sum::<u64>();
     let avg_time = sum_time as f64 / total_cycles as f64;
 
     // Calculate standard deviation
-    let variance = cycle_times
+    let variance = sorted_cycle_times
         .iter()
         .map(|&val| {
             let diff = val as f64 - avg_time;
@@ -112,11 +134,13 @@ fn main() {
         / total_cycles as f64;
     let std_dev = variance.sqrt();
 
+    let json_string = format!("{:?}", cycle_times);
+    let mut file = File::create("/tmp/output.json")?;
+    file.write_all(json_string.as_bytes())?;
+
     println!("\n================ BENCHMARK RESULTS ================");
     println!("Target Cycle Time:    {} µs", cycle_time_us);
-    println!("Total Cycles Run:     {}", total_cycles);
-    println!("Spikes (>1000µs):     {}", spike_count);
-    println!("Cycles missed {}", missed_frames.len());
+    println!("Total Cycles Run:     {}", total_cycles);        
     println!("---------------------------------------------------");
     println!("Cycle Time Metrics:");
     println!("  Min:                {} µs", min_time);
@@ -129,4 +153,6 @@ fn main() {
     println!("  99th Pct Jitter:    {} µs", p99_jitter);
     println!("  Max Jitter:         {} µs", max_jitter);
     println!("===================================================");
+
+    Ok(())
 }

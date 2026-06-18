@@ -14,6 +14,8 @@ use ethercrab::{
     std::ethercat_now,
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
 };
+use libc::{MCL_CURRENT, MCL_FUTURE, mlockall};
+use spin_sleep::SpinSleeper;
 use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
 use std::{
@@ -21,9 +23,9 @@ use std::{
     time::{Duration, Instant},
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
-use tokio::time::interval;
+use crate::ethercat_helpers::enable_dc_sync01;
+use crate::ethercat_helpers::configure_oversampling;
 
-unsafe impl Sync for EtherCATController<Arc<Mailbox>, TripleBufProducer> {}
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
     pub fn ethercat_state_machine(&mut self) {
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
@@ -43,6 +45,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
             SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, Op, HasDc>,
         > = None;
         let mut maindevice: Option<MainDevice> = None;
+        let spinner = SpinSleeper::new(200_000);    
+        
         loop {
             let state : EtherCATState = self.state.load(Relaxed).into();
 
@@ -119,7 +123,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 mailbox_response: Duration::from_millis(1000),
                             },
                             MainDeviceConfig {
-                                retry_behaviour: RetryBehaviour::Count(5),
+                                retry_behaviour: RetryBehaviour::Count(0),
                                 dc_static_sync_iterations: 10_000,
                             },
                         ));
@@ -155,17 +159,19 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let mut preop_group = group.as_mut().unwrap();
 
                     let mut i = 0;
+                    let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
                     for subdevice in preop_group.iter(&maindev) {
                         let bytes = subdevice.name().as_bytes();
                         let len = std::cmp::min(bytes.len(), 127);
                         // Copy the slice into the array
-                        self.subdevices[i].name[..len].copy_from_slice(&bytes[..len]);
-                        self.subdevices[i].product_id = subdevice.identity().product_id;
-                        self.subdevices[i].revision = subdevice.identity().revision;
-                        self.subdevices[i].vendor = subdevice.identity().vendor_id;
-                        self.subdevices[i].device_address = subdevice.configured_address();
+                        subdevice_guard[i].name[..len].copy_from_slice(&bytes[..len]);
+                        subdevice_guard[i].product_id = subdevice.identity().product_id;
+                        subdevice_guard[i].revision = subdevice.identity().revision;
+                        subdevice_guard[i].vendor = subdevice.identity().vendor_id;
+                        subdevice_guard[i].device_address = subdevice.configured_address();
                         i += 1;
                     }
+                    drop(subdevice_guard);
                     self.subdevice_count.store(i as u64, Relaxed);
                     let msg = match self.rx_channel.try_recv() {
                         Ok(value) => value,
@@ -271,6 +277,32 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             );
                             continue;
                         }
+                        ChannelRequests::EnableDCSync01(device_address, sync1_period) => {
+                            let res = enable_dc_sync01(
+                                &mut preop_group,
+                                maindev,
+                                device_address,
+                                sync1_period,
+                            );
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::EnableDCSync01Response(res),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::ConfigureOversampling(device_address, factor) => {
+                            let res = configure_oversampling(
+                                &mut preop_group,
+                                maindev,
+                                device_address,
+                                factor,
+                            );
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::ConfigureOversamplingResponse(res),
+                            );
+                            continue;
+                        }
                     }
                     let mut now = Instant::now();
                     let start = Instant::now();
@@ -281,13 +313,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             averages.push(ExponentialMovingAverage::new(64).unwrap());
                         }
                     }
-
-                    let rt = get_async_runtime();
-                    let mut tick_interval = rt.block_on(async {
-                        interval(Duration::from_micros(
-                            self.current_config.target_cycle_time_us as u64,
-                        ))
-                    });
 
                     let group_to_transition = group.take().expect("Group missing in PreOp");
                     let device_ref = maindevice.as_ref().expect("MainDevice missing");
@@ -301,10 +326,15 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     };
 
                     loop {
+                        let deadline = Instant::now() + Duration::from_micros(
+                            self.current_config.target_cycle_time_us as u64,
+                        );
                         rt.block_on(
                             group_preop_pdi.tx_rx_sync_system_time(&maindevice.as_ref().unwrap()),
                         )
                         .expect("TX/RX");
+
+
 
                         if now.elapsed() >= Duration::from_millis(25) {
                             now = Instant::now();
@@ -336,12 +366,12 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 let ema_next = ema.next(diff as f64);
                                 max_deviation = max_deviation.max(ema_next.abs() as u32);
                             }
-                            if max_deviation < 100 {
+                            if max_deviation < 300 {
                                 println!("Clocks settled after {} ms", start.elapsed().as_millis());
                                 break;
                             }
                         }
-                        rt.block_on(tick_interval.tick());
+                        spinner.sleep_until(deadline);
                     }
                     let device = maindevice.as_ref().unwrap();
                     group_preop_pdi_dc = Some(
@@ -389,18 +419,12 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let group_safe_op = loop {
                         match group_container.take().unwrap() {
                             GroupState::PreOp(group) => {
-                                let device = maindevice.as_ref().unwrap();
-
-                                // Wrap the whole sequence in one block_on so 'now' and 'sleep' share the same reactor session
-                                let _res = rt.block_on(async {
-                                    let now = tokio::time::Instant::now(); // Moved inside
-                                    let res = group.tx_rx_dc(device).await.expect("TX/RX");
-                                    if tick <= self.current_config.dc_config.target_dc_tick {
-                                        tokio::time::sleep_until(now + res.extra.next_cycle_wait)
-                                            .await;
-                                    }
-                                    res
-                                });
+                                let device = maindevice.as_ref().unwrap();                                
+                                let now = Instant::now(); // Moved inside                                
+                                let res = rt.block_on(group.tx_rx_dc(device)).expect("");                                                                    
+                                if tick <= self.current_config.dc_config.target_dc_tick {
+                                    spinner.sleep_until(now + res.extra.next_cycle_wait);
+                                }                                
 
                                 if tick > self.current_config.dc_config.target_dc_tick {
                                     let group_res = rt.block_on(group.into_safe_op(device));
@@ -415,12 +439,11 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 let device = maindevice.as_ref().unwrap();
                                 // Apply the same logic here
                                 let (is_all_safe, group_back, _) = rt.block_on(async {
-                                    let now = tokio::time::Instant::now();
+                                    let now = Instant::now();
                                     let res = group.tx_rx_dc(device).await.expect("TX/RX");
                                     let ready = res.is_in_state(ethercrab::SubDeviceState::SafeOp);
                                     if !ready {
-                                        tokio::time::sleep_until(now + res.extra.next_cycle_wait)
-                                            .await;
+                                        spinner.sleep_until(now + res.extra.next_cycle_wait);
                                     }
                                     (ready, group, res.extra.next_cycle_wait)
                                 });
@@ -430,19 +453,21 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     // --- Calculate and map offsets here ---
                                     let mut rx_offset = 0;
                                     let mut tx_offset = 0;
+                                    let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
                                     for (i, subdevice) in group_back.iter(device).enumerate() {
                                         let length_tx = subdevice.io_raw().inputs().len();
                                         let length_rx = subdevice.io_raw().outputs().len();
 
-                                        self.subdevices[i].start_tx = tx_offset;
-                                        self.subdevices[i].end_tx = tx_offset + length_tx;
+                                        subdevice_guard[i].start_tx = tx_offset;
+                                        subdevice_guard[i].end_tx = tx_offset + length_tx;
 
-                                        self.subdevices[i].start_rx = rx_offset;
-                                        self.subdevices[i].end_rx = rx_offset + length_rx;
+                                        subdevice_guard[i].start_rx = rx_offset;
+                                        subdevice_guard[i].end_rx = rx_offset + length_rx;
 
                                         rx_offset += length_rx;
                                         tx_offset += length_tx;
                                     }
+                                    drop(subdevice_guard);
                                     break group_back;
                                 } else {
                                     group_container = Some(GroupState::SafeOp(group_back));
@@ -460,10 +485,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     self.state.store(EtherCATState::Op.into(), Relaxed);
                 }
                 EtherCATState::Op => {
-                    let rt = get_async_runtime();
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
-                    rt.block_on(async {
+                    futures::executor::block_on(async {
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
                                 let id = core_affinity::CoreId {
@@ -473,37 +497,41 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     opt.ethercat_loop_thread_priority as i32,
                                 );
                                 core_affinity::set_for_current(id);
+                                if opt.lock_memory {
+                                    let flags = MCL_CURRENT | MCL_FUTURE;                        
+                                    let result = unsafe { mlockall(flags) };
+                                    if result == 0 {
+                                        println!("All current and future memory pages locked.");
+                                    }else{
+                                        eprintln!("Warning: Memory locking failed! Result: {}",result);
+                                    }
+                                }
                             }
                             None => (),
-                        };
+                        };   
 
+                        let mut is_all_op = false;                    
                         loop {
-                            let cycle_start = Instant::now();
-                            let res = group_op
-                                .as_ref()
-                                .unwrap()
-                                .tx_rx_dc(&maindevice)
-                                .await
-                                .expect("TX/RX");
-                            
+                            let cycle_start = Instant::now();                            
+                            let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
-                            self.next_cycle_us.store(res.extra.next_cycle_wait.as_micros() as u64,Relaxed);
 
-                            while Instant::now() < self.next_cycle {
-                                std::hint::spin_loop();
-                            }
-
-                            if res.all_op() {
-                                for i in 0..self.subdevice_count.load(Relaxed) {
-                                    self.subdevices[i as usize].initialized = true;
+                            if !is_all_op {
+                                if res.all_op() {
+                                    let mut subdevice_guard = self.subdevices.lock().await;
+                                    for i in 0..self.subdevice_count.load(Relaxed) {
+                                        subdevice_guard[i as usize].initialized = true;
+                                    }
+                                    drop(subdevice_guard);
+                                    println!("ALL OP");
+                                    is_all_op = true;
                                 }
-                                println!("ALL OP");
-                                break;
+                                else {
+                                    spinner.sleep_until(self.next_cycle);
+                                    self.cycle_time_us.store(cycle_start.elapsed().as_micros() as u64, Relaxed);
+                                    continue;
+                                }
                             }
-                        }
-
-                        loop {
-                            let cycle_start = Instant::now();
 
                             match self.output_consumer.read() {
                                 Some(full_buffer) => {
@@ -520,10 +548,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     self.output_consumer.finish_read();
                                 }
                                 None => {}
-                            };
+                            };       
 
-                            let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
-                            self.next_cycle = cycle_start + res.extra.next_cycle_wait;
                             match self.input_producer.input_buffer_mut() {
                                 Some(buffer) => {
                                     // We get a mutable slice to the whole buffer to make sub-slicing easier
@@ -541,20 +567,16 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     self.input_producer.publish();
                                 }
                                 None => {}
-                            }
-
-                            while Instant::now() < self.next_cycle {
-                                std::hint::spin_loop();
-                            }
-
-                            self.cycle_time_us.store(cycle_start.elapsed().as_micros() as u64, Relaxed);
+                            }                                                    
                             if self.cycle.load(Relaxed) == u64::MAX {
                                 self.cycle.store(0, Relaxed);
                             } else {
                                 self.cycle.fetch_add(1, Relaxed);
                             }
+                            spinner.sleep_until(self.next_cycle);
+                            self.cycle_time_us.store(cycle_start.elapsed().as_micros() as u64, Relaxed);
                         }
-                    });
+                    } );
                 }
             }
             self.requested_state = None;

@@ -14,21 +14,17 @@ use std::{env, time::Duration};
 fn main() {
     // Initialize EtherCAT Master with the default configuration
     let interface = env::args().nth(1).expect("No Interface-name given");
-    let mut eth_control = init_ethercat(&interface, None);
+    let eth_control = init_ethercat(&interface, None);
+    let mut eth_handle = eth_control.app_handle;
+
     eth_control
         .channel
         .request_state_change(EtherCATState::PreOp)
         .expect("Channel was not ready");
 
-    // During PreOp controller.subdevices is populated with name, device_address, product_id and other metadata
-    eth_control
-        .channel
-        .request_state_change(ethercat_hal::EtherCATState::PreOp)
-        .expect("Failed to go into PreOP");
-
     // Wait for state change
     loop {
-        let val = eth_control.app_handle.get_state();
+        let val = eth_handle.get_state();
         match val {
             EtherCATState::PreOp => break,
             _ => std::thread::sleep(Duration::from_millis(10)),
@@ -37,31 +33,32 @@ fn main() {
 
     println!(
         "found {:?} ethercat terminals: ",
-        eth_control.controller.subdevice_count
+        eth_handle.get_subdevice_count()
     );
-    for i in 0..eth_control.controller.subdevice_count {
-        println!(
-            " - {:?}",
-            eth_control.controller.subdevices[i].get_name().unwrap()
-        );
-    }
 
     eth_control
         .channel
-        .request_state_change(ethercat_hal::EtherCATState::Op)
+        .request_state_change(EtherCATState::Op)
         .expect("Failed to go into OP");
 
     // Wait for state change
     loop {
-        match eth_control.app_handle.get_state() {
+        match eth_handle.get_state() {
             EtherCATState::Op => break,
             _ => std::thread::sleep(Duration::from_millis(10)),
         }
     }
 
+    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    for sdev in &subdevices {
+        println!(
+            " - {:?}",
+            sdev
+        );
+    }
+
     // This variable "knows" how to format the Rx PDOs for the EL2004
     let mut el2004: EL2004 = EL2004::new();
-
     for iter in 0.. {
         // Tick our application.
         // Here, we just alternate which LED is on
@@ -70,8 +67,8 @@ fn main() {
         }
 
         // We ONLY have outputs so no need to call get_inputs
-        if let Some(outputs) = eth_control.app_handle.write_outputs() {
-            for subdevice in eth_control.controller.get_subdevices() {
+        if let Some(outputs) = eth_handle.write_outputs() {
+            for subdevice in &subdevices {
                 // Loop over the subdevices until the EL2004 is found
                 if subdevice.vendor == BECKHOFF_VENDOR_ID
                     && subdevice.product_id == EL2004_PRODUCT_ID
@@ -88,7 +85,7 @@ fn main() {
         }
 
         // Send the output through the EtherCAT terminals
-        eth_control.app_handle.send_outputs();
+        eth_handle.send_outputs();
         std::thread::sleep(Duration::from_millis(50));
     }
 }

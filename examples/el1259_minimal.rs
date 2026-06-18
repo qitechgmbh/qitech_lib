@@ -30,12 +30,10 @@ struct Channel {
 /// This example showcases a very bare bones example to toggle the leds on an EL1259
 fn main() {
     let mut channels: [Channel; N_CHANNELS] = Default::default();
-
     let mut el1259: EL1259 = EL1259::new();
-
     let interface = env::args().nth(1).expect("No Interface-name given");
-
-    let mut eth_control = init_ethercat(&interface, None);
+    let eth_control = init_ethercat(&interface, None);
+    let mut eth_handle = eth_control.app_handle;
 
     eth_control
         .channel
@@ -43,13 +41,13 @@ fn main() {
         .expect("Channel was not ready");
 
     loop {
-        if matches!(eth_control.controller.state, EtherCATState::PreOp) {
+        if matches!(eth_handle.get_state(), EtherCATState::PreOp) {
             break;
         }
         std::thread::sleep(Duration::from_millis(10));
     }
 
-    for subdevice in eth_control.controller.get_subdevices() {
+    for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
         if subdevice.product_id == EL1259_PRODUCT_ID {
             el1259
                 .write_config(
@@ -58,6 +56,7 @@ fn main() {
                     &el1259.get_config(),
                 )
                 .expect("Failed to write config");
+                
             eth_control
                 .channel
                 .enable_dc_sync0(subdevice.device_address)
