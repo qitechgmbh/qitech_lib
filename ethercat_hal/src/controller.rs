@@ -8,6 +8,7 @@ use crate::{
     machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
 };
+#[cfg(target_os = "linux")]
 use common::set_irq_affinity;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
@@ -42,6 +43,7 @@ where
     output_consumer: C,
 }
 
+#[cfg(target_os = "linux")]
 fn set_current_thread_rt_priority(priority: i32) {
     unsafe {
         let thread_id = libc::pthread_self();
@@ -67,6 +69,13 @@ fn set_current_thread_rt_priority(priority: i32) {
             println!("Thread priority set to SCHED_FIFO with level {}", priority);
         }
     }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn set_current_thread_rt_priority(_priority: i32) {
+    eprintln!(
+        "set_current_thread_rt_priority: real-time scheduling is not available on this platform"
+    );
 }
 
 impl<C, P> EtherCATController<C, P>
@@ -120,7 +129,7 @@ where
 
 unsafe impl Sync for EtherCATController<Arc<Mailbox>, TripleBufProducer> {}
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
-    pub fn ethercat_state_machine(&mut self) {
+    pub fn ethercat_state_machine(&mut self) -> Result<(), anyhow::Error> {
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> =
             None;
@@ -159,47 +168,77 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             EtherCATState::PreOp => (),
                             _ => continue,
                         },
-                        ChannelRequests::Shutdown() => return, // We CAN safely shutdonw in Init
+                        ChannelRequests::Shutdown() => return Ok(()), // We CAN safely shutdonw in Init
                         _ => continue,
                     }
 
+                    #[cfg(not(target_os = "linux"))]
+                    use ethercrab::std::tx_rx_task;
+                    #[cfg(target_os = "linux")]
                     use ethercrab::std::tx_rx_task_io_uring;
                     if self.interface.is_some() {
                         let (tx, rx, pdu) = PDU_STORAGE.try_split().expect("can only split once");
-                        let pdu_tx = tx;
-                        let pdu_rx = rx;
                         let interface = self.interface.clone().unwrap();
-                        let opt = self.current_config.realtime_optimizations.clone();
-                        _ethercat_tx_rx_handle = std::thread::Builder::new()
-                            .name("EthercatTxRxThread".to_owned())
-                            .spawn(move || {
-                                match opt {
-                                    Some(opt) => {
-                                        let id = core_affinity::CoreId {
-                                            id: opt.ethercat_io_thread_core,
-                                        };
-                                        set_current_thread_rt_priority(
-                                            opt.ethercat_io_thread_priority as i32,
-                                        );
-                                        // Pin to the last core (e.g., Core 3 on a 4-core system)
-                                        core_affinity::set_for_current(id);
-                                        if let Some(irq_core) = opt.pin_irq_core {
-                                            let res = set_irq_affinity(&interface, irq_core as u32);
-                                            if res.is_err() {
-                                                println!("set_irq_affinity failed: {:?}", res);
-                                            } else {
-                                                println!(
-                                                    "set irq_affinity of {} to core {}",
-                                                    &interface, irq_core
-                                                );
+
+                        #[cfg(target_os = "linux")]
+                        {
+                            let pdu_tx = tx;
+                            let pdu_rx = rx;
+                            let opt = self.current_config.realtime_optimizations.clone();
+                            _ethercat_tx_rx_handle = std::thread::Builder::new()
+                                .name("EthercatTxRxThread".to_owned())
+                                .spawn(move || {
+                                    match opt {
+                                        Some(opt) => {
+                                            let id = core_affinity::CoreId {
+                                                id: opt.ethercat_io_thread_core,
+                                            };
+                                            set_current_thread_rt_priority(
+                                                opt.ethercat_io_thread_priority as i32,
+                                            );
+                                            // Pin to the specified core
+                                            core_affinity::set_for_current(id);
+                                            if let Some(irq_core) = opt.pin_irq_core {
+                                                let res =
+                                                    set_irq_affinity(&interface, irq_core as u32);
+                                                if res.is_err() {
+                                                    println!("set_irq_affinity failed: {:?}", res);
+                                                } else {
+                                                    println!(
+                                                        "set irq_affinity of {} to core {}",
+                                                        &interface, irq_core
+                                                    );
+                                                }
                                             }
                                         }
-                                    }
-                                    None => (),
-                                };
-                                tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
-                                    .expect("Failed to run TX/RX task (io_uring)");
-                            });
+                                        None => (),
+                                    };
+                                    tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
+                                        .expect("Failed to run TX/RX task (io_uring)");
+                                });
+                        }
+
+                        #[cfg(not(target_os = "linux"))]
+                        {
+                            let pdu_tx = tx;
+                            let pdu_rx = rx;
+                            _ethercat_tx_rx_handle = std::thread::Builder::new()
+                                .name("EthercatTxRxThread".to_owned())
+                                .spawn(move || {
+                                    get_async_runtime().block_on(async {
+                                        match tx_rx_task(&interface, pdu_tx, pdu_rx) {
+                                            Ok(task) => {
+                                                if let Err(e) = task.await {
+                                                    eprintln!("TX/RX task error: {}", e);
+                                                }
+                                            }
+                                            Err(e) => {
+                                                eprintln!("TX/RX task creation failed: {}", e);
+                                            }
+                                        }
+                                    });
+                                });
+                        }
 
                         maindevice = Some(MainDevice::new(
                             pdu,
@@ -279,7 +318,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             EtherCATState::Op => (),
                             _ => continue,
                         },
-                        ChannelRequests::Shutdown() => return,
+                        ChannelRequests::Shutdown() => return Ok(()),
                         ChannelRequests::SdoWriteRequest(request) => {
                             let res = sdo_write(maindev, preop_group, request);
                             send_response(
@@ -545,10 +584,19 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         tick += 1;
                     };
 
-                    group_op = Some(
-                        rt.block_on(group_safe_op.into_op(&maindevice.as_ref().unwrap()))
-                            .expect("SAFE-OP -> OP"),
-                    );
+                    // Use the non-blocking request_into_op + manual tx_rx_dc polling
+                    // loop. The blocking `into_op()` can hit an io_uring TX/RX race on Linux.
+                    match rt.block_on(group_safe_op.request_into_op(&maindevice.as_ref().unwrap()))
+                    {
+                        Ok(group) => group_op = Some(group),
+                        Err(e) => {
+                            // request_into_op consumes the group — no retry possible.
+                            return Err(anyhow::anyhow!(
+                                "EtherCAT SAFE-OP -> OP transition failed: {:?}",
+                                e
+                            ));
+                        }
+                    }
 
                     println!("Started Transition to OP");
                     self.state = EtherCATState::Op;
