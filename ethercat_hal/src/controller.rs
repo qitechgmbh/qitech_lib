@@ -138,7 +138,7 @@ where
 
 unsafe impl Sync for EtherCATController<Arc<Mailbox>, TripleBufProducer> {}
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
-    pub fn ethercat_state_machine(&mut self) {
+    pub fn ethercat_state_machine(&mut self) -> Result<(), anyhow::Error> {
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> =
             None;
@@ -177,7 +177,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             EtherCATState::PreOp => (),
                             _ => continue,
                         },
-                        ChannelRequests::Shutdown() => return, // We CAN safely shutdonw in Init
+                        ChannelRequests::Shutdown() => return Ok(()), // We CAN safely shutdonw in Init
                         _ => continue,
                     }
 
@@ -205,7 +205,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                             set_current_thread_rt_priority(
                                                 opt.ethercat_io_thread_priority as i32,
                                             );
-                                            // Pin to the last core (e.g., Core 3 on a 4-core system)
+                                            // Pin to the specified core
                                             core_affinity::set_for_current(id);
                                             if let Some(irq_core) = opt.pin_irq_core {
                                                 let res =
@@ -334,7 +334,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             EtherCATState::Op => (),
                             _ => continue,
                         },
-                        ChannelRequests::Shutdown() => return,
+                        ChannelRequests::Shutdown() => return Ok(()),
                         ChannelRequests::SdoWriteRequest(request) => {
                             let res = sdo_write(maindev, preop_group, request);
                             send_response(
