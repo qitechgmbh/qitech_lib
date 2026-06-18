@@ -1,12 +1,11 @@
+use crate::Mailbox;
 use crate::{
     ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState,
     MAX_SUBDEVICES, MasterConfiguration, MetaSubdevice, PDI_LEN, PDU_STORAGE, Producer, SdoType,
-    TripleBufConsumer, TripleBufProducer,
+    TripleBufProducer,
     ethercat_helpers::{configure_oversampling, enable_dc_sync, enable_dc_sync01, sdo_read, sdo_write},
     get_async_runtime,
-    machine_ident_read::{
-        MachineDeviceInfo, read_device_identifications, write_device_identifications,
-    },
+    machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
 };
 #[cfg(target_os = "linux")]
@@ -16,6 +15,7 @@ use ethercrab::{
     std::ethercat_now,
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
 };
+use std::sync::Arc;
 use std::{
     sync::mpsc::Receiver,
     thread::JoinHandle,
@@ -127,10 +127,10 @@ where
     }
 }
 
-unsafe impl Sync for EtherCATController<TripleBufConsumer, TripleBufProducer> {}
-impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
-    pub fn ethercat_state_machine(&mut self) {
-        let mut ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
+unsafe impl Sync for EtherCATController<Arc<Mailbox>, TripleBufProducer> {}
+impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
+    pub fn ethercat_state_machine(&mut self) -> Result<(), anyhow::Error> {
+        let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> =
             None;
         let mut group_preop_pdi: SubDeviceGroup<
@@ -179,32 +179,38 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                     if self.interface.is_some() {
                         let (tx, rx, pdu) = PDU_STORAGE.try_split().expect("can only split once");
                         let interface = self.interface.clone().unwrap();
-                        let opt = self.current_config.realtime_optimizations.clone();
-                        ethercat_tx_rx_handle = std::thread::Builder::new()
-                            .name("EthercatTxRxThread".to_owned())
-                            .spawn(move || {
-                                match opt {
-                                    Some(opt) => {
-                                        let id = core_affinity::CoreId {
-                                            id: opt.ethercat_io_thread_core,
-                                        };
-                                        set_current_thread_rt_priority(
-                                            opt.ethercat_io_thread_priority as i32,
-                                        );
-                                        // Pin to the last core (e.g., Core 3 on a 4-core system)
-                                        core_affinity::set_for_current(id);
-                                        if let Some(irq_core) = opt.pin_irq_core {
-                                            let res = set_irq_affinity(&interface, irq_core as u32);
-                                            if res.is_err() {
-                                                println!("set_irq_affinity failed: {:?}", res);
-                                            } else {
-                                                println!(
-                                                    "set irq_affinity of {} to core {}",
-                                                    &interface, irq_core
-                                                );
+
+                        #[cfg(target_os = "linux")]
+                        {
+                            let pdu_tx = tx;
+                            let pdu_rx = rx;
+                            let opt = self.current_config.realtime_optimizations.clone();
+                            _ethercat_tx_rx_handle = std::thread::Builder::new()
+                                .name("EthercatTxRxThread".to_owned())
+                                .spawn(move || {
+                                    match opt {
+                                        Some(opt) => {
+                                            let id = core_affinity::CoreId {
+                                                id: opt.ethercat_io_thread_core,
+                                            };
+                                            set_current_thread_rt_priority(
+                                                opt.ethercat_io_thread_priority as i32,
+                                            );
+                                            // Pin to the specified core
+                                            core_affinity::set_for_current(id);
+                                            if let Some(irq_core) = opt.pin_irq_core {
+                                                let res =
+                                                    set_irq_affinity(&interface, irq_core as u32);
+                                                if res.is_err() {
+                                                    println!("set_irq_affinity failed: {:?}", res);
+                                                } else {
+                                                    println!(
+                                                        "set irq_affinity of {} to core {}",
+                                                        &interface, irq_core
+                                                    );
+                                                }
                                             }
                                         }
-                                         }
                                         None => (),
                                     };
                                     tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
@@ -625,20 +631,6 @@ impl EtherCATController<TripleBufConsumer, TripleBufProducer> {
                     let rt = get_async_runtime();
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
-                    loop {
-                        let response = rt
-                            .block_on(group_op.as_ref().unwrap().tx_rx_dc(&maindevice))
-                            .expect("TX/RX");
-
-                        if response.all_op() {
-                            for i in 0..self.subdevice_count {
-                                self.subdevices[i].initialized = true;
-                            }
-                            println!("ALL OP");
-                            break;
-                        }
-                    }
-
                     rt.block_on(async {
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
