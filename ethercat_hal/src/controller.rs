@@ -656,7 +656,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 for i in 0..self.subdevice_count {
                                     self.subdevices[i].initialized = true;
                                 }
-                                self.all_subdevices_operational.store(true, Ordering::Release);
+                                self.all_subdevices_operational
+                                    .store(true, Ordering::Release);
                                 println!("ALL OP");
                                 break;
                             }
