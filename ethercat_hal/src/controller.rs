@@ -23,7 +23,6 @@ use std::{
 use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::time::interval;
 
-unsafe impl Sync for EtherCATController<Arc<Mailbox>, TripleBufProducer> {}
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
     pub fn ethercat_state_machine(&mut self) {
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
@@ -155,17 +154,19 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let mut preop_group = group.as_mut().unwrap();
 
                     let mut i = 0;
+                    let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
                     for subdevice in preop_group.iter(&maindev) {
                         let bytes = subdevice.name().as_bytes();
                         let len = std::cmp::min(bytes.len(), 127);
                         // Copy the slice into the array
-                        self.subdevices[i].name[..len].copy_from_slice(&bytes[..len]);
-                        self.subdevices[i].product_id = subdevice.identity().product_id;
-                        self.subdevices[i].revision = subdevice.identity().revision;
-                        self.subdevices[i].vendor = subdevice.identity().vendor_id;
-                        self.subdevices[i].device_address = subdevice.configured_address();
+                        subdevice_guard[i].name[..len].copy_from_slice(&bytes[..len]);
+                        subdevice_guard[i].product_id = subdevice.identity().product_id;
+                        subdevice_guard[i].revision = subdevice.identity().revision;
+                        subdevice_guard[i].vendor = subdevice.identity().vendor_id;
+                        subdevice_guard[i].device_address = subdevice.configured_address();
                         i += 1;
                     }
+                    drop(subdevice_guard);
                     self.subdevice_count.store(i as u64, Relaxed);
                     let msg = match self.rx_channel.try_recv() {
                         Ok(value) => value,
@@ -430,19 +431,21 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     // --- Calculate and map offsets here ---
                                     let mut rx_offset = 0;
                                     let mut tx_offset = 0;
+                                    let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
                                     for (i, subdevice) in group_back.iter(device).enumerate() {
                                         let length_tx = subdevice.io_raw().inputs().len();
                                         let length_rx = subdevice.io_raw().outputs().len();
 
-                                        self.subdevices[i].start_tx = tx_offset;
-                                        self.subdevices[i].end_tx = tx_offset + length_tx;
+                                        subdevice_guard[i].start_tx = tx_offset;
+                                        subdevice_guard[i].end_tx = tx_offset + length_tx;
 
-                                        self.subdevices[i].start_rx = rx_offset;
-                                        self.subdevices[i].end_rx = rx_offset + length_rx;
+                                        subdevice_guard[i].start_rx = rx_offset;
+                                        subdevice_guard[i].end_rx = rx_offset + length_rx;
 
                                         rx_offset += length_rx;
                                         tx_offset += length_tx;
                                     }
+                                    drop(subdevice_guard);
                                     break group_back;
                                 } else {
                                     group_container = Some(GroupState::SafeOp(group_back));
@@ -494,9 +497,11 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             }
 
                             if res.all_op() {
+                                let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
                                 for i in 0..self.subdevice_count.load(Relaxed) {
-                                    self.subdevices[i as usize].initialized = true;
+                                    subdevice_guard[i as usize].initialized = true;
                                 }
+                                drop(subdevice_guard);
                                 println!("ALL OP");
                                 break;
                             }

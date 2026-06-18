@@ -38,12 +38,14 @@ fn main() {
         }
     }
 
+    let subdevices = eth_control.app_handle.try_get_subdevices_vec().unwrap();
     let mut el2004: EL2004 = EL2004::new();
     // We ONLY have outputs so no need to call get_inputs
+
     loop {
         match eth_control.app_handle.write_outputs() {
             Some(output) => {
-                for subdevice in eth_control.controller.get_subdevices() {
+                for subdevice in &subdevices {
                     if subdevice.vendor == BECKHOFF_VENDOR_ID
                         && subdevice.product_id == EL2004_PRODUCT_ID
                     {

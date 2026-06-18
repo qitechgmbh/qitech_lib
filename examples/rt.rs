@@ -1,7 +1,6 @@
 use ethercat_hal::{
     DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig, init_ethercat,
 };
-use std::time::Instant;
 use std::{env, time::Duration};
 
 fn main() {
@@ -30,16 +29,19 @@ fn main() {
 
     let ethercat_control = init_ethercat(&interface, Some(config));
     let ethercat_interface = ethercat_control.channel;
-    let ethercat_controller = ethercat_control.controller;
     let _res = ethercat_interface.request_state_change(EtherCATState::PreOp);
     std::thread::sleep(Duration::from_millis(5000));
 
     println!(
         "found {:?} ethercat terminals: ",
-        ethercat_controller.get_subdevice_count()
+        ethercat_control.app_handle.get_subdevice_count()
     );
-    for i in 0..ethercat_controller.get_subdevice_count() {
-        println!("{:?}", ethercat_controller.subdevices[i].get_name());
+    let subdevices = ethercat_control
+        .app_handle
+        .try_get_subdevices_vec()
+        .unwrap();
+    for i in 0..ethercat_control.app_handle.get_subdevice_count() {
+        println!("{:?}", subdevices[i as usize].get_name());
     }
 
     let _res = ethercat_interface.request_state_change(EtherCATState::Op);
@@ -56,17 +58,15 @@ fn main() {
     // But with a sligthly rewritten ethercat_hal/controller.rs or maybe just a different Producer/Consumer it should be possible
     // Currently By Default a Triple Buffer Producer/Consumer is used
     let mut missed_frames: Vec<u64> = vec![];
-    let mut last_cycle = ethercat_controller.get_cycle();
+    let mut last_cycle = ethercat_control.app_handle.get_current_cycle();
     let mut cycles_recorded = 0;
 
     while cycles_recorded < total_cycles {
-        // Spin until time is up OR the controller has advanced past our last seen cycle
-        while Instant::now() < ethercat_controller.next_cycle
-            && last_cycle == ethercat_controller.get_cycle()
-        {
+        // Spin until io thread has advanced past our last seen cycle
+        while last_cycle == ethercat_control.app_handle.get_current_cycle() {
             std::thread::yield_now();
         }
-        let current_controller_cycle = ethercat_controller.get_cycle();
+        let current_controller_cycle = ethercat_control.app_handle.get_current_cycle();
         if current_controller_cycle > last_cycle {
             if current_controller_cycle - last_cycle > 1 {
                 for i in (last_cycle + 1)..current_controller_cycle {
@@ -75,7 +75,7 @@ fn main() {
             }
 
             last_cycle = current_controller_cycle;
-            let cycle_time = ethercat_controller.get_cycle_time_us();
+            let cycle_time = ethercat_control.app_handle.get_cycle_time_us();
             cycle_times.push(cycle_time);
 
             let jitter = (cycle_time as i64 - cycle_time_us as i64).abs() as u64;

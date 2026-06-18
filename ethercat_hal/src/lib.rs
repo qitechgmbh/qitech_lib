@@ -12,6 +12,7 @@ pub mod shared_config;
 pub mod machine_ident_read;
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
+use tokio::sync::Mutex;
 use std::cell::UnsafeCell;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
@@ -55,7 +56,7 @@ where
     next_cycle_us: Arc<AtomicU64>,
     next_cycle: Instant,
     interface: Option<String>,
-    pub subdevices: [MetaSubdevice; MAX_SUBDEVICES],
+    subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
     state: Arc<AtomicU8>,
     current_config: MasterConfiguration,
     requested_state: Option<EtherCATState>,
@@ -80,6 +81,7 @@ where
         subdevice_count : Arc<AtomicU64>,
         next_cycle_us : Arc<AtomicU64>,
         state : Arc<AtomicU8>,
+        subdevices : Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
     ) -> Self {
         Self {
             cycle,
@@ -88,7 +90,7 @@ where
             interface,
             subdevice_count,
             next_cycle: std::time::Instant::now(),
-            subdevices: [MetaSubdevice::default(); MAX_SUBDEVICES],            
+            subdevices,   
             state,
             requested_state: None,
             rx_channel: rx,
@@ -241,6 +243,7 @@ where
     next_cycle_us   : Arc<AtomicU64>,
     subdevice_count : Arc<AtomicU64>,
     state           : Arc<AtomicU8>,
+    subdevices      : Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>
 }
 
 impl<C, P> EtherCATAppHandle<C, P>
@@ -282,6 +285,12 @@ where
 
     pub fn get_state(&self) -> EtherCATState {
         self.state.load(Relaxed).into()
+    }
+
+    pub fn try_get_subdevices_vec(&self) -> Result<Vec<MetaSubdevice>,anyhow::Error> {
+        let guard = self.subdevices.try_lock();
+        let g = guard.unwrap();
+        Ok(g.clone().to_vec())
     }
 
 }
@@ -341,7 +350,7 @@ pub struct MetaSubdevice {
     // Gives the offset at which the RxPdo starts
     pub start_rx: usize,
     pub end_rx: usize,
-    // Device address (ado, i think), first one would be 0x1000, so 4096
+    // Device address first one would be 0x1000, so 4096
     pub device_address: u16,
     pub initialized: bool,
 }
@@ -662,6 +671,8 @@ pub fn init_ethercat(
     let next_cycle_us   : Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
     let subdevice_count : Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
     let state           : Arc<AtomicU8>  = Arc::new(AtomicU8::new(EtherCATState::NoInterface.into()));
+    let subdevices      : Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>> = 
+        Arc::new(Mutex::new([MetaSubdevice::default();MAX_SUBDEVICES]));
     
     let mut controller = match config {
         Some(conf) => 
@@ -673,9 +684,10 @@ pub fn init_ethercat(
             rx,
             Some(interface_name.to_string()),
             conf,
-            cycle.clone(),cycle_time_us.clone(),subdevice_count.clone(),next_cycle_us.clone(),state.clone()
+            cycle.clone(),cycle_time_us.clone(),subdevice_count.clone(),next_cycle_us.clone(),state.clone(),subdevices.clone()
         ),
-        None =>EtherCATController::new(
+        None =>
+        EtherCATController::new(
             TripleBufProducer {
                 output_producer: input_producer,
             },
@@ -683,7 +695,7 @@ pub fn init_ethercat(
             rx,
             Some(interface_name.to_string()),
             MasterConfiguration::default(),
-            cycle.clone(),cycle_time_us.clone(),subdevice_count.clone(),next_cycle_us.clone(),state.clone()
+            cycle.clone(),cycle_time_us.clone(),subdevice_count.clone(),next_cycle_us.clone(),state.clone(),subdevices.clone()
         ),
     };
 
@@ -694,7 +706,8 @@ pub fn init_ethercat(
         cycle_time_us,
         next_cycle_us,
         subdevice_count,
-        state
+        state,
+        subdevices
     };
 
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx);
