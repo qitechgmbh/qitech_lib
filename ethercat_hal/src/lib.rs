@@ -242,7 +242,7 @@ where
     pub controller: Arc<EtherCATController<C1, P1>>,
     pub channel: EtherCATThreadChannel,
     pub app_handle: EtherCATAppHandle<C2, P2>,
-    pub join_handle: Option<JoinHandle<()>>,
+    pub join_handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
 }
 
 pub type StandardEtherCATAppHandle = EtherCATAppHandle<TripleBufConsumer, TripleBufProducer>;
@@ -570,9 +570,7 @@ pub fn init_ethercat(
         .spawn(move || {
             let ptr = Arc::as_ptr(&controller_for_thread)
                 as *mut EtherCATController<std::sync::Arc<Mailbox>, TripleBufProducer>;
-            unsafe {
-                (&mut *ptr).ethercat_state_machine();
-            }
+            unsafe { (&mut *ptr).ethercat_state_machine() }
         })
         .expect("Failed to spawn thread");
     EtherCATControl {

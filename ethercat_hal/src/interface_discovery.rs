@@ -5,7 +5,7 @@ use std::ptr;
 use std::{ffi::CString, mem, os::fd::RawFd};
 use tracing::{error, warn};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LinkType {
     Link,
     Unknown,
@@ -13,10 +13,32 @@ pub enum LinkType {
     Ipv6,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Interface {
     pub link_type: LinkType,
     pub name: String,
+}
+
+fn is_wired_ethernet_device(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    // Virtual devices to exclude
+    let is_virtual = lower.starts_with("gif")
+        || lower.starts_with("bridge")
+        || lower.starts_with("veth")
+        || lower.starts_with("docker")
+        || lower.starts_with("br-")
+        || lower.starts_with("vlan")
+        || lower.starts_with("lo")
+        || lower.starts_with("sit")
+        || lower.starts_with("gre")
+        || lower.starts_with("virbr")
+        || lower.starts_with("vmnet");
+
+    // Physical devices to include: en, eth, bond (wired only)
+    let is_physical =
+        lower.starts_with("en") || lower.starts_with("eth") || lower.starts_with("bond");
+
+    is_physical && !is_virtual
 }
 
 pub fn list_ethernet_interfaces() -> Result<Vec<Interface>, anyhow::Error> {
@@ -74,7 +96,32 @@ pub fn list_ethernet_interfaces() -> Result<Vec<Interface>, anyhow::Error> {
             curr = interface.ifa_next;
         }
         freeifaddrs(ifaddr);
-        Ok(vec)
+        // Deduplicate by name, keeping Link type entries when available
+        let mut deduped: Vec<Interface> = vec![];
+        for iface in vec {
+            if let Some(existing) = deduped.iter_mut().find(|e| e.name == iface.name) {
+                // Prefer Link type over others
+                if matches!(iface.link_type, LinkType::Link)
+                    && !matches!(existing.link_type, LinkType::Link)
+                {
+                    *existing = iface;
+                }
+            } else {
+                deduped.push(iface);
+            }
+        }
+        // Sort to prefer physical devices (en, eth, etc.) before virtual (gif, bridge, etc.)
+        // Secondary sort by name in reverse (so en9 before en1, en6 before en0)
+        deduped.sort_by(|a, b| {
+            match is_wired_ethernet_device(&a.name)
+                .cmp(&is_wired_ethernet_device(&b.name))
+                .reverse()
+            {
+                std::cmp::Ordering::Equal => b.name.cmp(&a.name), // reverse name sort for secondary
+                other => other,
+            }
+        });
+        Ok(deduped)
     }
 }
 
@@ -252,7 +299,6 @@ pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ];
-
     let fd = open_bpf(interface_name)?;
     let result = probe_ethercat(fd, interface_name, &FRAME);
     unsafe {
@@ -271,7 +317,6 @@ pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
 fn probe_ethercat(fd: RawFd, interface_name: &str, frame: &[u8]) -> Result<(), anyhow::Error> {
     unsafe {
         let mut buf = [0u8; 4096];
-
         // Drain stale packets (non-blocking)
         while libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) > 0 {}
 
