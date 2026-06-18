@@ -4,7 +4,6 @@ use crate::pdo::oversampling::{AnalogOutputOversample, CycleCount};
 use crate::pdo::{RxPdo, TxPdo};
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
-
 /// EL4732 2-channel analog output device with oversampling support
 ///
 /// 16-bit resolution, -10V to +10V, E-Bus current: 180mA
@@ -31,10 +30,15 @@ impl EthercatDeviceProcessing for EL4732 {}
 
 impl std::fmt::Debug for EL4732 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "EL4732 (OSFac={})", self.rxpdo.ch1_samples
-            .as_ref()
-            .map(|s| s.oversample_factor())
-            .unwrap_or(1))
+        write!(
+            f,
+            "EL4732 (OSFac={})",
+            self.rxpdo
+                .ch1_samples
+                .as_ref()
+                .map(|s| s.oversample_factor())
+                .unwrap_or(1)
+        )
     }
 }
 
@@ -191,7 +195,9 @@ pub struct EL4732Configuration {
 
 impl Default for EL4732Configuration {
     fn default() -> Self {
-        Self { oversample_factor: 1 }
+        Self {
+            oversample_factor: 1,
+        }
     }
 }
 

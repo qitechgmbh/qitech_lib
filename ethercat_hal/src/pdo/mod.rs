@@ -1,4 +1,3 @@
-pub mod oversampling;
 pub mod analog_input;
 pub mod basic;
 pub mod el252x;
@@ -6,6 +5,7 @@ pub mod el32xx;
 pub mod el40xx;
 pub mod el5152;
 pub mod el70x1;
+pub mod oversampling;
 use crate::coe::Configuration;
 use bitvec::prelude::*;
 

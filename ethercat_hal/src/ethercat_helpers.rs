@@ -636,9 +636,8 @@ pub fn configure_oversampling(
     factor: u16,
 ) -> Result<(), anyhow::Error> {
     let rt = get_async_runtime();
-    let oversampling: &'static [(u16, u16)] = Box::leak(
-        vec![(0x1600u16, factor), (0x1700u16, factor)].into_boxed_slice()
-    );
+    let oversampling: &'static [(u16, u16)] =
+        Box::leak(vec![(0x1600u16, factor), (0x1700u16, factor)].into_boxed_slice());
 
     rt.block_on(async {
         for mut subdevice in group.iter_mut(maindevice) {

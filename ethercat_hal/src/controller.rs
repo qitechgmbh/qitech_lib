@@ -3,7 +3,9 @@ use crate::{
     ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState,
     MAX_SUBDEVICES, MasterConfiguration, MetaSubdevice, PDI_LEN, PDU_STORAGE, Producer, SdoType,
     TripleBufProducer,
-    ethercat_helpers::{configure_oversampling, enable_dc_sync, enable_dc_sync01, sdo_read, sdo_write},
+    ethercat_helpers::{
+        configure_oversampling, enable_dc_sync, enable_dc_sync01, sdo_read, sdo_write,
+    },
     get_async_runtime,
     machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
