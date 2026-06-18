@@ -1,7 +1,7 @@
-use crate::Mailbox;
+use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority};
 use crate::{
-    ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState,
-    MAX_SUBDEVICES, MasterConfiguration, MetaSubdevice, PDI_LEN, PDU_STORAGE, Producer, SdoType,
+    ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState,
+    MAX_SUBDEVICES, PDI_LEN, PDU_STORAGE, Producer, SdoType,
     TripleBufProducer,
     ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
     get_async_runtime,
@@ -15,108 +15,13 @@ use ethercrab::{
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
 };
 use std::sync::Arc;
+use std::sync::atomic::Ordering::Relaxed;
 use std::{
-    sync::mpsc::Receiver,
     thread::JoinHandle,
     time::{Duration, Instant},
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
 use tokio::time::interval;
-
-pub struct EtherCATController<C, P>
-where
-    C: Consumer,
-    P: Producer,
-{
-    pub cycle: u64,
-    pub cycle_time_us: u64,
-    pub next_cycle: Instant,
-    pub interface: Option<String>,
-    pub subdevices: [MetaSubdevice; 256],
-    pub subdevice_count: usize,
-    pub state: EtherCATState,
-    pub current_config: MasterConfiguration,
-    requested_state: Option<EtherCATState>,
-    rx_channel: Receiver<ChannelRequest>,
-    input_producer: P,
-    output_consumer: C,
-}
-
-fn set_current_thread_rt_priority(priority: i32) {
-    unsafe {
-        let thread_id = libc::pthread_self();
-        let param = libc::sched_param {
-            sched_priority: priority, // 1 to 99
-        };
-
-        // SCHED_FIFO is the standard for real-time control loops.
-        // It will run until it finishes or is preempted by a higher-priority RT thread.
-        let result = libc::pthread_setschedparam(
-            thread_id,
-            libc::SCHED_FIFO,
-            &param as *const libc::sched_param,
-        );
-
-        if result != 0 {
-            let err = std::io::Error::last_os_error();
-            eprintln!(
-                "Failed to set RT priority: {}. (Are you root / using sudo?)",
-                err
-            );
-        } else {
-            println!("Thread priority set to SCHED_FIFO with level {}", priority);
-        }
-    }
-}
-
-impl<C, P> EtherCATController<C, P>
-where
-    C: Consumer,
-    P: Producer,
-{
-    pub fn new(
-        input: P,
-        output: C,
-        rx: Receiver<ChannelRequest>,
-        interface: Option<String>,
-        config: MasterConfiguration,
-    ) -> Self {
-        Self {
-            cycle: 0,
-            next_cycle: std::time::Instant::now(),
-            cycle_time_us: 0,
-            interface,
-            subdevices: [MetaSubdevice::default(); 256],
-            subdevice_count: 0,
-            state: EtherCATState::NoInterface,
-            requested_state: None,
-            rx_channel: rx,
-            input_producer: input,
-            output_consumer: output,
-            current_config: config,
-        }
-    }
-
-    pub fn get_subdevices(&self) -> &[MetaSubdevice] {
-        &self.subdevices[0..self.subdevice_count]
-    }
-
-    pub fn get_subdevice_count(&self) -> usize {
-        self.subdevice_count
-    }
-
-    pub fn get_state(&self) -> EtherCATState {
-        self.state
-    }
-
-    pub fn get_cycle(&self) -> u64 {
-        self.cycle
-    }
-
-    pub fn get_cycle_time_us(&self) -> u64 {
-        self.cycle_time_us
-    }
-}
 
 unsafe impl Sync for EtherCATController<Arc<Mailbox>, TripleBufProducer> {}
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
@@ -139,10 +44,12 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         > = None;
         let mut maindevice: Option<MainDevice> = None;
         loop {
-            match self.state {
+            let state : EtherCATState = self.state.load(Relaxed).into();
+
+            match state {
                 EtherCATState::NoInterface => {
                     if self.interface.is_some() {
-                        self.state = EtherCATState::Init;
+                        self.state.store(EtherCATState::Init.into(), Relaxed);
                     }
                 }
                 EtherCATState::Boot => {
@@ -230,8 +137,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 group
                             }
                             Err(err) => {
-                                println!("failed moving to PreOp from Init {:?}", err);
-                                self.state = EtherCATState::Init;
+                                println!("failed moving to PreOp from Init {:?}", err);                                
+                                self.state.store(EtherCATState::Init.into(), Relaxed);
                                 send_response(
                                     msg.response_channel,
                                     ChannelResponse::ChangeState(Err(err.into())),
@@ -239,7 +146,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 continue;
                             }
                         });
-                        self.state = EtherCATState::PreOp;
+                        self.state.store(EtherCATState::PreOp.into(), Relaxed);
                         send_response(msg.response_channel, ChannelResponse::ChangeState(Ok(())));
                     };
                 }
@@ -259,7 +166,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         self.subdevices[i].device_address = subdevice.configured_address();
                         i += 1;
                     }
-                    self.subdevice_count = i;
+                    self.subdevice_count.store(i as u64, Relaxed);
                     let msg = match self.rx_channel.try_recv() {
                         Ok(value) => value,
                         Err(_e) => continue,
@@ -268,7 +175,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     match msg.channel_request {
                         ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {
                             EtherCATState::NoInterface => {
-                                self.state = ether_catstate;
+                                self.state.store(ether_catstate.into(), Relaxed);
                                 send_response(
                                     msg.response_channel,
                                     ChannelResponse::ChangeState(Ok(())),
@@ -448,7 +355,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         ))
                         .unwrap(),
                     );
-                    self.state = EtherCATState::PreopPdi;
+                    self.state.store(EtherCATState::PreopPdi.into(), Relaxed);
                 }
                 EtherCATState::PreopPdi => {
                     // State machine to handle transition to SafeOp with process data
@@ -549,9 +456,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         rt.block_on(group_safe_op.into_op(&maindevice.as_ref().unwrap()))
                             .expect("SAFE-OP -> OP"),
                     );
-
                     println!("Started Transition to OP");
-                    self.state = EtherCATState::Op;
+                    self.state.store(EtherCATState::Op.into(), Relaxed);
                 }
                 EtherCATState::Op => {
                     let rt = get_async_runtime();
@@ -579,15 +485,17 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 .tx_rx_dc(&maindevice)
                                 .await
                                 .expect("TX/RX");
+                            
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
+                            self.next_cycle_us.store(res.extra.next_cycle_wait.as_micros() as u64,Relaxed);
 
                             while Instant::now() < self.next_cycle {
                                 std::hint::spin_loop();
                             }
 
                             if res.all_op() {
-                                for i in 0..self.subdevice_count {
-                                    self.subdevices[i].initialized = true;
+                                for i in 0..self.subdevice_count.load(Relaxed) {
+                                    self.subdevices[i as usize].initialized = true;
                                 }
                                 println!("ALL OP");
                                 break;
@@ -639,11 +547,11 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 std::hint::spin_loop();
                             }
 
-                            self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
-                            if self.cycle == u64::MAX {
-                                self.cycle = 0;
+                            self.cycle_time_us.store(cycle_start.elapsed().as_micros() as u64, Relaxed);
+                            if self.cycle.load(Relaxed) == u64::MAX {
+                                self.cycle.store(0, Relaxed);
                             } else {
-                                self.cycle += 1;
+                                self.cycle.fetch_add(1, Relaxed);
                             }
                         }
                     });

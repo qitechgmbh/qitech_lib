@@ -20,7 +20,7 @@ fn main() {
         .expect("Channel was not ready");
 
     loop {
-        let val = eth_control.controller.get_state();
+        let val = eth_control.app_handle.get_state();
         match val {
             EtherCATState::PreOp => break,
             _ => std::thread::sleep(Duration::from_millis(10)),
@@ -32,7 +32,7 @@ fn main() {
         .request_state_change(EtherCATState::Op)
         .expect("Channel was not ready");
     loop {
-        match eth_control.controller.get_state() {
+        match eth_control.app_handle.get_state() {
             EtherCATState::Op => break,
             _ => std::thread::sleep(Duration::from_millis(10)),
         }
