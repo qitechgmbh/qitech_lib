@@ -12,7 +12,7 @@ const PULSE_DELAY_NS: u64 =    200_000;
 const PULSE_WIDTH_NS: u64 =     50_000;
 const BURST_DELAY_NS: u64 = 50_000_000;
 
-const PULSES_PER_BURST: usize = 10;
+const PULSES_PER_BURST: usize = 5;
 const N_CHANNELS: usize = 8;
 
 #[derive(Debug, Default)]
@@ -69,11 +69,11 @@ fn main() {
 
     let dc_system_start_ns = eth_control.controller.get_dc_system_time_ns();
     println!("DC System Start Time {} ns", dc_system_start_ns);
-    for channel in &mut channels {
+    for (i, channel) in channels.iter_mut().enumerate() {
         channel.burst_start_ns = dc_system_start_ns + INIT_DELAY_NS;
-        channel.burst_delay_ns = BURST_DELAY_NS;
-        channel.pulse_width_ns = PULSE_WIDTH_NS;
-        channel.pulse_delay_ns = PULSE_DELAY_NS;
+        channel.burst_delay_ns = BURST_DELAY_NS * (1 << i) as u64;
+        channel.pulse_width_ns = PULSE_WIDTH_NS * (1 << i) as u64;
+        channel.pulse_delay_ns = PULSE_DELAY_NS * (1 << i) as u64;
     }
 
     loop {
