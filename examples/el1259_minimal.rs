@@ -7,17 +7,18 @@ use ethercat_hal::{
 use std::{env, time::Duration};
 
 
-const INIT_DELAY_NS:  u64 = 22_000_000;
-const PULSE_DELAY_NS: u64 = Duration::from_millis(700).as_nanos() as u64;
-const PULSE_WIDTH_NS: u64 = Duration::from_millis(500).as_nanos() as u64;
-const PULSE_BURST_NS: u64 = Duration::from_secs(4).as_nanos() as u64;
+const INIT_DELAY_NS:  u64 = 20_000_000;
+const PULSE_DELAY_NS: u64 =    200_000;
+const PULSE_WIDTH_NS: u64 =     50_000;
+const BURST_DELAY_NS: u64 = 50_000_000;
 
-const PULSES_PER_BURST: usize = 5;
+const PULSES_PER_BURST: usize = 10;
 const N_CHANNELS: usize = 8;
 
 #[derive(Debug, Default)]
 struct Channel {
     burst_start_ns: u64,
+    burst_delay_ns: u64,
     pulse_width_ns: u64,
     pulse_delay_ns: u64,
 }
@@ -70,6 +71,7 @@ fn main() {
     println!("DC System Start Time {} ns", dc_system_start_ns);
     for channel in &mut channels {
         channel.burst_start_ns = dc_system_start_ns + INIT_DELAY_NS;
+        channel.burst_delay_ns = BURST_DELAY_NS;
         channel.pulse_width_ns = PULSE_WIDTH_NS;
         channel.pulse_delay_ns = PULSE_DELAY_NS;
     }
@@ -88,8 +90,10 @@ fn main() {
 
         for (channel_index, channel) in channels.iter_mut().enumerate() {
             if channel.burst_start_ns < eth_control.controller.get_dc_system_time_ns() {
+                channel.burst_start_ns = channel.burst_start_ns.wrapping_add(channel.burst_delay_ns);
+
                 for pulse_index in 0..PULSES_PER_BURST {
-                    let pulse_begin_ns = channel.burst_start_ns.wrapping_add(channel.pulse_delay_ns * pulse_index as u64);
+                    let pulse_begin_ns = channel.burst_start_ns.wrapping_add(pulse_index as u64 * channel.pulse_delay_ns);
                     let pulse_end_ns = pulse_begin_ns.wrapping_add(channel.pulse_width_ns);
 
                     el1259.push(channel_index, MultiTimestampEvent {
@@ -101,8 +105,6 @@ fn main() {
                         dc_timestamp_ns: pulse_end_ns,
                     });
                 }
-
-                channel.burst_start_ns = channel.burst_start_ns.wrapping_add(PULSE_BURST_NS);
             }
         }
 
