@@ -1,7 +1,7 @@
 use crate::EtherCATThreadChannel;
 
 pub use super::el70x1::{
-    EncConfiguration, EL70x1InputFunction, EL70x1OperationMode, EL70x1SpeedRange, PosConfiguration,
+    EL70x1InputFunction, EL70x1OperationMode, EL70x1SpeedRange, EncConfiguration, PosConfiguration,
     PosFeatures,
 };
 
@@ -93,7 +93,9 @@ impl StmMotorConfiguration {
         ecat_channel.sdo_write(device_address, 0x8010, 0x02, self.reduced_current)?;
         // EL7037 uses 10 mV units for 0x8010:03; nominal_voltage is stored as 1 mV.
         // Terminal may reject values exceeding the actual supply voltage; fall back to default.
-        if let Err(e) = ecat_channel.sdo_write(device_address, 0x8010, 0x03, self.nominal_voltage / 10) {
+        if let Err(e) =
+            ecat_channel.sdo_write(device_address, 0x8010, 0x03, self.nominal_voltage / 10)
+        {
             tracing::debug!(
                 "EL7037 0x8010:03 nominal_voltage write rejected ({e}); \
                  keeping terminal default."
