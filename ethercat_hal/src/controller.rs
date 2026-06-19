@@ -703,6 +703,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             None => (),
                         };
 
+                        let mut op_poll_ticks: u64 = 0;
+
                         loop {
                             let cycle_start = Instant::now();
                             let res = group_op
@@ -727,23 +729,31 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 break;
                             }
 
-                            // Check AL Status Codes on subdevices that haven't
-                            // reached OP yet. A non-zero code means the device
-                            // rejected the state change and will never recover.
-                            let al_errors =
-                                read_al_status_codes(&maindevice, group_op.as_ref().unwrap())
-                                    .await;
-                            if !al_errors.is_empty() {
-                                let msg = al_errors
-                                    .iter()
-                                    .map(|(addr, code)| {
-                                        format!("  subdevice {addr}: AL Status Code 0x{code:04x}")
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .join("\n");
-                                return Err(anyhow::anyhow!(
-                                    "Subdevice(s) failed to reach OP:\n{msg}\nTerminating for a clean restart."
-                                ));
+                            // Check AL Status Codes periodically (every 100 cycles)
+                            // to avoid interfering with DC sync timing.
+                            // A non-zero code means the device rejected the state
+                            // change and will never recover.
+                            op_poll_ticks += 1;
+                            if op_poll_ticks % 100 == 0 {
+                                let al_errors = read_al_status_codes(
+                                    &maindevice,
+                                    group_op.as_ref().unwrap(),
+                                )
+                                .await;
+                                if !al_errors.is_empty() {
+                                    let msg = al_errors
+                                        .iter()
+                                        .map(|(addr, code)| {
+                                            format!(
+                                                "  subdevice {addr}: AL Status Code 0x{code:04x}"
+                                            )
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join("\n");
+                                    return Err(anyhow::anyhow!(
+                                        "Subdevice(s) failed to reach OP:\n{msg}\nTerminating for a clean restart."
+                                    ));
+                                }
                             }
                         }
 
