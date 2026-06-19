@@ -4,7 +4,7 @@ use ethercat_hal::{
     coe::ConfigurableDevice,
     devices::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
-        el7037::{EL7037, EL7037_PRODUCT_ID, coe::EL7037Configuration},
+        el7037::{EL7037, EL7037_PRODUCT_ID, coe::EL7037Configuration, pdo::EL7037PredefinedPdoAssignment},
     },
     init_ethercat,
     io::stepper_velocity_el70x1::StepperVelocityEL70x1Device,
@@ -36,6 +36,8 @@ fn main() {
     let mut el7037 = EL7037::new();
     let mut config = EL7037Configuration::default();
     config.stm_features.operation_mode = EL70x1OperationMode::DirectVelocity;
+    // Include StmSynchronInfoData in TxPDO so MotorLoad + MotorDcCurrent are available
+    config.pdo_assignment = EL7037PredefinedPdoAssignment::VelocityControlCompactWithInfoData;
     for subdevice in eth_control.controller.get_subdevices() {
         if subdevice.vendor == BECKHOFF_VENDOR_ID && subdevice.product_id == EL7037_PRODUCT_ID {
             el7037
@@ -69,14 +71,21 @@ fn main() {
                     let _ = el7037.input_post_process();
 
                     let state = el7037.get_input(0).unwrap();
+                    let load = el7037
+                        .txpdo
+                        .stm_synchron_info_data
+                        .as_ref()
+                        .map(|d| (d.info_data_1, d.info_data_2));
                     println!(
-                        "step={:4}  pos={:8}  ready={}  error={}  moving+/- = {}/{}",
+                        "step={:4}  pos={:8}  ready={}  error={}  moving+/-={}/{}  load={}  dc_current={}mA",
                         step,
                         state.counter_value,
                         state.ready,
                         state.error,
                         state.moving_positive,
                         state.moving_negative,
+                        load.map_or(0, |(l, _)| l),
+                        load.map_or(0, |(_, c)| c),
                     );
                 }
             }
@@ -85,9 +94,9 @@ fn main() {
 
         // Alternate direction every 200 cycles
         let target_steps_per_sec: f64 = if (step / 200) % 2 == 0 {
-            1000.0
+            500.0
         } else {
-            -1000.0
+            -500.0
         };
         el7037.set_speed(0, target_steps_per_sec).unwrap();
         el7037.set_enabled(0, true);
