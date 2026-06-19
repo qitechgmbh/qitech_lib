@@ -13,7 +13,7 @@ use common::set_irq_affinity;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
     std::ethercat_now,
-    subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
+    subdevice_group::{DcConfiguration, HasDc, HasPdi, NoDc, Op, PreOpPdi, SafeOp},
 };
 use std::sync::Arc;
 use std::{
@@ -80,6 +80,30 @@ fn set_current_thread_rt_priority(_priority: i32) {
     eprintln!(
         "set_current_thread_rt_priority: real-time scheduling is not available on this platform"
     );
+}
+
+/// Reads AL Status Code (register 0x0134) from all subdevices in a group.
+/// Returns a Vec of (device_address, error_code) for subdevices with non-zero codes.
+async fn read_al_status_codes<S: HasPdi, const N: usize, const M: usize>(
+    device: &MainDevice<'_>,
+    group: &SubDeviceGroup<N, M, ethercrab::DefaultLock, S, HasDc>,
+) -> Vec<(u16, u16)> {
+    let mut errors = Vec::new();
+    for subdevice in group.iter(device) {
+        match subdevice.register_read::<u16>(0x0134u16).await {
+            Ok(code) if code != 0 => {
+                errors.push((subdevice.configured_address(), code));
+            }
+            Err(e) => {
+                eprintln!(
+                    "Failed to read AL Status Code from subdevice {}: {e:?}",
+                    subdevice.configured_address()
+                );
+            }
+            _ => {}
+        }
+    }
+    errors
 }
 
 impl<C, P> EtherCATController<C, P>
@@ -455,7 +479,11 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                     group_preop_pdi = match res {
                         Ok(group) => group,
-                        Err(_) => todo!(),
+                        Err(e) => {
+                            return Err(anyhow::anyhow!(
+                                "EtherCAT PreOp -> PreOpPdi transition failed: {e:?}. Terminating for a clean restart."
+                            ));
+                        }
                     };
 
                     loop {
@@ -562,7 +590,14 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                                 if tick > self.current_config.dc_config.target_dc_tick {
                                     let group_res = rt.block_on(group.into_safe_op(device));
-                                    let group = group_res.expect("Failed SafeOp");
+                                    let group = match group_res {
+                                        Ok(group) => group,
+                                        Err(e) => {
+                                            return Err(anyhow::anyhow!(
+                                                "EtherCAT PreOpPdi -> SafeOp transition failed: {e:?}. Terminating for a clean restart."
+                                            ));
+                                        }
+                                    };
                                     group_container = Some(GroupState::SafeOp(group));
                                     println!("Requested SAFE-OP");
                                 } else {
@@ -610,6 +645,28 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         tick += 1;
                     };
 
+                    // Pre-flight: check AL Status Codes before attempting OP transition.
+                    // This catches subdevices that are stuck with errors before we consume
+                    // the group via request_into_op.
+                    {
+                        let preflight_errors = rt.block_on(read_al_status_codes(
+                            maindevice.as_ref().unwrap(),
+                            &group_safe_op,
+                        ));
+                        if !preflight_errors.is_empty() {
+                            let msg = preflight_errors
+                                .iter()
+                                .map(|(addr, code)| {
+                                    format!("  subdevice {addr}: AL Status Code 0x{code:04x}")
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            return Err(anyhow::anyhow!(
+                                "Subdevice(s) have non-zero AL Status Codes before OP transition:\n{msg}\nTerminating for a clean restart."
+                            ));
+                        }
+                    }
+
                     // Use the non-blocking request_into_op + manual tx_rx_dc polling
                     // loop. The blocking `into_op()` can hit an io_uring TX/RX race on Linux.
                     match rt.block_on(group_safe_op.request_into_op(&maindevice.as_ref().unwrap()))
@@ -632,7 +689,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let rt = get_async_runtime();
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
-                    rt.block_on(async {
+                    let op_result: Result<(), anyhow::Error> = rt.block_on(async {
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
                                 let id = core_affinity::CoreId {
@@ -668,6 +725,25 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     .store(true, Ordering::Release);
                                 println!("ALL OP");
                                 break;
+                            }
+
+                            // Check AL Status Codes on subdevices that haven't
+                            // reached OP yet. A non-zero code means the device
+                            // rejected the state change and will never recover.
+                            let al_errors =
+                                read_al_status_codes(&maindevice, group_op.as_ref().unwrap())
+                                    .await;
+                            if !al_errors.is_empty() {
+                                let msg = al_errors
+                                    .iter()
+                                    .map(|(addr, code)| {
+                                        format!("  subdevice {addr}: AL Status Code 0x{code:04x}")
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("\n");
+                                return Err(anyhow::anyhow!(
+                                    "Subdevice(s) failed to reach OP:\n{msg}\nTerminating for a clean restart."
+                                ));
                             }
                         }
 
@@ -723,7 +799,12 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 self.cycle += 1;
                             }
                         }
+                        #[allow(unreachable_code)]
+                        Ok(())
                     });
+                    if let Err(e) = op_result {
+                        return Err(e);
+                    }
                 }
             }
             self.requested_state = None;
