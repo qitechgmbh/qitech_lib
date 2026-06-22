@@ -17,7 +17,10 @@ use ethercrab::{
 };
 use std::sync::Arc;
 use std::{
-    sync::mpsc::Receiver,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::Receiver,
+    },
     thread::JoinHandle,
     time::{Duration, Instant},
 };
@@ -36,6 +39,7 @@ where
     pub subdevices: [MetaSubdevice; 256],
     pub subdevice_count: usize,
     pub state: EtherCATState,
+    pub all_subdevices_operational: Arc<AtomicBool>,
     pub current_config: MasterConfiguration,
     requested_state: Option<EtherCATState>,
     rx_channel: Receiver<ChannelRequest>,
@@ -98,6 +102,7 @@ where
             subdevices: [MetaSubdevice::default(); 256],
             subdevice_count: 0,
             state: EtherCATState::NoInterface,
+            all_subdevices_operational: Arc::new(AtomicBool::new(false)),
             requested_state: None,
             rx_channel: rx,
             input_producer: input,
@@ -116,6 +121,10 @@ where
 
     pub fn get_state(&self) -> EtherCATState {
         self.state
+    }
+
+    pub fn is_all_operational(&self) -> bool {
+        self.all_subdevices_operational.load(Ordering::Acquire)
     }
 
     pub fn get_cycle(&self) -> u64 {
@@ -147,7 +156,13 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
             SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, Op, HasDc>,
         > = None;
         let mut maindevice: Option<MainDevice> = None;
+        let io_failed = Arc::new(AtomicBool::new(false));
         loop {
+            if io_failed.load(Ordering::Acquire) {
+                return Err(anyhow::anyhow!(
+                    "EtherCAT TX/RX task failed; terminating for a clean restart."
+                ));
+            }
             match self.state {
                 EtherCATState::NoInterface => {
                     if self.interface.is_some() {
@@ -185,6 +200,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             let pdu_tx = tx;
                             let pdu_rx = rx;
                             let opt = self.current_config.realtime_optimizations.clone();
+                            let io_failed_thread = io_failed.clone();
                             _ethercat_tx_rx_handle = std::thread::Builder::new()
                                 .name("EthercatTxRxThread".to_owned())
                                 .spawn(move || {
@@ -213,8 +229,15 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                         }
                                         None => (),
                                     };
-                                    tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
-                                        .expect("Failed to run TX/RX task (io_uring)");
+                                    if let Err(e) =
+                                        tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
+                                    {
+                                        eprintln!(
+                                            "TX/RX task (io_uring) failed: {:?}. Signaling state machine to terminate for a clean restart.",
+                                            e
+                                        );
+                                        io_failed_thread.store(true, Ordering::Release);
+                                    }
                                 });
                         }
 
@@ -222,6 +245,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         {
                             let pdu_tx = tx;
                             let pdu_rx = rx;
+                            let io_failed_thread = io_failed.clone();
                             _ethercat_tx_rx_handle = std::thread::Builder::new()
                                 .name("EthercatTxRxThread".to_owned())
                                 .spawn(move || {
@@ -229,11 +253,13 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                         match tx_rx_task(&interface, pdu_tx, pdu_rx) {
                                             Ok(task) => {
                                                 if let Err(e) = task.await {
-                                                    eprintln!("TX/RX task error: {}", e);
+                                                    eprintln!("TX/RX task error: {e}. Signaling state machine to terminate.");
+                                                    io_failed_thread.store(true, Ordering::Release);
                                                 }
                                             }
                                             Err(e) => {
-                                                eprintln!("TX/RX task creation failed: {}", e);
+                                                eprintln!("TX/RX task creation failed: {e}. Signaling state machine to terminate.");
+                                                io_failed_thread.store(true, Ordering::Release);
                                             }
                                         }
                                     });
@@ -591,9 +617,10 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         Ok(group) => group_op = Some(group),
                         Err(e) => {
                             // request_into_op consumes the group — no retry possible.
+                            // Return Err so the state-machine thread ends cleanly;
+                            // the supervisor (systemd) restarts the process.
                             return Err(anyhow::anyhow!(
-                                "EtherCAT SAFE-OP -> OP transition failed: {:?}",
-                                e
+                                "EtherCAT SAFE-OP -> OP transition failed: {e:?}. Terminating for a clean restart."
                             ));
                         }
                     }
@@ -637,6 +664,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 for i in 0..self.subdevice_count {
                                     self.subdevices[i].initialized = true;
                                 }
+                                self.all_subdevices_operational
+                                    .store(true, Ordering::Release);
                                 println!("ALL OP");
                                 break;
                             }
