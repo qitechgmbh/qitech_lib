@@ -665,7 +665,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let rt = get_async_runtime();
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
-
+                    let mut expected_wkc: Option<u16> = None;
+                    let mut wkc_mismatch_count: u32 = 0;
+                    const WKC_MISMATCH_THRESHOLD: u32 = 5;
                     rt.block_on(async {
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
@@ -687,7 +689,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 .unwrap()
                                 .tx_rx_dc(&maindevice)
                                 .await
-                                .expect("TX/RX");
+                                .map_err(|e| anyhow::anyhow!("TX/RX failed during OP ramp: {e:?}"))?;
                             self.dc_system_time_ns = res.extra.dc_system_time;
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
 
@@ -696,6 +698,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             }
 
                             if res.all_op() {
+                                expected_wkc = Some(res.working_counter);
                                 for i in 0..self.subdevice_count {
                                     self.subdevices[i].initialized = true;
                                 }
@@ -742,7 +745,27 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 None => {}
                             };
 
-                            let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                            let res = group
+                                .tx_rx_dc(&maindevice)
+                                .await
+                                .map_err(|e| anyhow::anyhow!("TX_RX Failed: {e:?}"))?;
+
+                            if let Some(expected) = expected_wkc {
+                                if res.working_counter != expected {
+                                    wkc_mismatch_count += 1;
+                                    if wkc_mismatch_count >= WKC_MISMATCH_THRESHOLD {
+                                        self.all_subdevices_operational
+                                            .store(false, Ordering::Release);
+                                        return Err(anyhow::anyhow!(
+                                            "EtherCAT working counter mismatch: expected {expected}, got {}; terminating for clean restart",
+                                            res.working_counter
+                                        ));
+                                    }
+                                } else {
+                                    wkc_mismatch_count = 0;
+                                }
+                            }
+
                             self.dc_system_time_ns = res.extra.dc_system_time;
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
                             match self.input_producer.input_buffer_mut() {
@@ -771,7 +794,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
                             self.cycle = self.cycle.wrapping_add(1);
                         }
-                    });
+                    })?;
                 }
             }
             self.requested_state = None;
