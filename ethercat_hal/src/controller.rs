@@ -3,7 +3,9 @@ use crate::{
     ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState,
     MAX_SUBDEVICES, MasterConfiguration, MetaSubdevice, PDI_LEN, PDU_STORAGE, Producer, SdoType,
     TripleBufProducer,
-    ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
+    ethercat_helpers::{
+        configure_oversampling, enable_dc_sync, enable_dc_sync01, sdo_read, sdo_write,
+    },
     get_async_runtime,
     machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
@@ -426,6 +428,32 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             send_response(
                                 msg.response_channel,
                                 ChannelResponse::EnableDCSync0Response(res),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::EnableDCSync01(device_address, sync1_period) => {
+                            let res = enable_dc_sync01(
+                                &mut preop_group,
+                                maindev,
+                                device_address,
+                                sync1_period,
+                            );
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::EnableDCSync01Response(res),
+                            );
+                            continue;
+                        }
+                        ChannelRequests::ConfigureOversampling(device_address, factor) => {
+                            let res = configure_oversampling(
+                                &mut preop_group,
+                                maindev,
+                                device_address,
+                                factor,
+                            );
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::ConfigureOversamplingResponse(res),
                             );
                             continue;
                         }
