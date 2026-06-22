@@ -1,4 +1,3 @@
-
 #[derive(Debug, Default, Clone, Copy)]
 /// A multi-timestamp event encodes that a digital input has changed
 /// to a specific boolean value at a specific time,
@@ -14,7 +13,6 @@ pub struct MultiTimestampEvent {
 /// called events, per cycle.
 /// Events are saved until they are popped.
 pub trait MultiTimestampInput {
-
     /// View the oldest, saved event on the given port.
     fn peek(&self, port: usize) -> Option<&MultiTimestampEvent>;
     /// Pop the oldest, saved event on the given port.
@@ -34,7 +32,6 @@ pub trait MultiTimestampInput {
 /// A multi-timestamp output can generate multiple rising or falling edges,
 /// called events, per cycle.
 pub trait MultiTimestampOutput {
-
     /// Schedule a single event on the given port.
     fn push(&mut self, port: usize, event: MultiTimestampEvent);
     /// Schedule all events on the given port.

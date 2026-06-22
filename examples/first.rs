@@ -1,4 +1,4 @@
-use ethercat_hal::{ EtherCATState, init_ethercat, };
+use ethercat_hal::{EtherCATState, init_ethercat};
 use std::{env, time::Duration};
 
 /// This example connect to the EtherCAT hardware and list the found devices
@@ -22,7 +22,6 @@ fn main() {
     for subdevice in eth_control.controller.get_subdevices() {
         println!("  - {}", subdevice.get_name().expect("No subdevice name"));
     }
-
 
     eth_control
         .channel

@@ -1,12 +1,15 @@
-use anyhow::bail;
+use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::EtherCATThreadChannel;
 use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::multi_timestamp::{MultiTimestampInput, MultiTimestampOutput};
 use crate::pdo::{PredefinedPdoAssignment, RxPdo, TxPdo};
-use crate::{BECKHOFF_VENDOR_ID, io::{digital_input::DigitalInputDevice, multi_timestamp::MultiTimestampEvent}};
+use crate::{
+    BECKHOFF_VENDOR_ID,
+    io::{digital_input::DigitalInputDevice, multi_timestamp::MultiTimestampEvent},
+};
+use anyhow::bail;
 use ethercat_hal_derive::EthercatDevice;
 use std::collections::VecDeque;
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 
 mod pdo;
 use pdo::{EL1259RxPdo, EL1259TxPdo};
@@ -30,22 +33,21 @@ pub struct EL1259 {
 }
 
 impl EthercatDeviceProcessing for EL1259 {
-
     fn input_post_process(&mut self) -> Result<(), anyhow::Error> {
         for channel in 0..8 {
             let txmto = self.txpdo.get_mto(channel);
             let txmti = self.txpdo.get_mti(channel);
 
             if txmto.output_short_circuit {
-                bail!("Short circuit on channel {}", channel+1);
+                bail!("Short circuit on channel {}", channel + 1);
             }
 
             if txmto.output_buffer_overflow {
-                bail!("Buffer overflow on output channel {}", channel+1);
+                bail!("Buffer overflow on output channel {}", channel + 1);
             }
 
             if txmti.input_buffer_overflow {
-                bail!("Buffer overflow on input channel {}", channel+1);
+                bail!("Buffer overflow on input channel {}", channel + 1);
             }
         }
 
@@ -87,8 +89,11 @@ impl EthercatDeviceProcessing for EL1259 {
                     let empty_splots_in_buffer = 32 - txmto.events_in_output_buffer as usize;
                     let number_of_events_to_send = queue.len().min(empty_splots_in_buffer).min(10);
 
-                    if number_of_events_to_send > 0 && rxmto.output_order_count == txmto.output_order_feedback {
-                        let events_to_send: Vec<_> = queue.drain(0..number_of_events_to_send).collect();
+                    if number_of_events_to_send > 0
+                        && rxmto.output_order_count == txmto.output_order_feedback
+                    {
+                        let events_to_send: Vec<_> =
+                            queue.drain(0..number_of_events_to_send).collect();
                         rxmto.set_events(&events_to_send);
                         rxmto.output_order_count = txmto.output_order_feedback.wrapping_add(1);
                         rxmto.force_order = false;
@@ -104,7 +109,6 @@ impl EthercatDeviceProcessing for EL1259 {
 }
 
 impl DigitalInputDevice for EL1259 {
-
     fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
         Ok(self.txpdo.get_mti(port).input_state)
     }
@@ -115,7 +119,6 @@ impl DigitalInputDevice for EL1259 {
 }
 
 impl MultiTimestampInput for EL1259 {
-
     fn peek(&self, port: usize) -> Option<&MultiTimestampEvent> {
         self.input_queues[port].front()
     }
@@ -130,7 +133,9 @@ impl MultiTimestampInput for EL1259 {
     }
 
     fn pop_all(&mut self, port: usize) -> Vec<MultiTimestampEvent> {
-        self.input_queues[port].drain(..self.input_queues[port].len()).collect()
+        self.input_queues[port]
+            .drain(..self.input_queues[port].len())
+            .collect()
     }
 
     fn get_port_count(&self) -> usize {
@@ -139,7 +144,6 @@ impl MultiTimestampInput for EL1259 {
 }
 
 impl MultiTimestampOutput for EL1259 {
-
     fn push(&mut self, port: usize, event: MultiTimestampEvent) {
         self.output_queues[port].push_back(event);
     }
@@ -173,14 +177,12 @@ impl NewEthercatDevice for EL1259 {
 }
 
 impl ConfigurableDevice<EL1259Configuration> for EL1259 {
-
     fn write_config(
         &mut self,
         channel: EtherCATThreadChannel,
         device_address: u16,
         config: &EL1259Configuration,
-    ) -> Result<(), anyhow::Error>
-    {
+    ) -> Result<(), anyhow::Error> {
         config.write_config(channel, device_address)?;
         Ok(())
     }
@@ -191,25 +193,23 @@ impl ConfigurableDevice<EL1259Configuration> for EL1259 {
 }
 
 #[derive(Default, Clone, PartialEq, Debug)]
-pub struct EL1259Configuration {
-}
+pub struct EL1259Configuration {}
 
 impl Configuration for EL1259Configuration {
-
     fn write_config(
         &self,
         channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error>
-    {
-        self.txpdo_assignment().write_config(channel.clone(), device_address)?;
-        self.rxpdo_assignment().write_config(channel, device_address)?;
+    ) -> Result<(), anyhow::Error> {
+        self.txpdo_assignment()
+            .write_config(channel.clone(), device_address)?;
+        self.rxpdo_assignment()
+            .write_config(channel, device_address)?;
         Ok(())
     }
 }
 
 impl PredefinedPdoAssignment<EL1259TxPdo, EL1259RxPdo> for EL1259Configuration {
-
     fn txpdo_assignment(&self) -> EL1259TxPdo {
         EL1259TxPdo::default()
     }
