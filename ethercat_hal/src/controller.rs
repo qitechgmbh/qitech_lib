@@ -668,6 +668,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let maindevice = maindevice.as_ref().unwrap();
                     let mut expected_wkc: Option<u16> = None;
                     let mut wkc_mismatch_count: u32 = 0;
+                    let mut consecutive_error_cycles: u32 = 0;
                     rt.block_on(async {
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
@@ -705,20 +706,40 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 println!("ALL OP");
                                 break;
                             } else {
-                                let mut has_error = false;
+                                let mut errored: Vec<(usize, u16)> = Vec::new();
 
                                 for index in 0..self.subdevice_count {
                                     let subdevice = group.subdevice(maindevice, index).expect("No subdevice at index");
                                     let error_code: u16 = subdevice.register_read(0x0134u16).await.expect("Failed to read error code");
 
                                     if error_code != 0 {
-                                        has_error = true;
-                                        println!("Subdevice at index {} failed to Op! Error code: {:#02x}", index, error_code);
+                                        errored.push((index, error_code));
                                     }
                                 }
 
-                                if has_error {
-                                    panic!("Failed to go into Op!");
+                                if errored.is_empty() {
+                                    // Not yet OP, but no AL errors — DC PLL is still syncing; keep ramping.
+                                    consecutive_error_cycles = 0;
+                                } else {
+                                    consecutive_error_cycles += 1;
+                                    // Log on the first error cycle and then every 100 cycles to avoid spam.
+                                    if consecutive_error_cycles == 1 || consecutive_error_cycles % 100 == 0 {
+                                        for (index, error_code) in &errored {
+                                            println!(
+                                                "Subdevice at index {} failed to Op! Error code: {:#04x} (cycle {}/{})",
+                                                index, error_code, consecutive_error_cycles,
+                                                self.current_config.op_ramp_grace_cycles
+                                            );
+                                        }
+                                    }
+                                    if consecutive_error_cycles >= self.current_config.op_ramp_grace_cycles {
+                                        self.all_subdevices_operational
+                                            .store(false, Ordering::Release);
+                                        return Err(anyhow::anyhow!(
+                                            "EtherCAT SAFE-OP -> OP failed: subdevices still erroring after {} consecutive cycles: {:?}; terminating for clean restart",
+                                            consecutive_error_cycles, errored
+                                        ));
+                                    }
                                 }
                             }
                         }

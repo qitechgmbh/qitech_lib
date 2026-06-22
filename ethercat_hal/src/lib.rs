@@ -514,6 +514,10 @@ pub struct MasterConfiguration {
     /// Number of consecutive EtherCAT working-counter mismatches before the
     /// controller gives up and terminates for a clean restart.
     pub wkc_mismatch_threshold: u32,
+    /// Number of consecutive OP-ramp cycles a subdevice may report a non-zero AL
+    /// status code (e.g. DC PLL error 0x32) before the controller gives up and
+    /// terminates for a clean restart. Gives the DC PLL time to lock at SAFE-OP→OP.
+    pub op_ramp_grace_cycles: u32,
 }
 
 impl Default for MasterConfiguration {
@@ -524,6 +528,7 @@ impl Default for MasterConfiguration {
             dc_config: DcConfiguration::default(),
             realtime_optimizations: None,
             wkc_mismatch_threshold: 5,
+            op_ramp_grace_cycles: 1000,
         }
     }
 }

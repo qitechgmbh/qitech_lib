@@ -27,6 +27,7 @@ fn main() {
         dc_config,
         realtime_optimizations: Some(rt),
         wkc_mismatch_threshold: 5,
+        op_ramp_grace_cycles: 1000,
     };
 
     let ethercat_control = init_ethercat(&interface, Some(config));
