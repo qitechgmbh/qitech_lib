@@ -511,6 +511,9 @@ pub struct MasterConfiguration {
     pub tx_rx_config: MasterTxRxConfig,
     pub realtime_optimizations: Option<RtOptimizationConfig>,
     pub dc_config: DcConfiguration,
+    /// Number of consecutive EtherCAT working-counter mismatches before the
+    /// controller gives up and terminates for a clean restart.
+    pub wkc_mismatch_threshold: u32,
 }
 
 impl Default for MasterConfiguration {
@@ -520,6 +523,7 @@ impl Default for MasterConfiguration {
             tx_rx_config: MasterTxRxConfig::TxRxIoUring,
             dc_config: DcConfiguration::default(),
             realtime_optimizations: None,
+            wkc_mismatch_threshold: 5,
         }
     }
 }

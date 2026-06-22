@@ -26,6 +26,7 @@ fn main() {
         tx_rx_config: ethercat_hal::MasterTxRxConfig::TxRxIoUring,
         dc_config,
         realtime_optimizations: Some(rt),
+        wkc_mismatch_threshold: 5,
     };
 
     let ethercat_control = init_ethercat(&interface, Some(config));
