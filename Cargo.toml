@@ -13,6 +13,7 @@ units = {path = "units"}
 common = {path = "common"}
 serial = {path = "serial"}
 tokio = "1.49.0"
+spin_sleep = "1.3.3"
 
 [lib]
 

@@ -5,12 +5,12 @@ use std::{env, time::Duration};
 
 fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
-    let cycle_time_us: u64 = 200;
+    let cycle_time_us: u64 = 250;
     let mut dc_config = DcConfiguration::default();
     dc_config.start_delay = Duration::from_millis(100);
-    dc_config.sync0_period = Duration::from_micros(cycle_time_us / 2);
-    dc_config.sync0_shift = Duration::from_micros(cycle_time_us);
-    dc_config.target_dc_tick = 100;
+    dc_config.sync0_period = Duration::from_micros(cycle_time_us);
+    dc_config.sync0_shift = Duration::from_micros(cycle_time_us / 2);
+    dc_config.target_dc_tick = 500;
 
     let rt = RtOptimizationConfig {
         ethercat_loop_thread_core: 2,

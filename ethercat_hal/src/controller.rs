@@ -14,6 +14,7 @@ use ethercrab::{
     std::ethercat_now,
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
 };
+use spin_sleep::SpinSleeper;
 use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
 use std::{
@@ -21,7 +22,7 @@ use std::{
     time::{Duration, Instant},
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
-use tokio::time::interval;
+use tokio::time::{interval, sleep_until};
 
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
     pub fn ethercat_state_machine(&mut self) {
@@ -478,37 +479,28 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 core_affinity::set_for_current(id);
                             }
                             None => (),
-                        };
-
+                        };                    
+                        
+                        let spinner = SpinSleeper::new(100_000);    
+                        let mut is_all_op = false;                    
                         loop {
-                            let cycle_start = Instant::now();
-                            let res = group_op
-                                .as_ref()
-                                .unwrap()
-                                .tx_rx_dc(&maindevice)
-                                .await
-                                .expect("TX/RX");
-                            
+                            let cycle_start = Instant::now();                            
+                            let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
-                            self.next_cycle_us.store(res.extra.next_cycle_wait.as_micros() as u64,Relaxed);
+                            spinner.sleep_until(self.next_cycle);
 
-                            while Instant::now() < self.next_cycle {
-                                std::hint::spin_loop();
-                            }
-
-                            if res.all_op() {
-                                let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
-                                for i in 0..self.subdevice_count.load(Relaxed) {
-                                    subdevice_guard[i as usize].initialized = true;
+                            if !is_all_op {
+                                if res.all_op() {
+                                    let mut subdevice_guard = self.subdevices.lock().await;
+                                    for i in 0..self.subdevice_count.load(Relaxed) {
+                                        subdevice_guard[i as usize].initialized = true;
+                                    }
+                                    drop(subdevice_guard);
+                                    println!("ALL OP");
+                                    is_all_op = true;
+                                    continue;
                                 }
-                                drop(subdevice_guard);
-                                println!("ALL OP");
-                                break;
                             }
-                        }
-
-                        loop {
-                            let cycle_start = Instant::now();
 
                             match self.output_consumer.read() {
                                 Some(full_buffer) => {
@@ -525,10 +517,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     self.output_consumer.finish_read();
                                 }
                                 None => {}
-                            };
-
-                            let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
-                            self.next_cycle = cycle_start + res.extra.next_cycle_wait;
+                            };                            
                             match self.input_producer.input_buffer_mut() {
                                 Some(buffer) => {
                                     // We get a mutable slice to the whole buffer to make sub-slicing easier
@@ -546,10 +535,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     self.input_producer.publish();
                                 }
                                 None => {}
-                            }
-
-                            while Instant::now() < self.next_cycle {
-                                std::hint::spin_loop();
                             }
 
                             self.cycle_time_us.store(cycle_start.elapsed().as_micros() as u64, Relaxed);
