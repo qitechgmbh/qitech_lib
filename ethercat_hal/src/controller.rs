@@ -10,6 +10,7 @@ use crate::{
     machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
 };
+use anyhow::Context;
 #[cfg(target_os = "linux")]
 use common::set_irq_affinity;
 use ethercrab::{
@@ -667,7 +668,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let maindevice = maindevice.as_ref().unwrap();
                     let mut expected_wkc: Option<u16> = None;
                     let mut wkc_mismatch_count: u32 = 0;
-                    const WKC_MISMATCH_THRESHOLD: u32 = 5;
                     rt.block_on(async {
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
@@ -684,12 +684,10 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                         loop {
                             let cycle_start = Instant::now();
-                            let res = group_op
-                                .as_ref()
-                                .unwrap()
+                            let res = group
                                 .tx_rx_dc(&maindevice)
                                 .await
-                                .map_err(|e| anyhow::anyhow!("TX/RX failed during OP ramp: {e:?}"))?;
+                                .context("TX/RX failed during OP ramp")?;
                             self.dc_system_time_ns = res.extra.dc_system_time;
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
 
@@ -748,12 +746,12 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             let res = group
                                 .tx_rx_dc(&maindevice)
                                 .await
-                                .map_err(|e| anyhow::anyhow!("TX_RX Failed: {e:?}"))?;
+                                .context("TX/RX failed")?;
 
                             if let Some(expected) = expected_wkc {
                                 if res.working_counter != expected {
                                     wkc_mismatch_count += 1;
-                                    if wkc_mismatch_count >= WKC_MISMATCH_THRESHOLD {
+                                    if wkc_mismatch_count >= self.current_config.wkc_mismatch_threshold {
                                         self.all_subdevices_operational
                                             .store(false, Ordering::Release);
                                         return Err(anyhow::anyhow!(
