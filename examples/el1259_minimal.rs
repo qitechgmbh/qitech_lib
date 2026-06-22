@@ -1,15 +1,19 @@
-use bitvec::{slice::BitSlice};
+use bitvec::slice::BitSlice;
 use ethercat_hal::{
-    EtherCATState, coe::ConfigurableDevice, devices::{
-        EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice, el1259::{EL1259, EL1259_PRODUCT_ID}
-    }, init_ethercat, io::multi_timestamp::{MultiTimestampEvent, MultiTimestampOutput}
+    EtherCATState,
+    coe::ConfigurableDevice,
+    devices::{
+        EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
+        el1259::{EL1259, EL1259_PRODUCT_ID},
+    },
+    init_ethercat,
+    io::multi_timestamp::{MultiTimestampEvent, MultiTimestampOutput},
 };
 use std::{env, time::Duration};
 
-
-const INIT_DELAY_NS:  u64 = 20_000_000;
-const PULSE_DELAY_NS: u64 =    200_000;
-const PULSE_WIDTH_NS: u64 =     50_000;
+const INIT_DELAY_NS: u64 = 20_000_000;
+const PULSE_DELAY_NS: u64 = 200_000;
+const PULSE_WIDTH_NS: u64 = 50_000;
 const BURST_DELAY_NS: u64 = 50_000_000;
 
 const PULSES_PER_BURST: usize = 5;
@@ -47,8 +51,17 @@ fn main() {
 
     for subdevice in eth_control.controller.get_subdevices() {
         if subdevice.product_id == EL1259_PRODUCT_ID {
-            el1259.write_config(eth_control.channel.clone(), subdevice.device_address, &el1259.get_config()).expect("Failed to write config");
-            eth_control.channel.enable_dc_sync0(subdevice.device_address).expect("Failed to enable DC Sync!");
+            el1259
+                .write_config(
+                    eth_control.channel.clone(),
+                    subdevice.device_address,
+                    &el1259.get_config(),
+                )
+                .expect("Failed to write config");
+            eth_control
+                .channel
+                .enable_dc_sync0(subdevice.device_address)
+                .expect("Failed to enable DC Sync!");
         }
     }
 
@@ -78,43 +91,58 @@ fn main() {
 
     loop {
         if let Some(input) = eth_control.app_handle.get_inputs() {
-
             for subdevice in eth_control.controller.get_subdevices() {
                 if subdevice.product_id == EL1259_PRODUCT_ID {
                     let input = &input[subdevice.start_tx..subdevice.end_tx];
-                    el1259.input(BitSlice::from_slice(input)).expect("Failed to read input");
-                    el1259.input_post_process().expect("Failed to process input");
+                    el1259
+                        .input(BitSlice::from_slice(input))
+                        .expect("Failed to read input");
+                    el1259
+                        .input_post_process()
+                        .expect("Failed to process input");
                 }
             }
         }
 
         for (channel_index, channel) in channels.iter_mut().enumerate() {
             if channel.burst_start_ns < eth_control.controller.get_dc_system_time_ns() {
-                channel.burst_start_ns = channel.burst_start_ns.wrapping_add(channel.burst_delay_ns);
+                channel.burst_start_ns =
+                    channel.burst_start_ns.wrapping_add(channel.burst_delay_ns);
 
                 for pulse_index in 0..PULSES_PER_BURST {
-                    let pulse_begin_ns = channel.burst_start_ns.wrapping_add(pulse_index as u64 * channel.pulse_delay_ns);
+                    let pulse_begin_ns = channel
+                        .burst_start_ns
+                        .wrapping_add(pulse_index as u64 * channel.pulse_delay_ns);
                     let pulse_end_ns = pulse_begin_ns.wrapping_add(channel.pulse_width_ns);
 
-                    el1259.push(channel_index, MultiTimestampEvent {
-                        value: true,
-                        dc_timestamp_ns: pulse_begin_ns,
-                    });
-                    el1259.push(channel_index, MultiTimestampEvent {
-                        value: false,
-                        dc_timestamp_ns: pulse_end_ns,
-                    });
+                    el1259.push(
+                        channel_index,
+                        MultiTimestampEvent {
+                            value: true,
+                            dc_timestamp_ns: pulse_begin_ns,
+                        },
+                    );
+                    el1259.push(
+                        channel_index,
+                        MultiTimestampEvent {
+                            value: false,
+                            dc_timestamp_ns: pulse_end_ns,
+                        },
+                    );
                 }
             }
         }
 
         if let Some(output) = eth_control.app_handle.write_outputs() {
-
             for subdevice in eth_control.controller.get_subdevices() {
                 if subdevice.product_id == EL1259_PRODUCT_ID {
-                    el1259.output_pre_process().expect("Failed to prepare output");
+                    el1259
+                        .output_pre_process()
+                        .expect("Failed to prepare output");
                     let output = &mut output[subdevice.start_rx..subdevice.end_rx];
-                    el1259.output(BitSlice::from_slice_mut(output)).expect("Failed to write output");
+                    el1259
+                        .output(BitSlice::from_slice_mut(output))
+                        .expect("Failed to write output");
                 }
             }
         }

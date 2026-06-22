@@ -45,7 +45,6 @@ pub(super) struct EL1259RxPdo {
 }
 
 impl Default for EL1259RxPdo {
-
     fn default() -> Self {
         Self {
             mto_channel1: Some(EL1259MtoRxChannel::default()),
@@ -70,7 +69,6 @@ impl Default for EL1259RxPdo {
 }
 
 impl EL1259RxPdo {
-
     // pub(super) fn get_mti(&self, channel: usize) -> &EL1259MtiRxChannel {
     //     match channel {
     //         0 => self.mti_channel1.as_ref().expect(EXPECT_TEXT),
@@ -162,7 +160,6 @@ pub(super) struct EL1259MtoRxChannel {
 }
 
 impl RxPdoObject for EL1259MtoRxChannel {
-
     fn write(&self, bits: &mut BitSlice<u8, Lsb0>) {
         // 0x7001:01..04 (bit 0..3)
         bits.set(0, self.output_buffer_reset);
@@ -182,13 +179,12 @@ impl RxPdoObject for EL1259MtoRxChannel {
 
             // 0x7001:41..4A (bit 64..383)
             let offset = i * 32;
-            bits[64+offset .. 96+offset].store_le(self.output_events[i].dc_timestamp_ns);
+            bits[64 + offset..96 + offset].store_le(self.output_events[i].dc_timestamp_ns);
         }
     }
 }
 
 impl EL1259MtoRxChannel {
-
     pub(super) fn set_events(&mut self, events: &[MultiTimestampEvent]) {
         let len = events.len();
         assert!(len <= 10);
@@ -211,7 +207,6 @@ pub(super) struct EL1259MtiRxChannel {
 }
 
 impl RxPdoObject for EL1259MtiRxChannel {
-
     fn write(&self, bits: &mut BitSlice<u8, Lsb0>) {
         // 0x7080:01 (bit 0)
         bits.set(0, self.input_buffer_reset);
@@ -259,7 +254,6 @@ pub(super) struct EL1259TxPdo {
 }
 
 impl Default for EL1259TxPdo {
-
     fn default() -> Self {
         Self {
             mto_channel1: Some(EL1259MtoTxChannel::default()),
@@ -284,7 +278,6 @@ impl Default for EL1259TxPdo {
 }
 
 impl EL1259TxPdo {
-
     pub(super) fn get_mti(&self, channel: usize) -> &EL1259MtiTxChannel {
         match channel {
             0 => self.mti_channel1.as_ref().expect(EXPECT_TEXT),
@@ -369,18 +362,17 @@ pub(super) struct EL1259MtoTxChannel {
 }
 
 impl TxPdoObject for EL1259MtoTxChannel {
-
     fn read(&mut self, bits: &BitSlice<u8, Lsb0>) {
         // 0x6000:01..03 (bit 0..2)
-        self.output_short_circuit   = bits[0];
+        self.output_short_circuit = bits[0];
         self.output_buffer_overflow = bits[1];
-        self.output_state           = bits[2];
+        self.output_state = bits[2];
 
         // 0x6000:0F (bit 14..15)
-        self.input_cycle_counter     = bits[14..16].load_le();
+        self.input_cycle_counter = bits[14..16].load_le();
 
         // 0x6000:11 (bit 16..23)
-        self.output_order_feedback   = bits[16..24].load_le();
+        self.output_order_feedback = bits[16..24].load_le();
 
         // 0x6000:12 (bit 24..31)
         self.events_in_output_buffer = bits[24..32].load_le();
@@ -418,23 +410,22 @@ pub(super) struct EL1259MtiTxChannel {
 }
 
 impl TxPdoObject for EL1259MtiTxChannel {
-
     fn read(&mut self, bits: &BitSlice<u8, Lsb0>) {
         // 0x6081:01 (bit 0..7)
         self.number_of_input_events = bits[0..8].load_le();
 
         // 0x6081:09..0A (bit (8..9)
-        self.input_state           = bits[8];
+        self.input_state = bits[8];
         self.input_buffer_overflow = bits[9];
 
         // 0x6081:0F (bit 14..15)
-        self.input_cycle_counter    = bits[14..16].load_le();
+        self.input_cycle_counter = bits[14..16].load_le();
 
         // 0x6081:11 (bit 16..23)
         self.events_in_input_buffer = bits[16..23].load_le();
 
         // 0x6081:12 (bit 24..31)
-        self.input_order_feedback   = bits[24..31].load_le();
+        self.input_order_feedback = bits[24..31].load_le();
 
         for i in 0..self.number_of_input_events as usize {
             // 0x6081:21..2A (bit 32..41)
@@ -442,13 +433,12 @@ impl TxPdoObject for EL1259MtiTxChannel {
 
             // 0x6081:41..4A (bit 64..383)
             let offset = i * 32;
-            self.input_events[i].dc_timestamp_ns = bits[64+offset ..96 + offset].load_le();
+            self.input_events[i].dc_timestamp_ns = bits[64 + offset..96 + offset].load_le();
         }
     }
 }
 
 impl EL1259MtiTxChannel {
-
     pub(super) fn get_events(&self) -> &[MultiTimestampEvent] {
         &self.input_events[0..self.number_of_input_events as usize]
     }
