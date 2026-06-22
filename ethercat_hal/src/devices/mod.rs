@@ -2,6 +2,7 @@ pub mod ek1100;
 pub mod el1002;
 pub mod el1008;
 mod el1124;
+pub mod el1259;
 pub mod el2002;
 pub mod el2004;
 pub mod el2008;
@@ -32,6 +33,7 @@ use crate::MetaSubdevice;
 #[cfg(feature = "mock")]
 use crate::TypeErasedValue;
 use crate::devices::el1124::{EL1124, EL1124_IDENTITY_A};
+use crate::devices::el1259::{EL1259, EL1259_IDENTITY_A};
 use crate::devices::el9505::{EL9505, EL9505_IDENTITY_A};
 
 use super::devices::el1008::EL1008;
@@ -183,6 +185,7 @@ pub fn device_from_subdevice_identity(
         EK1100_IDENTITY_A => Ok(Box::new(EK1100::new())),
         EL1002_IDENTITY_A => Ok(Box::new(EL1002::new())),
         EL1008_IDENTITY_A | EL1008_IDENTITY_B => Ok(Box::new(EL1008::new())),
+        EL1259_IDENTITY_A => Ok(Box::new(EL1259::new())),
         EL2002_IDENTITY_A | EL2002_IDENTITY_B => Ok(Box::new(EL2002::new())),
         EL2004_IDENTITY_A => Ok(Box::new(EL2004::new())),
         EL2008_IDENTITY_A | EL2008_IDENTITY_B => Ok(Box::new(EL2008::new())),
@@ -229,6 +232,7 @@ pub fn device_from_subdevice_identity_rc(
         EK1100_IDENTITY_A => Ok(Rc::new(RefCell::new(EK1100::new()))),
         EL1002_IDENTITY_A => Ok(Rc::new(RefCell::new(EL1002::new()))),
         EL1008_IDENTITY_A | EL1008_IDENTITY_B => Ok(Rc::new(RefCell::new(EL1008::new()))),
+        EL1259_IDENTITY_A => Ok(Rc::new(RefCell::new(EL1259::new()))),
         EL2002_IDENTITY_A | EL2002_IDENTITY_B => Ok(Rc::new(RefCell::new(EL2002::new()))),
         EL2004_IDENTITY_A => Ok(Rc::new(RefCell::new(EL2004::new()))),
         EL2008_IDENTITY_A | EL2008_IDENTITY_B => Ok(Rc::new(RefCell::new(EL2008::new()))),

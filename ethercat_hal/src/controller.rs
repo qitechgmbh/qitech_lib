@@ -37,6 +37,7 @@ where
     pub cycle: u64,
     pub cycle_time_us: u64,
     pub next_cycle: Instant,
+    pub dc_system_time_ns: u64,
     pub interface: Option<String>,
     pub subdevices: [MetaSubdevice; 256],
     pub subdevice_count: usize,
@@ -100,6 +101,7 @@ where
             cycle: 0,
             next_cycle: std::time::Instant::now(),
             cycle_time_us: 0,
+            dc_system_time_ns: 0,
             interface,
             subdevices: [MetaSubdevice::default(); 256],
             subdevice_count: 0,
@@ -135,6 +137,10 @@ where
 
     pub fn get_cycle_time_us(&self) -> u64 {
         self.cycle_time_us
+    }
+
+    pub fn get_dc_system_time_ns(&self) -> u64 {
+        self.dc_system_time_ns
     }
 }
 
@@ -477,7 +483,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                     let group_to_transition = group.take().expect("Group missing in PreOp");
                     let device_ref = maindevice.as_ref().expect("MainDevice missing");
-                    let rt = get_async_runtime();
                     let res = rt
                         .block_on(async { group_to_transition.into_pre_op_pdi(device_ref).await });
 
@@ -600,7 +605,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             GroupState::SafeOp(group) => {
                                 let device = maindevice.as_ref().unwrap();
                                 // Apply the same logic here
-                                let (is_all_safe, group_back, _) = rt.block_on(async {
+                                let (is_all_safe, group_back) = rt.block_on(async {
                                     let now = tokio::time::Instant::now();
                                     let res = group.tx_rx_dc(device).await.expect("TX/RX");
                                     let ready = res.is_in_state(ethercrab::SubDeviceState::SafeOp);
@@ -608,7 +613,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                         tokio::time::sleep_until(now + res.extra.next_cycle_wait)
                                             .await;
                                     }
-                                    (ready, group, res.extra.next_cycle_wait)
+                                    (ready, group)
                                 });
 
                                 if is_all_safe {
@@ -660,6 +665,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let rt = get_async_runtime();
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
+
                     rt.block_on(async {
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
@@ -682,6 +688,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 .tx_rx_dc(&maindevice)
                                 .await
                                 .expect("TX/RX");
+                            self.dc_system_time_ns = res.extra.dc_system_time;
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
 
                             while Instant::now() < self.next_cycle {
@@ -696,6 +703,22 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     .store(true, Ordering::Release);
                                 println!("ALL OP");
                                 break;
+                            } else {
+                                let mut has_error = false;
+
+                                for index in 0..self.subdevice_count {
+                                    let subdevice = group.subdevice(maindevice, index).expect("No subdevice at index");
+                                    let error_code: u16 = subdevice.register_read(0x0134u16).await.expect("Failed to read error code");
+
+                                    if error_code != 0 {
+                                        has_error = true;
+                                        println!("Subdevice at index {} failed to Op! Error code: {:#02x}", index, error_code);
+                                    }
+                                }
+
+                                if has_error {
+                                    panic!("Failed to go into Op!");
+                                }
                             }
                         }
 
@@ -720,6 +743,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             };
 
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                            self.dc_system_time_ns = res.extra.dc_system_time;
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
                             match self.input_producer.input_buffer_mut() {
                                 Some(buffer) => {
@@ -745,11 +769,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             }
 
                             self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
-                            if self.cycle == u64::MAX {
-                                self.cycle = 0;
-                            } else {
-                                self.cycle += 1;
-                            }
+                            self.cycle = self.cycle.wrapping_add(1);
                         }
                     });
                 }

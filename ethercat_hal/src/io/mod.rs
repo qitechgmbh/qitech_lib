@@ -4,6 +4,7 @@ pub mod as006;
 pub mod digital_input;
 pub mod digital_output;
 pub mod encoder_input;
+pub mod multi_timestamp;
 pub mod pulse_train_output;
 pub mod serial_interface;
 pub mod servo_velocity_minasa6;
