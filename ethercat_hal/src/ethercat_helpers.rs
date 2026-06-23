@@ -377,13 +377,27 @@ impl EtherCATThreadChannel {
     }
 
     pub fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error> {
-        let (tx, _rx) = std::sync::mpsc::channel::<ChannelResponse>();
+        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::ChangeState(state),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
-        let _res = self.0.send(req);
-        Ok(())
+
+        match self.0.send(req) {
+            Ok(_) => (),
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+
+        let res = rx.recv_timeout(Duration::from_millis(30000));
+        let response: ChannelResponse = match res {
+            Ok(res) => res,
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+
+        match response {
+            ChannelResponse::ChangeState(result) => result,
+            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+        }
     }
 
     pub fn enable_dc_sync0(&self, device_address: u16) -> Result<(), anyhow::Error> {

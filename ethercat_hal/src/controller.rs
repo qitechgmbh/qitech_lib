@@ -1,8 +1,8 @@
 use crate::Mailbox;
 use crate::{
     ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState,
-    MAX_SUBDEVICES, MasterConfiguration, MetaSubdevice, PDI_LEN, PDU_STORAGE, Producer, SdoType,
-    TripleBufProducer,
+    EtherCATThreadResponseChannel, MAX_SUBDEVICES, MasterConfiguration, MetaSubdevice, PDI_LEN,
+    PDU_STORAGE, Producer, SdoType, TripleBufProducer,
     ethercat_helpers::{
         configure_oversampling, enable_dc_sync, enable_dc_sync01, sdo_read, sdo_write,
     },
@@ -46,6 +46,7 @@ where
     pub all_subdevices_operational: Arc<AtomicBool>,
     pub current_config: MasterConfiguration,
     requested_state: Option<EtherCATState>,
+    pending_change_state_response: Option<EtherCATThreadResponseChannel>,
     rx_channel: Receiver<ChannelRequest>,
     input_producer: P,
     output_consumer: C,
@@ -109,6 +110,7 @@ where
             state: EtherCATState::NoInterface,
             all_subdevices_operational: Arc::new(AtomicBool::new(false)),
             requested_state: None,
+            pending_change_state_response: None,
             rx_channel: rx,
             input_producer: input,
             output_consumer: output,
@@ -349,9 +351,26 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 );
                                 continue; // end the loop here -> go back to NoInterface state
                             }
-                            EtherCATState::PreOp => continue,
-                            EtherCATState::Op => (),
-                            _ => continue,
+                            EtherCATState::PreOp => {
+                                send_response(
+                                    msg.response_channel,
+                                    ChannelResponse::ChangeState(Ok(())),
+                                );
+                                continue;
+                            }
+                            EtherCATState::Op => {
+                                self.pending_change_state_response = Some(msg.response_channel);
+                            }
+                            _ => {
+                                send_response(
+                                    msg.response_channel,
+                                    ChannelResponse::ChangeState(Err(anyhow::anyhow!(
+                                        "Invalid state transition from PreOp to {:?}",
+                                        ether_catstate
+                                    ))),
+                                );
+                                continue;
+                            }
                         },
                         ChannelRequests::Shutdown() => return Ok(()),
                         ChannelRequests::SdoWriteRequest(request) => {
@@ -669,7 +688,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let mut expected_wkc: Option<u16> = None;
                     let mut wkc_mismatch_count: u32 = 0;
                     let mut consecutive_error_cycles: u32 = 0;
-                    rt.block_on(async {
+                    let op_result: Result<(), anyhow::Error> = rt.block_on(async {
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
                                 let id = core_affinity::CoreId {
@@ -704,6 +723,14 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 self.all_subdevices_operational
                                     .store(true, Ordering::Release);
                                 println!("ALL OP");
+                                if let Some(response_channel) =
+                                    self.pending_change_state_response.take()
+                                {
+                                    send_response(
+                                        response_channel,
+                                        ChannelResponse::ChangeState(Ok(())),
+                                    );
+                                }
                                 break;
                             } else {
                                 let mut errored: Vec<(usize, u16)> = Vec::new();
@@ -813,7 +840,20 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
                             self.cycle = self.cycle.wrapping_add(1);
                         }
-                    })?;
+                    });
+                    if let Err(e) = op_result {
+                        if let Some(response_channel) =
+                            self.pending_change_state_response.take()
+                        {
+                            let _ = send_response(
+                                response_channel,
+                                ChannelResponse::ChangeState(Err(anyhow::anyhow!(
+                                    "{e:?}"
+                                ))),
+                            );
+                        }
+                        return Err(e);
+                    }
                 }
             }
             self.requested_state = None;
