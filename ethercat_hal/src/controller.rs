@@ -511,6 +511,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         Err(_) => todo!(),
                     };
 
+                    let mut clock_settled_count: u32 = 0;
+                    const CLOCK_SETTLE_CONSECUTIVE_REQUIRED: u32 = 4;
+
                     loop {
                         rt.block_on(
                             group_preop_pdi.tx_rx_sync_system_time(&maindevice.as_ref().unwrap()),
@@ -520,6 +523,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         if now.elapsed() >= Duration::from_millis(25) {
                             now = Instant::now();
                             let mut max_deviation = 0;
+                            let mut all_subdevices_reachable = true;
                             for (s1, ema) in group_preop_pdi
                                 .iter(&maindevice.as_ref().unwrap())
                                 .zip(averages.iter_mut())
@@ -537,19 +541,27 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                                 value as i32
                                             }
                                         }
-                                        Err(ethercrab::error::Error::WorkingCounter { .. }) => 0,
+                                        Err(ethercrab::error::Error::WorkingCounter { .. }) => {
+                                            all_subdevices_reachable = false;
+                                            continue;
+                                        }
                                         Err(e) => {
                                             println!("Failed to read DC system time: {:?}", e);
-                                            0
+                                            continue;
                                         }
                                     };
 
                                 let ema_next = ema.next(diff as f64);
                                 max_deviation = max_deviation.max(ema_next.abs() as u32);
                             }
-                            if max_deviation < 100 {
-                                println!("Clocks settled after {} ms", start.elapsed().as_millis());
-                                break;
+                            if max_deviation < 100 && all_subdevices_reachable {
+                                clock_settled_count += 1;
+                                if clock_settled_count >= CLOCK_SETTLE_CONSECUTIVE_REQUIRED {
+                                    println!("Clocks settled after {} ms", start.elapsed().as_millis());
+                                    break;
+                                }
+                            } else {
+                                clock_settled_count = 0;
                             }
                         }
                         rt.block_on(tick_interval.tick());
