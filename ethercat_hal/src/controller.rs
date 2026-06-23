@@ -705,20 +705,23 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 println!("ALL OP");
                                 break;
                             } else {
-                                let mut has_error = false;
+                                let mut failing: Vec<(usize, u16)> = Vec::new();
 
                                 for index in 0..self.subdevice_count {
                                     let subdevice = group.subdevice(maindevice, index).expect("No subdevice at index");
                                     let error_code: u16 = subdevice.register_read(0x0134u16).await.expect("Failed to read error code");
 
                                     if error_code != 0 {
-                                        has_error = true;
                                         println!("Subdevice at index {} failed to Op! Error code: {:#02x}", index, error_code);
+                                        failing.push((index, error_code));
                                     }
                                 }
 
-                                if has_error {
-                                    panic!("Failed to go into Op!");
+                                if !failing.is_empty() {
+                                    return Err(anyhow::anyhow!(
+                                        "Subdevices failed to enter Op: {:?}; terminating for clean restart",
+                                        failing
+                                    ));
                                 }
                             }
                         }
