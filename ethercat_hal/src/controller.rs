@@ -1,3 +1,4 @@
+use anyhow::Context;
 use crate::Mailbox;
 use crate::{
     ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState,
@@ -595,7 +596,14 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                                 if tick > self.current_config.dc_config.target_dc_tick {
                                     let group_res = rt.block_on(group.into_safe_op(device));
-                                    let group = group_res.expect("Failed SafeOp");
+                                    let group = match group_res {
+                                        Ok(g) => g,
+                                        Err(e) => {
+                                            return Err(anyhow::anyhow!(
+                                                "EtherCAT PreOp → SafeOp transition failed: {e:?}. Terminating for a clean restart."
+                                            ));
+                                        }
+                                    };
                                     group_container = Some(GroupState::SafeOp(group));
                                     println!("Requested SAFE-OP");
                                 } else {
@@ -680,6 +688,15 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             None => (),
                         };
 
+                        #[allow(unused_assignments)] // set in ramp break, read in steady-state loop
+                        let mut expected_wkc: Option<u16> = None;
+                        let mut wkc_mismatch_count: u32 = 0;
+                        // Counts cycles where NOT all devices are OP yet.
+                        // We log every 1000 cycles but do NOT read AL status registers during the
+                        // ramp: even throttled register reads add PDU round-trips that stretch the
+                        // 1 ms DC cycle and cause persistent 0x0032 on SYNC0 devices.
+                        // AL status is only read once at timeout for the error message.
+                        let mut not_all_op_cycles: u32 = 0;
                         loop {
                             let cycle_start = Instant::now();
                             let res = group_op
@@ -696,6 +713,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             }
 
                             if res.all_op() {
+                                expected_wkc = Some(res.working_counter);
                                 for i in 0..self.subdevice_count {
                                     self.subdevices[i].initialized = true;
                                 }
@@ -703,22 +721,33 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     .store(true, Ordering::Release);
                                 println!("ALL OP");
                                 break;
-                            } else {
-                                let mut has_error = false;
+                            }
 
+                            not_all_op_cycles += 1;
+
+                            if not_all_op_cycles % 1000 == 0 {
+                                println!(
+                                    "OP ramp: still waiting for all devices to reach OP ({} cycles elapsed of {} max)",
+                                    not_all_op_cycles, self.current_config.op_ramp_grace_cycles
+                                );
+                            }
+
+                            if not_all_op_cycles >= self.current_config.op_ramp_grace_cycles {
+                                // Read AL status now (only at timeout) for the error message.
+                                let mut erroring_subdevices: Vec<(usize, u16)> = Vec::new();
                                 for index in 0..self.subdevice_count {
-                                    let subdevice = group.subdevice(maindevice, index).expect("No subdevice at index");
-                                    let error_code: u16 = subdevice.register_read(0x0134u16).await.expect("Failed to read error code");
-
-                                    if error_code != 0 {
-                                        has_error = true;
-                                        println!("Subdevice at index {} failed to Op! Error code: {:#02x}", index, error_code);
+                                    if let Ok(subdevice) = group.subdevice(maindevice, index) {
+                                        let code: u16 = subdevice.register_read(0x0134u16).await.unwrap_or(0);
+                                        if code != 0 {
+                                            erroring_subdevices.push((index, code));
+                                        }
                                     }
                                 }
-
-                                if has_error {
-                                    panic!("Failed to go into Op!");
-                                }
+                                return Err(anyhow::anyhow!(
+                                    "EtherCAT OP ramp timed out after {} cycles without all devices reaching OP. \
+                                     AL errors at timeout: {:?}. Terminating for a clean restart.",
+                                    not_all_op_cycles, erroring_subdevices
+                                ));
                             }
                         }
 
@@ -742,9 +771,25 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 None => {}
                             };
 
-                            let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                            let res = group.tx_rx_dc(&maindevice).await.context("TX_RX failed in steady-state OP loop")?;
                             self.dc_system_time_ns = res.extra.dc_system_time;
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
+
+                            if let Some(expected) = expected_wkc {
+                                if res.working_counter != expected {
+                                    wkc_mismatch_count += 1;
+                                    if wkc_mismatch_count >= self.current_config.wkc_mismatch_threshold {
+                                        self.all_subdevices_operational.store(false, Ordering::Release);
+                                        return Err(anyhow::anyhow!(
+                                            "EtherCAT working counter mismatch: expected {expected}, got {}; \
+                                             terminating for clean restart",
+                                            res.working_counter
+                                        ));
+                                    }
+                                } else {
+                                    wkc_mismatch_count = 0;
+                                }
+                            }
                             match self.input_producer.input_buffer_mut() {
                                 Some(buffer) => {
                                     // We get a mutable slice to the whole buffer to make sub-slicing easier
@@ -771,7 +816,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             self.cycle_time_us = cycle_start.elapsed().as_micros() as u64;
                             self.cycle = self.cycle.wrapping_add(1);
                         }
-                    });
+                        #[allow(unreachable_code)]
+                        Ok(())
+                    })?;
                 }
             }
             self.requested_state = None;
