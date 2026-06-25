@@ -511,12 +511,10 @@ pub struct MasterConfiguration {
     pub tx_rx_config: MasterTxRxConfig,
     pub realtime_optimizations: Option<RtOptimizationConfig>,
     pub dc_config: DcConfiguration,
-    /// Number of consecutive working-counter mismatches before triggering a clean restart.
-    /// Default: 5.
+    /// Number of consecutive working-counter mismatches before triggering an error.
     pub wkc_mismatch_threshold: u32,
     /// Grace window for the SAFE-OP → OP ramp: how many total cycles to wait for all devices
-    /// to confirm OP state before giving up with a clean Err (instead of panicking).
-    /// At 1 ms cycle time, 10000 = ~10 seconds. Default: 10000.
+    /// to confirm OP state before giving up with a clean Err.
     pub op_ramp_grace_cycles: u32,
 }
 

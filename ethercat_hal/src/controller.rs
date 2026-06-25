@@ -1,4 +1,3 @@
-use anyhow::Context;
 use crate::Mailbox;
 use crate::{
     ChannelRequest, ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState,
@@ -11,6 +10,7 @@ use crate::{
     machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
 };
+use anyhow::Context;
 #[cfg(target_os = "linux")]
 use common::set_irq_affinity;
 use ethercrab::{
