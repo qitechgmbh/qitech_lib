@@ -48,12 +48,11 @@ impl EL4732 {
     /// `oversample_factor` must be one of:
     ///   1, 2, 3, 4, 5, 8, 10, 16, 20, 25, 32, 40, 50, 100
     pub fn new_with_oversample(oversample_factor: usize) -> Self {
-        let configuration = EL4732Configuration::default();
         Self {
             rxpdo: EL4732RxPdo::new(oversample_factor),
             txpdo: EL4732TxPdo::default(),
             is_used: false,
-            configuration,
+            configuration: EL4732Configuration { oversample_factor },
         }
     }
 
@@ -110,7 +109,7 @@ impl NewEthercatDevice for EL4732 {
 
 /// Scale -1.0..=1.0 to i16 (-10V..=+10V)
 fn normalize_voltage(value: f32) -> i16 {
-    (value.clamp(-1.0, 1.0) * 32767.0).round() as i16
+    (value.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16
 }
 
 impl AnalogOutputDevice for EL4732 {
