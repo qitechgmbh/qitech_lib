@@ -572,11 +572,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     }
                                     continue;
                                 }
-                                return Err(anyhow::anyhow!(
-                                    "EtherCAT OP ramp timed out after {} cycles without all devices reaching OP. \
-                                     AL errors at timeout: {:?}. Terminating for a clean restart.",
-                                    not_all_op_cycles, erroring_subdevices
-                                ));
                             }
 
                             match self.output_consumer.read() {
