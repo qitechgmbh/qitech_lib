@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use crate::{
     EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest,
-    SdoType, get_async_runtime, machine_ident_read::MachineDeviceInfo,
+    SdoType, get_async_runtime, machine_ident_read::MachineDeviceInfo, pdo::oversampling::OVERSAMPLE_FACTOR,
 };
 use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
@@ -445,13 +445,11 @@ impl EtherCATThreadChannel {
     pub fn configure_oversampling(
         &self,
         device_address: u16,
-        factor: u16,
     ) -> Result<(), anyhow::Error> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req = ChannelRequest {
             channel_request: crate::ChannelRequests::ConfigureOversampling(
                 device_address.into(),
-                factor,
             ),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
@@ -633,16 +631,16 @@ pub fn configure_oversampling(
     group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
     maindevice: &MainDevice,
     device_address: usize,
-    factor: u16,
 ) -> Result<(), anyhow::Error> {
     let rt = get_async_runtime();
-    let oversampling: &'static [(u16, u16)] =
-        Box::leak(vec![(0x1600u16, factor), (0x1700u16, factor)].into_boxed_slice());
 
     rt.block_on(async {
         for mut subdevice in group.iter_mut(maindevice) {
             if subdevice.configured_address() == device_address as u16 {
-                subdevice.set_oversampling(oversampling);
+                subdevice.set_oversampling(&[
+                    (0x1600, OVERSAMPLE_FACTOR as u16),
+                    (0x1700, OVERSAMPLE_FACTOR as u16),
+                ]);
                 return Ok(());
             }
         }

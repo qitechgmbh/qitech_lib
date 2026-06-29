@@ -35,6 +35,7 @@ use crate::TypeErasedValue;
 use crate::devices::el1124::{EL1124, EL1124_IDENTITY_A};
 use crate::devices::el1259::{EL1259, EL1259_IDENTITY_A};
 use crate::devices::el9505::{EL9505, EL9505_IDENTITY_A};
+use crate::pdo::oversampling::OVERSAMPLE_FACTOR;
 
 use super::devices::el1008::EL1008;
 use crate::devices::ep2339_0021::EP2339_0021_IDENTITY_A;
@@ -210,7 +211,7 @@ pub fn device_from_subdevice_identity(
         }
         EP2339_0021_IDENTITY_A => Ok(Box::new(ep2339_0021::EP2339_0021::new())),
         MINAS_A6_IDENTITY_A => Ok(Box::new(minas_a6::MinasA6BMotor::new())),
-        EL4732_IDENTITY_A | EL4732_IDENTITY_B | EL4732_IDENTITY_C => Ok(Box::new(EL4732::new())),
+        EL4732_IDENTITY_A | EL4732_IDENTITY_B | EL4732_IDENTITY_C => Ok(Box::new(EL4732::new_with_oversample(OVERSAMPLE_FACTOR))),
         _ => Err(anyhow::anyhow!(
             "[{}::device_from_subdevice] No Driver: vendor_id: 0x{:x}, product_id: 0x{:x}, revision: 0x{:x}",
             module_path!(),
@@ -258,7 +259,7 @@ pub fn device_from_subdevice_identity_rc(
         EP2339_0021_IDENTITY_A => Ok(Rc::new(RefCell::new(ep2339_0021::EP2339_0021::new()))),
         MINAS_A6_IDENTITY_A => Ok(Rc::new(RefCell::new(minas_a6::MinasA6BMotor::new()))),
         EL4732_IDENTITY_A | EL4732_IDENTITY_B | EL4732_IDENTITY_C => {
-            Ok(Rc::new(RefCell::new(el4732::EL4732::new())))
+            Ok(Rc::new(RefCell::new(el4732::EL4732::new_with_oversample(OVERSAMPLE_FACTOR))))
         }
 
         _ => Err(anyhow::anyhow!(
