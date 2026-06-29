@@ -12,7 +12,6 @@ pub mod shared_config;
 pub mod machine_ident_read;
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
-use tokio::sync::Mutex;
 use std::cell::UnsafeCell;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
@@ -21,6 +20,7 @@ use std::sync::{Arc, OnceLock, mpsc::Sender};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use tokio::runtime::{Builder, Runtime};
+use tokio::sync::Mutex;
 use triple_buffer::{Input, Output};
 
 // A global, lazily-initialized Runtime
@@ -28,7 +28,7 @@ static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 fn get_async_runtime() -> &'static Runtime {
     RUNTIME.get_or_init(|| {
         Builder::new_current_thread() // Use single-threaded for determinism
-            .event_interval(u32::MAX)  // Never check I/O drivers automatically based on task ticks
+            .event_interval(u32::MAX) // Never check I/O drivers automatically based on task ticks
             .global_queue_interval(u32::MAX) // Never check global queues automatically            // Optional: Limit how many events tokio processes before checking IO
             // .max_event_per_tick(64)
             .build()
@@ -42,7 +42,6 @@ pub const MAX_SUBDEVICES: usize = 32;
 pub const MAX_PDU_DATA: usize = PduStorage::element_size(512);
 pub const MAX_FRAMES: usize = 32;
 pub const PDI_LEN: usize = 1024;
-
 
 static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
 pub struct EtherCATController<C, P>
@@ -58,7 +57,7 @@ where
     subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
     state: Arc<AtomicU8>,
     all_subdevices_operational: Arc<AtomicBool>,
-    dc_system_time_ns : Arc<AtomicU64>,
+    dc_system_time_ns: Arc<AtomicU64>,
     current_config: MasterConfiguration,
     requested_state: Option<EtherCATState>,
     rx_channel: Receiver<ChannelRequest>,
@@ -77,13 +76,13 @@ where
         rx: Receiver<ChannelRequest>,
         interface: Option<String>,
         config: MasterConfiguration,
-        cycle : Arc<AtomicU64>,
-        cycle_time_us : Arc<AtomicU64>,
-        subdevice_count : Arc<AtomicU64>,
-        dc_system_time_ns : Arc<AtomicU64>,
-        state : Arc<AtomicU8>,
-        subdevices : Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
-        all_subdevices_operational : Arc<AtomicBool>,
+        cycle: Arc<AtomicU64>,
+        cycle_time_us: Arc<AtomicU64>,
+        subdevice_count: Arc<AtomicU64>,
+        dc_system_time_ns: Arc<AtomicU64>,
+        state: Arc<AtomicU8>,
+        subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
+        all_subdevices_operational: Arc<AtomicBool>,
     ) -> Self {
         Self {
             cycle,
@@ -91,7 +90,7 @@ where
             interface,
             subdevice_count,
             next_cycle: std::time::Instant::now(),
-            subdevices,   
+            subdevices,
             state,
             requested_state: None,
             rx_channel: rx,
@@ -240,14 +239,14 @@ where
 {
     pub input_consumer: C,
     pub output_producer: P,
-    cycle           : Arc<AtomicU64>,
-    cycle_time_us   : Arc<AtomicU64>,
-    next_cycle_us   : Arc<AtomicU64>,
-    subdevice_count : Arc<AtomicU64>,
-    state           : Arc<AtomicU8>,
-    subdevices      : Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
-    all_op : Arc<AtomicBool>,
-    dc_sys_time : Arc<AtomicU64>,
+    cycle: Arc<AtomicU64>,
+    cycle_time_us: Arc<AtomicU64>,
+    next_cycle_us: Arc<AtomicU64>,
+    subdevice_count: Arc<AtomicU64>,
+    state: Arc<AtomicU8>,
+    subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
+    all_op: Arc<AtomicBool>,
+    dc_sys_time: Arc<AtomicU64>,
 }
 
 impl<C, P> EtherCATAppHandle<C, P>
@@ -282,7 +281,7 @@ where
     pub fn get_current_cycle(&self) -> u64 {
         self.cycle.load(Relaxed)
     }
-    
+
     pub fn get_cycle_time_us(&self) -> u64 {
         self.cycle_time_us.load(Relaxed)
     }
@@ -299,12 +298,12 @@ where
         self.state.load(Relaxed).into()
     }
 
-    pub fn try_get_subdevices_vec_sync(&self) -> Result<Vec<MetaSubdevice>,anyhow::Error> {
+    pub fn try_get_subdevices_vec_sync(&self) -> Result<Vec<MetaSubdevice>, anyhow::Error> {
         let unlocked = self.subdevices.blocking_lock();
         Ok(unlocked.clone().to_vec())
     }
 
-    pub async fn try_get_subdevices_vec(&self) -> Result<Vec<MetaSubdevice>,anyhow::Error> {
+    pub async fn try_get_subdevices_vec(&self) -> Result<Vec<MetaSubdevice>, anyhow::Error> {
         let unlocked = self.subdevices.lock().await;
         Ok(unlocked.clone().to_vec())
     }
@@ -345,7 +344,7 @@ where
 {
     pub channel: EtherCATThreadChannel,
     pub app_handle: EtherCATAppHandle<C, P>,
-    pub join_handle: Option<JoinHandle<Result<(),anyhow::Error>>>,
+    pub join_handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
 }
 
 pub type StandardEtherCATAppHandle = EtherCATAppHandle<TripleBufConsumer, TripleBufProducer>;
@@ -428,7 +427,7 @@ impl From<EtherCATState> for u8 {
         match value {
             EtherCATState::Boot => 1,
             EtherCATState::Init => 2,
-            EtherCATState::PreOp => 3 ,
+            EtherCATState::PreOp => 3,
             EtherCATState::PreopPdi => 4,
             EtherCATState::Op => 5,
             _ => 6,
@@ -568,7 +567,6 @@ pub fn init_ethercat_mock(
     };
 }
 
-
 pub fn set_current_thread_rt_priority(priority: i32) {
     unsafe {
         let thread_id = libc::pthread_self();
@@ -635,7 +633,7 @@ pub struct RtOptimizationConfig {
     pub ethercat_io_thread_priority: i32,
     // If none irq is not pinned to a core
     pub pin_irq_core: Option<usize>,
-    pub lock_memory : bool,
+    pub lock_memory: bool,
 }
 
 impl Default for RtOptimizationConfig {
@@ -691,19 +689,18 @@ pub fn init_ethercat(
         full: AtomicBool::new(false),
     });
 
-    let cycle           : Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-    let cycle_time_us   : Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-    let next_cycle_us   : Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-    let subdevice_count : Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-    let state           : Arc<AtomicU8>  = Arc::new(AtomicU8::new(EtherCATState::NoInterface.into()));
-    let all_op : Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
-    let dc_sys_time : Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-    let subdevices      : Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>> = 
-        Arc::new(Mutex::new([MetaSubdevice::default();MAX_SUBDEVICES]));
-    
+    let cycle: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+    let cycle_time_us: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+    let next_cycle_us: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+    let subdevice_count: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+    let state: Arc<AtomicU8> = Arc::new(AtomicU8::new(EtherCATState::NoInterface.into()));
+    let all_op: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    let dc_sys_time: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+    let subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>> =
+        Arc::new(Mutex::new([MetaSubdevice::default(); MAX_SUBDEVICES]));
+
     let mut controller = match config {
-        Some(conf) => 
-            EtherCATController::new(
+        Some(conf) => EtherCATController::new(
             TripleBufProducer {
                 output_producer: input_producer,
             },
@@ -711,10 +708,15 @@ pub fn init_ethercat(
             rx,
             Some(interface_name.to_string()),
             conf,
-            cycle.clone(),cycle_time_us.clone(),subdevice_count.clone(),dc_sys_time.clone(),state.clone(),subdevices.clone(),all_op.clone()
+            cycle.clone(),
+            cycle_time_us.clone(),
+            subdevice_count.clone(),
+            dc_sys_time.clone(),
+            state.clone(),
+            subdevices.clone(),
+            all_op.clone(),
         ),
-        None =>
-        EtherCATController::new(
+        None => EtherCATController::new(
             TripleBufProducer {
                 output_producer: input_producer,
             },
@@ -722,7 +724,13 @@ pub fn init_ethercat(
             rx,
             Some(interface_name.to_string()),
             MasterConfiguration::default(),
-            cycle.clone(),cycle_time_us.clone(),subdevice_count.clone(),dc_sys_time.clone(),state.clone(),subdevices.clone(),all_op.clone()
+            cycle.clone(),
+            cycle_time_us.clone(),
+            subdevice_count.clone(),
+            dc_sys_time.clone(),
+            state.clone(),
+            subdevices.clone(),
+            all_op.clone(),
         ),
     };
 
@@ -742,9 +750,7 @@ pub fn init_ethercat(
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx);
     let join_handle = std::thread::Builder::new()
         .name("EthercatStateMachine".into())
-        .spawn(move || {
-                controller.ethercat_state_machine()
-        })
+        .spawn(move || controller.ethercat_state_machine())
         .expect("Failed to spawn thread");
     EtherCATControl {
         channel,

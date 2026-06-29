@@ -1,13 +1,14 @@
-use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority};
+use crate::ethercat_helpers::configure_oversampling;
+use crate::ethercat_helpers::enable_dc_sync01;
 use crate::{
-    ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState,
-    MAX_SUBDEVICES, PDI_LEN, PDU_STORAGE, Producer, SdoType,
-    TripleBufProducer,
+    ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES,
+    PDI_LEN, PDU_STORAGE, Producer, SdoType, TripleBufProducer,
     ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
 };
+use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority};
 use anyhow::bail;
 #[cfg(target_os = "linux")]
 use common::set_irq_affinity;
@@ -19,14 +20,12 @@ use ethercrab::{
 use libc::{MCL_CURRENT, MCL_FUTURE, mlockall};
 use spin_sleep::SpinSleeper;
 use std::sync::Arc;
-use std::sync::atomic::Ordering::{Relaxed};
+use std::sync::atomic::Ordering::Relaxed;
 use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
-use crate::ethercat_helpers::enable_dc_sync01;
-use crate::ethercat_helpers::configure_oversampling;
 
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
     pub fn ethercat_state_machine(&mut self) -> Result<(), anyhow::Error> {
@@ -47,10 +46,10 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
             SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, Op, HasDc>,
         > = None;
         let mut maindevice: Option<MainDevice> = None;
-        let spinner = SpinSleeper::new(200_000);    
-        
+        let spinner = SpinSleeper::new(200_000);
+
         loop {
-            let state : EtherCATState = self.state.load(Relaxed).into();
+            let state: EtherCATState = self.state.load(Relaxed).into();
 
             match state {
                 EtherCATState::NoInterface => {
@@ -143,7 +142,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 group
                             }
                             Err(err) => {
-                                println!("failed moving to PreOp from Init {:?}", err);                                
+                                println!("failed moving to PreOp from Init {:?}", err);
                                 self.state.store(EtherCATState::Init.into(), Relaxed);
                                 send_response(
                                     msg.response_channel,
@@ -159,9 +158,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                 EtherCATState::PreOp => {
                     let mut i = 0;
                     let maindev = maindevice.as_ref().unwrap();
-                    let mut preop_group = group.as_mut().unwrap();                
+                    let mut preop_group = group.as_mut().unwrap();
                     let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
-                    
+
                     for subdevice in preop_group.iter(&maindev) {
                         let bytes = subdevice.name().as_bytes();
                         let len = std::cmp::min(bytes.len(), 127);
@@ -329,15 +328,14 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     };
 
                     loop {
-                        let deadline = Instant::now() + Duration::from_micros(
-                            self.current_config.target_cycle_time_us as u64,
-                        );
+                        let deadline = Instant::now()
+                            + Duration::from_micros(
+                                self.current_config.target_cycle_time_us as u64,
+                            );
                         rt.block_on(
                             group_preop_pdi.tx_rx_sync_system_time(&maindevice.as_ref().unwrap()),
                         )
                         .expect("TX/RX");
-
-
 
                         if now.elapsed() >= Duration::from_millis(25) {
                             now = Instant::now();
@@ -422,12 +420,12 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let group_safe_op = loop {
                         match group_container.take().unwrap() {
                             GroupState::PreOp(group) => {
-                                let device = maindevice.as_ref().unwrap();                                
+                                let device = maindevice.as_ref().unwrap();
                                 let now = Instant::now(); // Moved inside                                
-                                let res = rt.block_on(group.tx_rx_dc(device)).expect("");                                                                    
+                                let res = rt.block_on(group.tx_rx_dc(device)).expect("");
                                 if tick <= self.current_config.dc_config.target_dc_tick {
                                     spinner.sleep_until(now + res.extra.next_cycle_wait);
-                                }                                
+                                }
 
                                 if tick > self.current_config.dc_config.target_dc_tick {
                                     let group_res = rt.block_on(group.into_safe_op(device));
@@ -458,7 +456,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     // --- Calculate and map offsets here ---
                                     let mut rx_offset = 0;
                                     let mut tx_offset = 0;
-                                    let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
+                                    let mut subdevice_guard =
+                                        get_async_runtime().block_on(self.subdevices.lock());
                                     for (i, subdevice) in group_back.iter(device).enumerate() {
                                         let length_tx = subdevice.io_raw().inputs().len();
                                         let length_rx = subdevice.io_raw().outputs().len();
@@ -512,24 +511,28 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 );
                                 core_affinity::set_for_current(id);
                                 if opt.lock_memory {
-                                    let flags = MCL_CURRENT | MCL_FUTURE;                        
+                                    let flags = MCL_CURRENT | MCL_FUTURE;
                                     let result = unsafe { mlockall(flags) };
                                     if result == 0 {
                                         println!("All current and future memory pages locked.");
-                                    }else{
-                                        eprintln!("Warning: Memory locking failed! Result: {}",result);
+                                    } else {
+                                        eprintln!(
+                                            "Warning: Memory locking failed! Result: {}",
+                                            result
+                                        );
                                     }
                                 }
                             }
                             None => (),
-                        };   
+                        };
 
                         let mut is_all_op = false;
-                        let mut not_all_op_cycles: u32 = 0;                        
+                        let mut not_all_op_cycles: u32 = 0;
                         loop {
-                            let cycle_start = Instant::now();                            
+                            let cycle_start = Instant::now();
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
-                            self.dc_system_time_ns.store(res.extra.dc_system_time,Relaxed);
+                            self.dc_system_time_ns
+                                .store(res.extra.dc_system_time, Relaxed);
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
                             if !is_all_op {
                                 if res.all_op() {
@@ -542,33 +545,44 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     println!("ALL OP");
                                     not_all_op_cycles = 0;
                                     is_all_op = true;
-                                }
-                                else {
+                                } else {
                                     spinner.sleep_until(self.next_cycle);
-                                    self.cycle_time_us.store(cycle_start.elapsed().as_micros() as u64, Relaxed);
+                                    self.cycle_time_us
+                                        .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
                                     not_all_op_cycles += 1;
 
                                     if not_all_op_cycles % 1000 == 0 {
                                         println!(
                                             "OP ramp: still waiting for all devices to reach OP ({} cycles elapsed of {} max)",
-                                            not_all_op_cycles, self.current_config.op_ramp_grace_cycles
+                                            not_all_op_cycles,
+                                            self.current_config.op_ramp_grace_cycles
                                         );
                                     }
 
-                                    if not_all_op_cycles >= self.current_config.op_ramp_grace_cycles {
+                                    if not_all_op_cycles >= self.current_config.op_ramp_grace_cycles
+                                    {
                                         // Read AL status now (only at timeout) for the error message.
                                         let mut erroring_subdevices: Vec<(usize, u16)> = Vec::new();
                                         for index in 0..self.subdevice_count.load(Relaxed) {
-                                            if let Ok(subdevice) = group.subdevice(maindevice, index as usize) {
-                                                let code: u16 = subdevice.register_read(0x0134u16).await.unwrap_or(0);
+                                            if let Ok(subdevice) =
+                                                group.subdevice(maindevice, index as usize)
+                                            {
+                                                let code: u16 = subdevice
+                                                    .register_read(0x0134u16)
+                                                    .await
+                                                    .unwrap_or(0);
                                                 if code != 0 {
-                                                    erroring_subdevices.push((index as usize, code));
+                                                    erroring_subdevices
+                                                        .push((index as usize, code));
                                                 }
                                             }
                                         }
-                                        bail!("EtherCAT OP ramp timed out after {} cycles without all devices reaching OP. \
+                                        bail!(
+                                            "EtherCAT OP ramp timed out after {} cycles without all devices reaching OP. \
                                          AL errors at timeout: {:?}. Terminating for a clean restart.",
-                                        not_all_op_cycles, erroring_subdevices);                                    
+                                            not_all_op_cycles,
+                                            erroring_subdevices
+                                        );
                                     }
                                     continue;
                                 }
@@ -589,7 +603,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     self.output_consumer.finish_read();
                                 }
                                 None => {}
-                            };       
+                            };
 
                             match self.input_producer.input_buffer_mut() {
                                 Some(buffer) => {
@@ -608,16 +622,17 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     self.input_producer.publish();
                                 }
                                 None => {}
-                            }                                                    
+                            }
                             if self.cycle.load(Relaxed) == u64::MAX {
                                 self.cycle.store(0, Relaxed);
                             } else {
                                 self.cycle.fetch_add(1, Relaxed);
                             }
                             spinner.sleep_until(self.next_cycle);
-                            self.cycle_time_us.store(cycle_start.elapsed().as_micros() as u64, Relaxed);
+                            self.cycle_time_us
+                                .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
                         }
-                    } );
+                    });
                 }
             }
             self.requested_state = None;
