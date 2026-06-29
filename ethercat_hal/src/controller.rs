@@ -8,6 +8,8 @@ use crate::{
     machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
 };
+use anyhow::bail;
+#[cfg(target_os = "linux")]
 use common::set_irq_affinity;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
@@ -17,7 +19,7 @@ use ethercrab::{
 use libc::{MCL_CURRENT, MCL_FUTURE, mlockall};
 use spin_sleep::SpinSleeper;
 use std::sync::Arc;
-use std::sync::atomic::Ordering::Relaxed;
+use std::sync::atomic::Ordering::{Relaxed};
 use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
@@ -27,7 +29,7 @@ use crate::ethercat_helpers::enable_dc_sync01;
 use crate::ethercat_helpers::configure_oversampling;
 
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
-    pub fn ethercat_state_machine(&mut self) {
+    pub fn ethercat_state_machine(&mut self) -> Result<(), anyhow::Error> {
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> =
             None;
@@ -70,7 +72,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             EtherCATState::PreOp => (),
                             _ => continue,
                         },
-                        ChannelRequests::Shutdown() => return, // We CAN safely shutdonw in Init
+                        ChannelRequests::Shutdown() => return Ok(()), // We CAN safely shutdonw in Init
                         _ => continue,
                     }
 
@@ -155,11 +157,11 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     };
                 }
                 EtherCATState::PreOp => {
-                    let maindev = maindevice.as_ref().unwrap();
-                    let mut preop_group = group.as_mut().unwrap();
-
                     let mut i = 0;
+                    let maindev = maindevice.as_ref().unwrap();
+                    let mut preop_group = group.as_mut().unwrap();                
                     let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
+                    
                     for subdevice in preop_group.iter(&maindev) {
                         let bytes = subdevice.name().as_bytes();
                         let len = std::cmp::min(bytes.len(), 127);
@@ -171,6 +173,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         subdevice_guard[i].device_address = subdevice.configured_address();
                         i += 1;
                     }
+
                     drop(subdevice_guard);
                     self.subdevice_count.store(i as u64, Relaxed);
                     let msg = match self.rx_channel.try_recv() {
@@ -192,7 +195,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             EtherCATState::Op => (),
                             _ => continue,
                         },
-                        ChannelRequests::Shutdown() => return,
+                        ChannelRequests::Shutdown() => return Ok(()),
                         ChannelRequests::SdoWriteRequest(request) => {
                             let res = sdo_write(maindev, preop_group, request);
                             send_response(
@@ -477,17 +480,26 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         tick += 1;
                     };
 
-                    group_op = Some(
-                        rt.block_on(group_safe_op.into_op(&maindevice.as_ref().unwrap()))
-                            .expect("SAFE-OP -> OP"),
-                    );
+                    match rt.block_on(group_safe_op.request_into_op(&maindevice.as_ref().unwrap()))
+                    {
+                        Ok(group) => group_op = Some(group),
+                        Err(e) => {
+                            // request_into_op consumes the group — no retry possible.
+                            // Return Err so the state-machine thread ends cleanly;
+                            // the supervisor (systemd) restarts the process.
+                            return Err(anyhow::anyhow!(
+                                "EtherCAT SAFE-OP -> OP transition failed: {e:?}. Terminating for a clean restart."
+                            ));
+                        }
+                    }
                     println!("Started Transition to OP");
                     self.state.store(EtherCATState::Op.into(), Relaxed);
                 }
+
                 EtherCATState::Op => {
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
-                    futures::executor::block_on(async {
+                    return futures::executor::block_on(async {
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
                                 let id = core_affinity::CoreId {
@@ -510,25 +522,52 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             None => (),
                         };   
 
-                        let mut is_all_op = false;                    
+                        let mut is_all_op = false;
+                        let mut not_all_op_cycles: u32 = 0;                        
                         loop {
                             let cycle_start = Instant::now();                            
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                            self.dc_system_time_ns.store(res.extra.dc_system_time,Relaxed);
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
-
                             if !is_all_op {
                                 if res.all_op() {
                                     let mut subdevice_guard = self.subdevices.lock().await;
                                     for i in 0..self.subdevice_count.load(Relaxed) {
                                         subdevice_guard[i as usize].initialized = true;
                                     }
+                                    self.all_subdevices_operational.store(true, Relaxed);
                                     drop(subdevice_guard);
                                     println!("ALL OP");
+                                    not_all_op_cycles = 0;
                                     is_all_op = true;
                                 }
                                 else {
                                     spinner.sleep_until(self.next_cycle);
                                     self.cycle_time_us.store(cycle_start.elapsed().as_micros() as u64, Relaxed);
+                                    not_all_op_cycles += 1;
+
+                                    if not_all_op_cycles % 1000 == 0 {
+                                        println!(
+                                            "OP ramp: still waiting for all devices to reach OP ({} cycles elapsed of {} max)",
+                                            not_all_op_cycles, self.current_config.op_ramp_grace_cycles
+                                        );
+                                    }
+
+                                    if not_all_op_cycles >= self.current_config.op_ramp_grace_cycles {
+                                        // Read AL status now (only at timeout) for the error message.
+                                        let mut erroring_subdevices: Vec<(usize, u16)> = Vec::new();
+                                        for index in 0..self.subdevice_count.load(Relaxed) {
+                                            if let Ok(subdevice) = group.subdevice(maindevice, index as usize) {
+                                                let code: u16 = subdevice.register_read(0x0134u16).await.unwrap_or(0);
+                                                if code != 0 {
+                                                    erroring_subdevices.push((index as usize, code));
+                                                }
+                                            }
+                                        }
+                                        bail!("EtherCAT OP ramp timed out after {} cycles without all devices reaching OP. \
+                                         AL errors at timeout: {:?}. Terminating for a clean restart.",
+                                        not_all_op_cycles, erroring_subdevices);                                    
+                                    }
                                     continue;
                                 }
                             }

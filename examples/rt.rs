@@ -44,6 +44,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tx_rx_config: ethercat_hal::MasterTxRxConfig::TxRxIoUring,
         dc_config,
         realtime_optimizations: Some(rt),
+        wkc_mismatch_threshold: 5,
+        op_ramp_grace_cycles: 10000,
     };
 
     let ethercat_control = init_ethercat(&interface, Some(config));
