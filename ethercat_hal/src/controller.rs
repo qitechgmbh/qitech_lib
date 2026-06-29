@@ -431,7 +431,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                                 if tick > self.current_config.dc_config.target_dc_tick {
                                     let group_res = rt.block_on(group.into_safe_op(device));
-                                    let group = group_res.expect("Failed SafeOp");
+                                    let group = group_res.map_err(|e| anyhow::anyhow!(
+                                        "EtherCAT PreOp → SafeOp transition failed: {e:?}. Terminating for a clean restart."
+                                    ))?;
                                     group_container = Some(GroupState::SafeOp(group));
                                     println!("Requested SAFE-OP");
                                 } else {
@@ -570,6 +572,11 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     }
                                     continue;
                                 }
+                                return Err(anyhow::anyhow!(
+                                    "EtherCAT OP ramp timed out after {} cycles without all devices reaching OP. \
+                                     AL errors at timeout: {:?}. Terminating for a clean restart.",
+                                    not_all_op_cycles, erroring_subdevices
+                                ));
                             }
 
                             match self.output_consumer.read() {
