@@ -1,57 +1,128 @@
 use bitvec::slice::BitSlice;
 use ethercat_hal::{
-    EtherCATState,
+    DcConfiguration, EtherCATState, MasterConfiguration,
     devices::{
         EthercatDevice, EthercatDeviceProcessing,
-        el4732::{EL4732, EL4732_PRODUCT_ID, EL4732Port},
+        el4732::{EL4732, EL4732Port, EL4732RxPdo, EL4732_PRODUCT_ID},
     },
     init_ethercat,
+    io::analog_output::{AnalogOutputDevice, AnalogOutputOutput},
+    pdo::oversampling::OVERSAMPLE_FACTOR,
 };
-use std::{env, f32::consts::TAU, time::Duration};
+use std::{env, f64::consts::PI, time::{Duration, Instant}};
 
-/// Must match the DC cycle time configured by the master.
-const BUS_CYCLE: Duration = Duration::from_micros(1000); // 1 ms
+const CYCLE_TIME_US: u64 = 1000;
+const OVERSAMPLE: usize = OVERSAMPLE_FACTOR as usize;
 
-/// Oversample factor. One of: 1, 2, 3, 4, 5, 8, 10, 16, 20, 25, 32, 40, 50, 100.
-const OVERSAMPLE: usize = 10; // 10 kHz update at a 1 ms cycle
+const SYNC0_PERIOD_US: u64 = CYCLE_TIME_US / OVERSAMPLE as u64;
+const SYNC1_PERIOD_US: u64 = SYNC0_PERIOD_US * (OVERSAMPLE as u64 - 1);
 
-const SINE_FREQ_HZ: f32 = 50.0;
-const AMPLITUDE: f32 = 0.8; // fraction of full scale; 1.0 == +/-10 V
+const SINE_FREQ_HZ: f64 = 50.0;
+const AMPLITUDE: f64 = 0.8;
 
-struct SineGen {
-    phase: f32,
-    phase_step: f32,
+/// Collects timing stats over a 1-second window and prints a summary line.
+struct CycleStats {
+    cycle_min_us: f64,
+    cycle_max_us: f64,
+    cycle_sum_us: f64,
+    mailbox_wait_max_us: f64,
+    write_time_max_us: f64,
+    count: u64,
+    last_report: Instant,
+    last_write: Instant,
 }
 
-impl SineGen {
-    fn new(freq_hz: f32, bus_cycle: Duration, oversample: usize) -> Self {
-        let slot_dt = bus_cycle.as_secs_f32() / oversample as f32;
+impl CycleStats {
+    fn new() -> Self {
+        let now = Instant::now();
         Self {
-            phase: 0.0,
-            phase_step: TAU * freq_hz * slot_dt,
+            cycle_min_us: f64::MAX,
+            cycle_max_us: 0.0,
+            cycle_sum_us: 0.0,
+            mailbox_wait_max_us: 0.0,
+            write_time_max_us: 0.0,
+            count: 0,
+            last_report: now,
+            last_write: now,
         }
     }
 
-    /// Fill one bus cycle's block; `out.len()` must equal the oversample factor
-    /// (the driver asserts this).
-    fn fill(&mut self, out: &mut [f32], amplitude: f32) {
-        for slot in out.iter_mut() {
-            *slot = amplitude * self.phase.sin();
-            self.phase += self.phase_step;
+    fn record(&mut self, mailbox_wait: Duration, write_time: Duration) {
+        let now = Instant::now();
+        let cycle_us = now.duration_since(self.last_write).as_secs_f64() * 1e6;
+        self.last_write = now;
+
+        if self.count > 0 {
+            // skip first sample (no previous write to measure against)
+            self.cycle_min_us = self.cycle_min_us.min(cycle_us);
+            self.cycle_max_us = self.cycle_max_us.max(cycle_us);
+            self.cycle_sum_us += cycle_us;
         }
-        self.phase = self.phase.rem_euclid(TAU);
+
+        let mbox_us = mailbox_wait.as_secs_f64() * 1e6;
+        let write_us = write_time.as_secs_f64() * 1e6;
+        self.mailbox_wait_max_us = self.mailbox_wait_max_us.max(mbox_us);
+        self.write_time_max_us = self.write_time_max_us.max(write_us);
+
+        self.count += 1;
+    }
+
+    fn maybe_report(&mut self, controller_cycle_time_us: u64, skipped_total: u64) {
+        if self.last_report.elapsed() < Duration::from_secs(1) || self.count < 2 {
+            return;
+        }
+
+        let n = (self.count - 1) as f64; // first sample excluded from cycle stats
+        let avg = self.cycle_sum_us / n;
+        let jitter_max = (self.cycle_max_us - CYCLE_TIME_US as f64)
+            .abs()
+            .max((self.cycle_min_us - CYCLE_TIME_US as f64).abs());
+
+        println!(
+            "cycles: {} | avg: {:.0}us  min: {:.0}us  max: {:.0}us  jitter: {:.0}us | \
+             mbox: {:.1}us | write: {:.1}us | ctrl: {}us | skipped: {}",
+            self.count,
+            avg,
+            self.cycle_min_us,
+            self.cycle_max_us,
+            jitter_max,
+            self.mailbox_wait_max_us,
+            self.write_time_max_us,
+            controller_cycle_time_us,
+            skipped_total,
+        );
+
+        // Reset for next window
+        self.cycle_min_us = f64::MAX;
+        self.cycle_max_us = 0.0;
+        self.cycle_sum_us = 0.0;
+        self.mailbox_wait_max_us = 0.0;
+        self.write_time_max_us = 0.0;
+        self.count = 0;
+        self.last_report = Instant::now();
     }
 }
 
 fn main() {
     let interface = env::args().nth(1).expect("No interface name given");
-
     let mut el4732 = EL4732::new_with_oversample(OVERSAMPLE);
 
-    let mut sine = SineGen::new(SINE_FREQ_HZ, BUS_CYCLE, OVERSAMPLE);
-    let mut samples = vec![0.0f32; OVERSAMPLE];
+    let cycle_secs = CYCLE_TIME_US as f64 * 1e-6;
+    let phase_step_per_slot = 2.0 * PI * SINE_FREQ_HZ * cycle_secs / OVERSAMPLE as f64;
+    let phase_step_per_cycle = 2.0 * PI * SINE_FREQ_HZ * cycle_secs;
+    let mut phase: f64 = 0.0;
 
-    let mut eth_control = init_ethercat(&interface, None);
+    let mut samples_ch1 = [0.0f32; OVERSAMPLE_FACTOR as usize];
+    let samples_ch2 = [0.0f32; OVERSAMPLE_FACTOR as usize];
+
+    let config = MasterConfiguration {
+        dc_config: DcConfiguration {
+            sync0_period: Duration::from_micros(SYNC0_PERIOD_US),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut eth_control = init_ethercat(&interface, Some(config));
 
     eth_control
         .channel
@@ -66,10 +137,20 @@ fn main() {
 
     for subdevice in eth_control.controller.get_subdevices() {
         if subdevice.product_id == EL4732_PRODUCT_ID {
+            if OVERSAMPLE > 1 {
+                eth_control
+                    .channel
+                    .configure_oversampling(subdevice.device_address)
+                    .expect("Failed to configure oversampling");
+
+                el4732.rxpdo = EL4732RxPdo::new(OVERSAMPLE);
+            }
+
+            let s1 = Duration::from_micros(SYNC1_PERIOD_US);
             eth_control
                 .channel
-                .enable_dc_sync0(subdevice.device_address)
-                .expect("Failed to enable DC sync");
+                .enable_dc_sync01(subdevice.device_address, s1)
+                .expect("Failed to enable DC sync01");
         }
     }
 
@@ -88,14 +169,49 @@ fn main() {
     }
 
     println!(
-        "DC system start time {} ns",
-        eth_control.controller.get_dc_system_time_ns()
+        "EL4732 running: {}Hz sine, oversample factor {}, cycle {}us, sync0 {}us, sync1 {}us",
+        SINE_FREQ_HZ, OVERSAMPLE, CYCLE_TIME_US, SYNC0_PERIOD_US, SYNC1_PERIOD_US
     );
 
+    let mut last_cycle = eth_control.controller.cycle;
+    let mut stats = CycleStats::new();
+    let mut skipped_total: u64 = 0;
+
     loop {
-        if let Some(output) = eth_control.app_handle.write_outputs() {
-            sine.fill(&mut samples, AMPLITUDE);
-            el4732.set_output_samples(EL4732Port::AO1 as usize, &samples);
+        if eth_control.controller.cycle == last_cycle {
+            std::hint::spin_loop();
+            continue;
+        }
+        let current_cycle = eth_control.controller.cycle;
+        let cycles_elapsed = current_cycle.wrapping_sub(last_cycle);
+        if cycles_elapsed > 1 {
+            skipped_total += cycles_elapsed - 1;
+        }
+        last_cycle = current_cycle;
+
+        let mbox_start = Instant::now();
+        let output = loop {
+            if let Some(out) = eth_control.app_handle.write_outputs() {
+                break out;
+            }
+            std::hint::spin_loop();
+        };
+        let mailbox_wait = mbox_start.elapsed();
+
+        let write_start = Instant::now();
+        {
+            for (i, slot) in samples_ch1.iter_mut().enumerate() {
+                let p = phase + phase_step_per_slot * i as f64;
+                *slot = (p.sin() * AMPLITUDE).clamp(-1.0, 1.0) as f32;
+            }
+
+            if OVERSAMPLE > 1 {
+                el4732.set_output_samples(EL4732Port::AO1 as usize, &samples_ch1);
+                el4732.set_output_samples(EL4732Port::AO2 as usize, &samples_ch2);
+            } else {
+                el4732.set_output(0, AnalogOutputOutput(samples_ch1[0]));
+                el4732.set_output(1, AnalogOutputOutput(0.0));
+            }
 
             for subdevice in eth_control.controller.get_subdevices() {
                 if subdevice.product_id == EL4732_PRODUCT_ID {
@@ -108,9 +224,13 @@ fn main() {
                         .expect("Failed to write output");
                 }
             }
-        }
 
-        eth_control.app_handle.send_outputs();
-        std::hint::spin_loop();
+            phase = (phase + phase_step_per_cycle * cycles_elapsed as f64) % (2.0 * PI);
+            eth_control.app_handle.send_outputs();
+        }
+        let write_time = write_start.elapsed();
+
+        stats.record(mailbox_wait, write_time);
+        stats.maybe_report(eth_control.controller.cycle_time_us, skipped_total);
     }
 }
