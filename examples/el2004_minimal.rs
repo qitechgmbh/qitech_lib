@@ -51,10 +51,7 @@ fn main() {
 
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
     for sdev in &subdevices {
-        println!(
-            " - {:?}",
-            sdev
-        );
+        println!(" - {:?}", sdev);
     }
 
     // This variable "knows" how to format the Rx PDOs for the EL2004

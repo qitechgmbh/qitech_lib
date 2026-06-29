@@ -1,23 +1,23 @@
 use ethercat_hal::{
     DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig, init_ethercat,
 };
-use std::{env, time::Duration};
 use std::fs::File;
 use std::io::Write;
+use std::{env, time::Duration};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let interface = env::args().nth(1).expect("No Interface-name given");
     let cycle_time_us: u64 = env::args()
-    .nth(2)
-    .expect("No Target Cycle time given")
-    .parse()
-    .expect("Target Cycle time must be a valid number");
+        .nth(2)
+        .expect("No Target Cycle time given")
+        .parse()
+        .expect("Target Cycle time must be a valid number");
 
     let total_cycles: usize = env::args()
-    .nth(3)
-    .expect("No total_cycles given")
-    .parse()
-    .expect("total_cycles must be a valid number");
+        .nth(3)
+        .expect("No total_cycles given")
+        .parse()
+        .expect("total_cycles must be a valid number");
 
     let mut dc_config = DcConfiguration::default();
     dc_config.start_delay = Duration::from_millis(100);
@@ -50,14 +50,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ethercat_control = init_ethercat(&interface, Some(config));
     let ethercat_interface = ethercat_control.channel;
-    
+
     // Rust is playing smart here
     // and doesnt actually touch any pages here (on linux)
-    let mut cycle_times = vec![0u64;total_cycles];
-    let mut jitters = vec![0u64;total_cycles];
+    let mut cycle_times = vec![0u64; total_cycles];
+    let mut jitters = vec![0u64; total_cycles];
     let mut last_cycle = 0;
     let mut cycles_recorded = 0;
-    
+
     // Make sure that every index is written to, so that the pages are HOT
     for val in cycle_times.iter_mut() {
         *val = 0;
@@ -66,7 +66,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for val in jitters.iter_mut() {
         *val = 0;
     }
-
 
     let _res = ethercat_interface.request_state_change(EtherCATState::PreOp);
     std::thread::sleep(Duration::from_millis(5000));
@@ -107,11 +106,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     std::thread::sleep(Duration::from_millis(1000));
-    
+
     // --- STATISTICS CALCULATION ---
     let mut sorted_cycle_times = cycle_times.clone();
-    sorted_cycle_times.sort_unstable();    
-    
+    sorted_cycle_times.sort_unstable();
+
     let mut sorted_jitters = jitters.clone();
     sorted_jitters.sort_unstable();
 
@@ -142,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n================ BENCHMARK RESULTS ================");
     println!("Target Cycle Time:    {} µs", cycle_time_us);
-    println!("Total Cycles Run:     {}", total_cycles);        
+    println!("Total Cycles Run:     {}", total_cycles);
     println!("---------------------------------------------------");
     println!("Cycle Time Metrics:");
     println!("  Min:                {} µs", min_time);

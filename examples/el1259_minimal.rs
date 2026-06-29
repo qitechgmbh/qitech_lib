@@ -56,7 +56,7 @@ fn main() {
                     &el1259.get_config(),
                 )
                 .expect("Failed to write config");
-                
+
             eth_control
                 .channel
                 .enable_dc_sync0(subdevice.device_address)
@@ -146,6 +146,6 @@ fn main() {
                 }
             }
         }
-        eth_handle.send_outputs();        
+        eth_handle.send_outputs();
     }
 }
