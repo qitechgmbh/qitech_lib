@@ -12,7 +12,7 @@ use ethercat_hal::{
 use std::{env, f64::consts::PI, time::{Duration, Instant}};
 
 const CYCLE_TIME_US: u64 = 1000;
-const OVERSAMPLE: usize = OVERSAMPLE_FACTOR as usize;
+const OVERSAMPLE: usize = OVERSAMPLE_FACTOR;
 
 const SYNC0_PERIOD_US: u64 = CYCLE_TIME_US / OVERSAMPLE as u64;
 const SYNC1_PERIOD_US: u64 = SYNC0_PERIOD_US * (OVERSAMPLE as u64 - 1);
@@ -112,8 +112,8 @@ fn main() {
     let phase_step_per_cycle = 2.0 * PI * SINE_FREQ_HZ * cycle_secs;
     let mut phase: f64 = 0.0;
 
-    let mut samples_ch1 = [0.0f32; OVERSAMPLE_FACTOR as usize];
-    let samples_ch2 = [0.0f32; OVERSAMPLE_FACTOR as usize];
+    let mut samples_ch1 = [0.0f32; OVERSAMPLE_FACTOR];
+    let samples_ch2 = [0.0f32; OVERSAMPLE_FACTOR];
 
     let config = MasterConfiguration {
         dc_config: DcConfiguration {
@@ -122,20 +122,21 @@ fn main() {
         },
         ..Default::default()
     };
-    let mut eth_control = init_ethercat(&interface, Some(config));
+    let eth_control = init_ethercat(&interface, Some(config));
+    let mut eth_handle = eth_control.app_handle;
 
     eth_control
         .channel
         .request_state_change(EtherCATState::PreOp)
         .expect("Channel was not ready");
     loop {
-        if matches!(eth_control.controller.state, EtherCATState::PreOp) {
+        if matches!(eth_handle.get_state(), EtherCATState::PreOp) {
             break;
         }
         std::thread::sleep(Duration::from_millis(10));
     }
 
-    for subdevice in eth_control.controller.get_subdevices() {
+    for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
         if subdevice.product_id == EL4732_PRODUCT_ID {
             if OVERSAMPLE > 1 {
                 eth_control
@@ -158,14 +159,15 @@ fn main() {
         .channel
         .request_state_change(EtherCATState::Op)
         .expect("Channel was not ready");
-    'wait_op: loop {
-        std::thread::sleep(Duration::from_millis(10));
-        for subdevice in eth_control.controller.get_subdevices() {
-            if !subdevice.initialized {
-                continue 'wait_op;
-            }
+
+    std::thread::sleep(Duration::from_millis(2000));
+
+    loop {
+        if eth_handle.check_all_op() {
+            break;
+        } else {
+            std::thread::sleep(Duration::from_millis(10));
         }
-        break;
     }
 
     println!(
@@ -173,16 +175,18 @@ fn main() {
         SINE_FREQ_HZ, OVERSAMPLE, CYCLE_TIME_US, SYNC0_PERIOD_US, SYNC1_PERIOD_US
     );
 
-    let mut last_cycle = eth_control.controller.cycle;
+    let mut last_cycle = eth_handle.get_current_cycle();
     let mut stats = CycleStats::new();
     let mut skipped_total: u64 = 0;
 
+    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+
     loop {
-        if eth_control.controller.cycle == last_cycle {
+        if eth_handle.get_current_cycle() == last_cycle {
             std::hint::spin_loop();
             continue;
         }
-        let current_cycle = eth_control.controller.cycle;
+        let current_cycle = eth_handle.get_current_cycle();
         let cycles_elapsed = current_cycle.wrapping_sub(last_cycle);
         if cycles_elapsed > 1 {
             skipped_total += cycles_elapsed - 1;
@@ -191,7 +195,7 @@ fn main() {
 
         let mbox_start = Instant::now();
         let output = loop {
-            if let Some(out) = eth_control.app_handle.write_outputs() {
+            if let Some(out) = eth_handle.write_outputs() {
                 break out;
             }
             std::hint::spin_loop();
@@ -213,7 +217,7 @@ fn main() {
                 el4732.set_output(1, AnalogOutputOutput(0.0));
             }
 
-            for subdevice in eth_control.controller.get_subdevices() {
+            for subdevice in &subdevices {
                 if subdevice.product_id == EL4732_PRODUCT_ID {
                     el4732
                         .output_pre_process()
@@ -226,11 +230,11 @@ fn main() {
             }
 
             phase = (phase + phase_step_per_cycle * cycles_elapsed as f64) % (2.0 * PI);
-            eth_control.app_handle.send_outputs();
+            eth_handle.send_outputs();
         }
         let write_time = write_start.elapsed();
 
         stats.record(mailbox_wait, write_time);
-        stats.maybe_report(eth_control.controller.cycle_time_us, skipped_total);
+        stats.maybe_report(eth_handle.get_cycle_time_us(), skipped_total);
     }
 }
