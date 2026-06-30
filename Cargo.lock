@@ -1270,7 +1270,6 @@ dependencies = [
  "ethercat_hal_derive",
  "machines",
  "modbus",
- "serial",
  "tokio",
  "units",
 ]
@@ -1447,16 +1446,6 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
-]
-
-[[package]]
-name = "serial"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "tokio",
- "tokio-modbus",
- "tokio-serial",
 ]
 
 [[package]]
