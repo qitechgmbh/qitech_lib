@@ -301,7 +301,7 @@ where
     pub fn try_get_subdevices_vec_sync(&self) -> Result<Vec<MetaSubdevice>, anyhow::Error> {
         let unlocked = self.subdevices.blocking_lock();
         let count = self.get_subdevice_count() as usize;
-        Ok(unlocked.clone()[0..count].to_vec())    
+        Ok(unlocked.clone()[0..count].to_vec())
     }
 
     pub async fn try_get_subdevices_vec(&self) -> Result<Vec<MetaSubdevice>, anyhow::Error> {
