@@ -11,7 +11,6 @@ modbus = { path = "modbus"}
 machines = { path = "machines" }
 units = {path = "units"}
 common = {path = "common"}
-serial = {path = "serial"}
 tokio = "1.49.0"
 
 [lib]
