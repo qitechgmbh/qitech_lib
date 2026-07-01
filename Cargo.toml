@@ -13,6 +13,11 @@ units = {path = "units"}
 common = {path = "common"}
 tokio = "1.49.0"
 
+
+[dev-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+postcard = { version = "1.0", features = ["alloc"] }
+
 [lib]
 
 [features]
