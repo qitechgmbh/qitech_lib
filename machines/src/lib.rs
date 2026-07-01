@@ -22,22 +22,22 @@ impl MachineIdentificationUnique {
     }
 }
 
-#[repr(align(64))]
 pub struct MachineData {
     pub type_id: TypeId,
     pub length: usize,
     pub data: [u8; MAX_DATA_LEN],
 }
 
-/*
-    How should the raw data look like?
-    Initial state should be all zeroes
-    Endianness: Little endian
-    first 4 bytes: vendor,machine,serial
-    then 4 bytes data length: 256 for example
-    then the data: of 256 bytes
+impl Default for MachineData {
+    fn default() -> Self {
+        Self {
+            type_id: TypeId::of::<()>(),
+            length: 0,
+            data: [0u8; 2048],
+        }
+    }
+}
 
-*/
 pub struct MachineDataRegistry {
     // Each slot is a fixed-size buffer
     pub storage: HashMap<MachineIdentificationUnique, MachineData>,
@@ -53,6 +53,31 @@ impl MachineDataRegistry {
             None => (),
         }
     }
+
+    pub fn store<T: ConvertMachineData + Default>(
+        &mut self,
+        ident: MachineIdentificationUnique,
+        value: &T,
+    ) -> Result<(), &'static str> {
+        self.storage.insert(ident, MachineData::default());
+        let v = self.storage.get_mut(&ident);
+        let machine_data = match v {
+            Some(v) => v,
+            None => return Err("Failed to insert machine_data"),
+        };
+        value.to_machine_data(machine_data)?;
+        Ok(())
+    }
+
+    pub fn load<T: ConvertMachineData + Default>(
+        &self,
+        ident: &MachineIdentificationUnique,
+    ) -> Result<T, &'static str> {
+        let machine_data = self.storage.get(ident).ok_or("No entry for ident")?;
+        let mut result: T = T::default();
+        T::from_machine_data(machine_data, &mut result)?;
+        Ok(result)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -65,4 +90,9 @@ pub trait Machine {
     fn act(&mut self, machine_data: Option<&mut MachineDataRegistry>) -> Result<(), MachineError>;
     fn react(&mut self, registry: &MachineDataRegistry);
     fn get_identification(&self) -> MachineIdentificationUnique;
+}
+
+pub trait ConvertMachineData: Sized + 'static {
+    fn to_machine_data(&self, data: &mut MachineData) -> Result<(), &'static str>;
+    fn from_machine_data(machine_data: &MachineData, out: &mut Self) -> Result<(), &'static str>;
 }
