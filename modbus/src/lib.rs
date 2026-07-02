@@ -51,7 +51,7 @@ pub fn create_modbus_device_context(
     dev: &SerialDeviceMeta,
 ) -> Result<ClientContext, anyhow::Error> {
     let device_builder = create_modbus_builder(dev)?;
-    let port = SerialStream::open(&device_builder).unwrap();
+    let port = SerialStream::open(&device_builder)?;
     let slave = Slave(dev.slave_id);
     match dev.modbus_type {
         ModbusType::Rtu => Ok(rtu::attach_slave(port, slave)),
