@@ -569,6 +569,7 @@ pub fn init_ethercat_mock(
     };
 }
 
+#[cfg(target_os = "linux")]
 pub fn set_current_thread_rt_priority(priority: i32) {
     unsafe {
         let thread_id = libc::pthread_self();
@@ -594,6 +595,13 @@ pub fn set_current_thread_rt_priority(priority: i32) {
             println!("Thread priority set to SCHED_FIFO with level {}", priority);
         }
     }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn set_current_thread_rt_priority(_priority: i32) {
+    eprintln!(
+        "set_current_thread_rt_priority: real-time scheduling is not available on this platform"
+    );
 }
 
 // Currently ignored by controller, but should be used to select driver for txrx

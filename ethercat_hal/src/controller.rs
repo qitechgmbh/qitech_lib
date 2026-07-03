@@ -75,6 +75,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         _ => continue,
                     }
 
+                    #[cfg(not(target_os = "linux"))]
+                    use ethercrab::std::tx_rx_task;
+                    #[cfg(target_os = "linux")]
                     use ethercrab::std::tx_rx_task_io_uring;
                     if self.interface.is_some() {
                         let (tx, rx, pdu) = PDU_STORAGE.try_split().expect("can only split once");
@@ -95,6 +98,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                         );
                                         // Pin to the last core (e.g., Core 3 on a 4-core system)
                                         core_affinity::set_for_current(id);
+                                        #[cfg(target_os = "linux")]
                                         if let Some(irq_core) = opt.pin_irq_core {
                                             let res = set_irq_affinity(&interface, irq_core as u32);
                                             if res.is_err() {
@@ -109,8 +113,18 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     }
                                     None => (),
                                 };
+                                #[cfg(target_os = "linux")]
                                 tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
                                     .expect("Failed to run TX/RX task (io_uring)");
+                                #[cfg(not(target_os = "linux"))]
+                                get_async_runtime().block_on(async {
+                                    match tx_rx_task(&interface, pdu_tx, pdu_rx) {
+                                        Ok(task) => {
+                                            task.await.expect("TX/RX task failed");
+                                        }
+                                        Err(e) => panic!("Failed to create TX/RX task: {e}"),
+                                    }
+                                });
                             });
 
                         maindevice = Some(MainDevice::new(
