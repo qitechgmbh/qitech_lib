@@ -634,6 +634,9 @@ pub fn configure_oversampling(
 ) -> Result<(), anyhow::Error> {
     let rt = get_async_runtime();
 
+    let sync0_period = 250 / OVERSAMPLE_FACTOR as u64;
+    let sync1_period = Duration::from_micros(sync0_period * (OVERSAMPLE_FACTOR as u64 - 1));
+
     rt.block_on(async {
         for mut subdevice in group.iter_mut(maindevice) {
             if subdevice.configured_address() == device_address as u16 {
@@ -641,6 +644,9 @@ pub fn configure_oversampling(
                     (0x1600, OVERSAMPLE_FACTOR as u16),
                     (0x1700, OVERSAMPLE_FACTOR as u16),
                 ]);
+                subdevice.set_dc_sync(DcSync::Sync01 {
+                    sync1_period: sync1_period,
+                });
                 return Ok(());
             }
         }

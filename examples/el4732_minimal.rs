@@ -1,6 +1,6 @@
 use bitvec::slice::BitSlice;
 use ethercat_hal::{
-    DcConfiguration, EtherCATState, MasterConfiguration,
+    DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig,
     devices::{
         EthercatDevice, EthercatDeviceProcessing,
         el4732::{EL4732, EL4732Port, EL4732RxPdo, EL4732_PRODUCT_ID},
@@ -11,7 +11,7 @@ use ethercat_hal::{
 };
 use std::{env, f64::consts::PI, time::{Duration, Instant}};
 
-const CYCLE_TIME_US: u64 = 1000;
+const CYCLE_TIME_US: u64 = 250;
 const OVERSAMPLE: usize = OVERSAMPLE_FACTOR;
 
 const SYNC0_PERIOD_US: u64 = CYCLE_TIME_US / OVERSAMPLE as u64;
@@ -115,13 +115,35 @@ fn main() {
     let mut samples_ch1 = [0.0f32; OVERSAMPLE_FACTOR];
     let samples_ch2 = [0.0f32; OVERSAMPLE_FACTOR];
 
-    let config = MasterConfiguration {
-        dc_config: DcConfiguration {
-            sync0_period: Duration::from_micros(SYNC0_PERIOD_US),
-            ..Default::default()
-        },
-        ..Default::default()
+    let mut dc_config = DcConfiguration::default();
+    dc_config.start_delay = Duration::from_millis(100);
+    dc_config.sync0_period = Duration::from_micros(250);
+    dc_config.sync0_shift = Duration::from_micros(CYCLE_TIME_US / 2);
+    dc_config.target_dc_tick = 500;
+
+    /*
+        It seems like ethercat_loop_thread_core and ethercat_io_thread_core on the same core works
+        with SCHED_FIFO, however ethercat_loop_thread_priority needs to have a much lower priority, like 50 for example.
+        This means that the io code will never get preempted, while the io only actually runs when triggered through the tx_rx_dc code
+    */
+    let rt = RtOptimizationConfig {
+        ethercat_loop_thread_core: 3,
+        ethercat_loop_thread_priority: 50,
+        ethercat_io_thread_core: 3,
+        ethercat_io_thread_priority: 99,
+        pin_irq_core: Some(3),
+        lock_memory: true,
     };
+
+    let config = MasterConfiguration {
+        target_cycle_time_us: CYCLE_TIME_US as usize,
+        tx_rx_config: ethercat_hal::MasterTxRxConfig::TxRxIoUring,
+        dc_config,
+        realtime_optimizations: Some(rt),
+        wkc_mismatch_threshold: 5,
+        op_ramp_grace_cycles: 10000,
+    };
+
     let eth_control = init_ethercat(&interface, Some(config));
     let mut eth_handle = eth_control.app_handle;
 
