@@ -1,5 +1,5 @@
 use ethercat_hal::{
-    DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig, init_ethercat,
+    DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig, init_ethercat, set_current_thread_rt_priority,
 };
 use std::fs::File;
 use std::io::Write;
@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         op_ramp_grace_cycles: 10000,
     };
 
-    let ethercat_control = init_ethercat(&interface, Some(config));
+    let mut ethercat_control = init_ethercat(&interface, Some(config));
     let ethercat_interface = ethercat_control.channel;
 
     // Rust is playing smart here
@@ -90,13 +90,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let _res = ethercat_interface.request_state_change(EtherCATState::Op);
     std::thread::sleep(Duration::from_millis(5000));
-
     let mut missed_frames : usize = 0;
 
-    while cycles_recorded < total_cycles {
+
+    let id = core_affinity::CoreId {
+        id: 2,
+    };
+    set_current_thread_rt_priority(
+        99,
+    );
+    core_affinity::set_for_current(id);
+  
+    while cycles_recorded < total_cycles {        
+        while ethercat_control.app_handle.write_outputs().is_none() {}        
+        let t = ethercat_control.app_handle.write_outputs().unwrap();
+        t[0] = 0;
+        ethercat_control.app_handle.send_outputs();
+        
         // Spin until io thread has advanced past our last seen cycle
-        while last_cycle == ethercat_control.app_handle.get_current_cycle() {}
-        let current_controller_cycle = ethercat_control.app_handle.get_current_cycle();        
+        //while last_cycle == ethercat_control.app_handle.get_current_cycle() {}
+        let current_controller_cycle = ethercat_control.app_handle.get_current_cycle();
+	if last_cycle != 0 { 
+	    if current_controller_cycle - last_cycle > 1 {
+	        missed_frames += (current_controller_cycle - last_cycle - 1) as usize;
+	    }
+	}
+        if current_controller_cycle - last_cycle > 1 {
+            missed_frames += 1;
+        }
+
         if current_controller_cycle > last_cycle {
             last_cycle = current_controller_cycle;
             let cycle_time = ethercat_control.app_handle.get_cycle_time_us();
@@ -104,12 +126,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let jitter = (cycle_time as i64 - cycle_time_us as i64).abs() as u64;
             jitters[cycles_recorded] = jitter;
             cycles_recorded += 1;
-        } else if current_controller_cycle < last_cycle {
-            // Monotonicity is broken (cycle went backwards or wrapped around)
-            missed_frames += 1;
-            // Strategy choice: Either update last_cycle to prevent an infinite loop,
-            // or leave it if you expect the hardware/driver to correct itself.
-            last_cycle = current_controller_cycle; 
         }
     }
 

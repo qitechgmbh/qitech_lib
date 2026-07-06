@@ -541,9 +541,27 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                         };
 
                         let mut is_all_op = false;
-                        let mut not_all_op_cycles: u32 = 0;
+                        let mut not_all_op_cycles: u32 = 0;    
+                        let mut no_outputs: usize = 0;                    
                         loop {
                             let cycle_start = Instant::now();
+                            match self.output_consumer.read() {
+                                    Some(full_buffer) => {
+                                        let mut current_offset = 0;
+                                            for subdevice in group.iter(&maindevice) {
+                                                let mut output = subdevice.outputs_raw_mut();
+                                                let len = output.len();
+                                                output.copy_from_slice(
+                                                            &full_buffer[current_offset..current_offset + len],
+                                                );
+                                                current_offset += len;
+                                            }
+                                    self.output_consumer.finish_read();
+                                }
+                                None => {                                                                    
+                                }
+                            };
+
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");                            
                             self.dc_system_time_ns
                                 .store(res.extra.dc_system_time, Relaxed);                            
@@ -603,40 +621,23 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                 }
                             }
 
-                            match self.output_consumer.read() {
-                                Some(full_buffer) => {
-                                    // We get a mutable slice to the whole buffer to make sub-slicing easier
-                                    let mut current_offset = 0;
-                                    for subdevice in group.iter(&maindevice) {
-                                        let mut output = subdevice.outputs_raw_mut();
-                                        let len = output.len();
-                                        output.copy_from_slice(
-                                            &full_buffer[current_offset..current_offset + len],
-                                        );
-                                        current_offset += len;
-                                    }
-                                    self.output_consumer.finish_read();
-                                }
-                                None => {}
-                            };
-
-                            match self.input_producer.input_buffer_mut() {
+                             match self.input_producer.input_buffer_mut() {
                                 Some(buffer) => {
-                                    // We get a mutable slice to the whole buffer to make sub-slicing easier
-                                    let mut current_offset = 0;
-                                    for subdevice in group.iter(&maindevice) {
-                                        let len = subdevice.io_raw().inputs().len();
-                                        if current_offset + len <= ETHERCAT_TX_RX_SIZE {
-                                            buffer[current_offset..current_offset + len]
-                                                .copy_from_slice(subdevice.io_raw().inputs());
-                                            current_offset += len;
-                                        } else {
-                                            break;
+                                        // We get a mutable slice to the whole buffer to make sub-slicing easier
+                                        let mut current_offset = 0;
+                                        for subdevice in group.iter(&maindevice) {
+                                            let len = subdevice.io_raw().inputs().len();
+                                            if current_offset + len <= ETHERCAT_TX_RX_SIZE {
+                                                buffer[current_offset..current_offset + len]
+                                                    .copy_from_slice(subdevice.io_raw().inputs());
+                                                current_offset += len;
+                                            } else {
+                                                break;
+                                            }
                                         }
+                                        self.input_producer.publish();                            
                                     }
-                                    self.input_producer.publish();
-                                }
-                                None => {}
+                                    None => {}
                             }
 
                             if self.cycle.load(Relaxed) == u64::MAX {
