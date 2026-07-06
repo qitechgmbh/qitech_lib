@@ -2,7 +2,7 @@ use crate::ethercat_helpers::configure_oversampling;
 use crate::ethercat_helpers::enable_dc_sync01;
 use crate::{
     ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES,
-    PDI_LEN, PDU_STORAGE, Producer, SdoType, TripleBufProducer,
+    PDI_LEN, PDU_STORAGE, Producer, SdoType,
     ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::{read_device_identifications, write_device_identifications},
@@ -27,7 +27,7 @@ use std::{
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
 
-impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
+impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
     pub fn ethercat_state_machine(&mut self) -> Result<(), anyhow::Error> {
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> =
@@ -544,10 +544,11 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         let mut not_all_op_cycles: u32 = 0;
                         loop {
                             let cycle_start = Instant::now();
-                            let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                            let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");                            
                             self.dc_system_time_ns
-                                .store(res.extra.dc_system_time, Relaxed);
+                                .store(res.extra.dc_system_time, Relaxed);                            
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
+
                             if !is_all_op {
                                 if res.all_op() {
                                     let mut subdevice_guard = self.subdevices.lock().await;
@@ -637,6 +638,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 }
                                 None => {}
                             }
+
                             if self.cycle.load(Relaxed) == u64::MAX {
                                 self.cycle.store(0, Relaxed);
                             } else {

@@ -91,10 +91,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _res = ethercat_interface.request_state_change(EtherCATState::Op);
     std::thread::sleep(Duration::from_millis(5000));
 
+    let mut missed_frames : usize = 0;
+
     while cycles_recorded < total_cycles {
         // Spin until io thread has advanced past our last seen cycle
         while last_cycle == ethercat_control.app_handle.get_current_cycle() {}
-        let current_controller_cycle = ethercat_control.app_handle.get_current_cycle();
+        let current_controller_cycle = ethercat_control.app_handle.get_current_cycle();        
         if current_controller_cycle > last_cycle {
             last_cycle = current_controller_cycle;
             let cycle_time = ethercat_control.app_handle.get_cycle_time_us();
@@ -102,6 +104,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let jitter = (cycle_time as i64 - cycle_time_us as i64).abs() as u64;
             jitters[cycles_recorded] = jitter;
             cycles_recorded += 1;
+        } else if current_controller_cycle < last_cycle {
+            // Monotonicity is broken (cycle went backwards or wrapped around)
+            missed_frames += 1;
+            // Strategy choice: Either update last_cycle to prevent an infinite loop,
+            // or leave it if you expect the hardware/driver to correct itself.
+            last_cycle = current_controller_cycle; 
         }
     }
 
@@ -149,6 +157,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Max:                {} µs", max_time);
     println!("  Std Dev:            {:.2} µs", std_dev);
     println!("  99th Percentile:    {} µs", p99_time);
+    println!("  Missing Frames:                {}", missed_frames);
     println!("---------------------------------------------------");
     println!("Jitter Metrics (Deviation from Target):");
     println!("  99th Pct Jitter:    {} µs", p99_jitter);
