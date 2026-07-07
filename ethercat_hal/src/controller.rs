@@ -2,7 +2,7 @@ use crate::ethercat_helpers::configure_oversampling;
 use crate::ethercat_helpers::enable_dc_sync01;
 use crate::{
     ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES,
-    PDI_LEN, PDU_STORAGE, Producer, SdoType, TripleBufProducer,
+    PDI_LEN, PDU_STORAGE, Producer, SdoType,
     ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::{read_device_identifications, write_device_identifications},
@@ -27,7 +27,7 @@ use std::{
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
 
-impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
+impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
     pub fn ethercat_state_machine(&mut self) -> Result<(), anyhow::Error> {
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> =
@@ -548,6 +548,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             self.dc_system_time_ns
                                 .store(res.extra.dc_system_time, Relaxed);
                             self.next_cycle = cycle_start + res.extra.next_cycle_wait;
+
                             if !is_all_op {
                                 if res.all_op() {
                                     let mut subdevice_guard = self.subdevices.lock().await;
@@ -602,23 +603,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 }
                             }
 
-                            match self.output_consumer.read() {
-                                Some(full_buffer) => {
-                                    // We get a mutable slice to the whole buffer to make sub-slicing easier
-                                    let mut current_offset = 0;
-                                    for subdevice in group.iter(&maindevice) {
-                                        let mut output = subdevice.outputs_raw_mut();
-                                        let len = output.len();
-                                        output.copy_from_slice(
-                                            &full_buffer[current_offset..current_offset + len],
-                                        );
-                                        current_offset += len;
-                                    }
-                                    self.output_consumer.finish_read();
-                                }
-                                None => {}
-                            };
-
                             match self.input_producer.input_buffer_mut() {
                                 Some(buffer) => {
                                     // We get a mutable slice to the whole buffer to make sub-slicing easier
@@ -637,12 +621,32 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 }
                                 None => {}
                             }
+
+                            // This gives the client side time to look at the inputs and write outputs
+                            // Might be a bit too tight if running < 125us but at that point it isnt really stable anyways
+                            spinner.sleep_until(self.next_cycle - Duration::from_micros(10));
+                            match self.output_consumer.read() {
+                                Some(full_buffer) => {
+                                    let mut current_offset = 0;
+                                    for subdevice in group.iter(&maindevice) {
+                                        let mut output = subdevice.outputs_raw_mut();
+                                        let len = output.len();
+                                        output.copy_from_slice(
+                                            &full_buffer[current_offset..current_offset + len],
+                                        );
+                                        current_offset += len;
+                                    }
+                                    self.output_consumer.finish_read();
+                                }
+                                None => {}
+                            };
+                            // Sleep the rest of the deadline
+                            spinner.sleep_until(self.next_cycle);
                             if self.cycle.load(Relaxed) == u64::MAX {
                                 self.cycle.store(0, Relaxed);
                             } else {
                                 self.cycle.fetch_add(1, Relaxed);
                             }
-                            spinner.sleep_until(self.next_cycle);
                             self.cycle_time_us
                                 .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
                         }

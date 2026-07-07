@@ -349,9 +349,9 @@ where
     pub join_handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
 }
 
-pub type StandardEtherCATAppHandle = EtherCATAppHandle<TripleBufConsumer, TripleBufProducer>;
-pub type MockEtherCATAppHandle = EtherCATAppHandle<MockConsumer, MockProducer>;
-pub type StandardEtherCATController = EtherCATController<TripleBufConsumer, TripleBufProducer>;
+pub type StdEcatHandle = EtherCATAppHandle<Arc<Mailbox>, Arc<Mailbox>>;
+pub type MockEcatHandle = EtherCATAppHandle<MockConsumer, MockProducer>;
+pub type StdEcatController = EtherCATController<Arc<Mailbox>, Arc<Mailbox>>;
 
 /*Metadata for a Subdevice Contains start and end of the given subdevices pdu*/
 #[derive(Clone, Copy, Debug)]
@@ -687,18 +687,17 @@ impl Default for MasterConfiguration {
 pub fn init_ethercat(
     interface_name: &str,
     config: Option<MasterConfiguration>,
-) -> EtherCATControl<TripleBufConsumer, Arc<Mailbox>> {
+) -> EtherCATControl<Arc<Mailbox>, Arc<Mailbox>> {
     use std::sync::atomic::AtomicU8;
-
     let (tx, rx) = mpsc::channel();
-    let (input_producer, input_consumer) =
-        triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
-
     let mailbox = Arc::new(Mailbox {
         data: [0u8; ETHERCAT_TX_RX_SIZE].into(),
         full: AtomicBool::new(false),
     });
-
+    let mailbox2 = Arc::new(Mailbox {
+        data: [0u8; ETHERCAT_TX_RX_SIZE].into(),
+        full: AtomicBool::new(false),
+    });
     let cycle: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
     let cycle_time_us: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
     let next_cycle_us: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
@@ -711,9 +710,7 @@ pub fn init_ethercat(
 
     let mut controller = match config {
         Some(conf) => EtherCATController::new(
-            TripleBufProducer {
-                output_producer: input_producer,
-            },
+            mailbox2.clone(),
             mailbox.clone(),
             rx,
             Some(interface_name.to_string()),
@@ -727,9 +724,7 @@ pub fn init_ethercat(
             all_op.clone(),
         ),
         None => EtherCATController::new(
-            TripleBufProducer {
-                output_producer: input_producer,
-            },
+            mailbox2.clone(),
             mailbox.clone(),
             rx,
             Some(interface_name.to_string()),
@@ -745,7 +740,7 @@ pub fn init_ethercat(
     };
 
     let app_handle = EtherCATAppHandle {
-        input_consumer: TripleBufConsumer { input_consumer },
+        input_consumer: mailbox2,
         output_producer: mailbox,
         cycle,
         cycle_time_us,

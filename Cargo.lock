@@ -1326,6 +1326,7 @@ version = "0.1.0"
 dependencies = [
  "bitvec",
  "common",
+ "core_affinity",
  "ethercat_hal",
  "ethercat_hal_derive",
  "machines",
