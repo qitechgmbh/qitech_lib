@@ -120,7 +120,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let _op_subdevices = ec_app_interface.try_get_subdevices_vec_sync().unwrap();
 
-    // Due to the startup logic missed frames is always at least one here ...
     // Even though no frame was actually missed. For more accurate logic the counter of missed_frames
     // should be moved to the controller logic
     while cycles_recorded < total_cycles {
@@ -142,9 +141,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if current_controller_cycle - last_cycle > 1 {
                 missed_frames += (current_controller_cycle - last_cycle - 1) as usize;
             }
-        }
-        if current_controller_cycle - last_cycle > 1 {
-            missed_frames += 1;
         }
 
         if current_controller_cycle > last_cycle {
@@ -190,6 +186,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let json_string = format!("{:?}", cycle_times);
     let mut file = File::create("/tmp/output.json")?;
     file.write_all(json_string.as_bytes())?;
+
+    // Due to the startup logic missed frames is always at least one here not entirely sure why?
+    // will be decremented by one at the end and also it isnt actually a missed frame, just one 
+
 
     println!("\n================ BENCHMARK RESULTS ================");
     println!("Target Cycle Time:    {} µs", setup.cycle_time_us);
