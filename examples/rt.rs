@@ -1,36 +1,34 @@
 use ethercat_hal::{
-    DcConfiguration, EtherCATState, EtherCATThreadChannel, MasterConfiguration, RtOptimizationConfig, StdEcatHandle, init_ethercat, set_current_thread_rt_priority,
+    DcConfiguration, EtherCATState, EtherCATThreadChannel, MasterConfiguration,
+    RtOptimizationConfig, StdEcatHandle, init_ethercat, set_current_thread_rt_priority,
 };
 use std::fs::File;
 use std::io::Write;
 use std::{env, time::Duration};
 struct Setup {
-    pub total_cycles : usize,
-    pub cycle_time_us : u64,
-    pub ec_interface : Option<StdEcatHandle>,
-    pub ec_config_interface : Option<EtherCATThreadChannel>,
+    pub total_cycles: usize,
+    pub cycle_time_us: u64,
+    pub ec_interface: Option<StdEcatHandle>,
+    pub ec_config_interface: Option<EtherCATThreadChannel>,
 }
 
 fn setup() -> Setup {
-    let interface =    env::args()
-        .nth(1)
-        .expect("No Interface given");
-    let mut setup : Setup = 
-        Setup {
-            cycle_time_us:  env::args()
+    let interface = env::args().nth(1).expect("No Interface given");
+    let mut setup: Setup = Setup {
+        cycle_time_us: env::args()
             .nth(2)
             .expect("No Target Cycle time given")
             .parse()
             .expect("Target Cycle time must be a valid number"),
 
-            total_cycles: env::args()
+        total_cycles: env::args()
             .nth(3)
             .expect("No total_cycles given")
             .parse()
             .expect("total_cycles must be a valid number"),
-            ec_interface : None,
-            ec_config_interface: None
-        };
+        ec_interface: None,
+        ec_config_interface: None,
+    };
     let mut dc_config = DcConfiguration::default();
     dc_config.start_delay = Duration::from_millis(100);
     dc_config.sync0_period = Duration::from_micros(setup.cycle_time_us);
@@ -66,24 +64,19 @@ fn setup() -> Setup {
 }
 
 // Make sure that every index is written to, so that the pages are HOT, meaning they are actually allocated in RAM
-fn warm_up_memory(vec : &mut Vec<u64> ){
+fn warm_up_memory(vec: &mut Vec<u64>) {
     for val in vec.iter_mut() {
         *val = 0;
     }
 }
 
-fn apply_rt(){
+fn apply_rt() {
     /*
         Run The Client loop with max prio, on isolated core 2
     */
-    let id = core_affinity::CoreId {
-        id: 2,
-    };
-    set_current_thread_rt_priority(
-        99,
-    );
+    let id = core_affinity::CoreId { id: 2 };
+    set_current_thread_rt_priority(99);
     core_affinity::set_for_current(id);
-  
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -91,15 +84,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let total_cycles = setup.total_cycles;
     let ec_config_interface = setup.ec_config_interface.unwrap();
     let mut ec_app_interface = setup.ec_interface.unwrap();
-    
+
     // Rust is playing smart here
     // and doesnt actually touch any pages here (on linux)
     let mut cycle_times = vec![0u64; total_cycles];
     let mut jitters = vec![0u64; total_cycles];
     let mut last_cycle = 0;
     let mut cycles_recorded = 0;
-    let mut missed_frames : usize = 0;
-    
+    let mut missed_frames: usize = 0;
+
     warm_up_memory(&mut cycle_times);
     warm_up_memory(&mut jitters);
 
@@ -111,9 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ec_app_interface.get_subdevice_count()
     );
 
-    let subdevices = ec_app_interface
-        .try_get_subdevices_vec_sync()
-        .unwrap();
+    let subdevices = ec_app_interface.try_get_subdevices_vec_sync().unwrap();
 
     for i in 0..ec_app_interface.get_subdevice_count() {
         println!("{:?}", subdevices[i as usize].get_name());
@@ -124,38 +115,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let _res = ec_config_interface.request_state_change(EtherCATState::Op);
     std::thread::sleep(Duration::from_millis(5000));
-    
+
     apply_rt();
 
-    let _op_subdevices = ec_app_interface
-        .try_get_subdevices_vec_sync()
-        .unwrap();
-
+    let _op_subdevices = ec_app_interface.try_get_subdevices_vec_sync().unwrap();
 
     // Due to the startup logic missed frames is always at least one here ...
     // Even though no frame was actually missed. For more accurate logic the counter of missed_frames
     // should be moved to the controller logic
     while cycles_recorded < total_cycles {
-
         while ec_app_interface.get_inputs().is_none() {}
         let _inputs = ec_app_interface.get_inputs().unwrap();
         // Do something with the inputs here
-        // ... 
+        // ...
         ec_app_interface.finish_read();
 
-        while ec_app_interface.write_outputs().is_none() {}        
+        while ec_app_interface.write_outputs().is_none() {}
         let outputs = ec_app_interface.write_outputs().unwrap();
         outputs[0] = 0;
         ec_app_interface.send_outputs();
-        
+
         // Spin until io thread has advanced past our last seen cycle
         //while last_cycle == ethercat_control.app_handle.get_current_cycle() {}
         let current_controller_cycle = ec_app_interface.get_current_cycle();
-	if last_cycle != 0 { 
-	    if current_controller_cycle - last_cycle > 1 {
-	        missed_frames += (current_controller_cycle - last_cycle - 1) as usize;
-	    }
-	}
+        if last_cycle != 0 {
+            if current_controller_cycle - last_cycle > 1 {
+                missed_frames += (current_controller_cycle - last_cycle - 1) as usize;
+            }
+        }
         if current_controller_cycle - last_cycle > 1 {
             missed_frames += 1;
         }
@@ -214,7 +201,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Max:                {} µs", max_time);
     println!("  Std Dev:            {:.2} µs", std_dev);
     println!("  99th Percentile:    {} µs", p99_time);
-    println!("  Missing Frames:                {}", missed_frames);
+    println!("  Missing Frames:     {}", missed_frames);
     println!("---------------------------------------------------");
     println!("Jitter Metrics (Deviation from Target):");
     println!("  99th Pct Jitter:    {} µs", p99_jitter);
