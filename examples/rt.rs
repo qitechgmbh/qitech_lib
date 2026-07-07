@@ -5,6 +5,7 @@ use ethercat_hal::{
 use std::fs::File;
 use std::io::Write;
 use std::{env, time::Duration};
+
 struct Setup {
     pub total_cycles: usize,
     pub cycle_time_us: u64,
@@ -70,13 +71,32 @@ fn warm_up_memory(vec: &mut Vec<u64>) {
     }
 }
 
+//  Run The Client loop with max prio, on isolated core 2
 fn apply_rt() {
-    /*
-        Run The Client loop with max prio, on isolated core 2
-    */
     let id = core_affinity::CoreId { id: 2 };
     set_current_thread_rt_priority(99);
     core_affinity::set_for_current(id);
+}
+
+fn move_to_op(ec_config_interface: &EtherCATThreadChannel, ec_app_interface: &StdEcatHandle) {
+    let _res = ec_config_interface.request_state_change(EtherCATState::PreOp);
+    std::thread::sleep(Duration::from_millis(5000));
+
+    println!(
+        "found {:?} ethercat terminals: ",
+        ec_app_interface.get_subdevice_count()
+    );
+
+    let subdevices = ec_app_interface.try_get_subdevices_vec_sync().unwrap();
+    for i in 0..ec_app_interface.get_subdevice_count() {
+        println!("{:?}", subdevices[i as usize].get_name());
+        let addr = subdevices[i as usize].device_address;
+        if subdevices[i as usize].get_name().unwrap() != "EL4008" {
+            ec_config_interface.enable_dc_sync0(addr).unwrap();
+        }
+    }
+    let _res = ec_config_interface.request_state_change(EtherCATState::Op);
+    std::thread::sleep(Duration::from_millis(5000));
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -95,30 +115,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     warm_up_memory(&mut cycle_times);
     warm_up_memory(&mut jitters);
-
-    let _res = ec_config_interface.request_state_change(EtherCATState::PreOp);
-    std::thread::sleep(Duration::from_millis(5000));
-
-    println!(
-        "found {:?} ethercat terminals: ",
-        ec_app_interface.get_subdevice_count()
-    );
-
-    let subdevices = ec_app_interface.try_get_subdevices_vec_sync().unwrap();
-
-    for i in 0..ec_app_interface.get_subdevice_count() {
-        println!("{:?}", subdevices[i as usize].get_name());
-        let addr = subdevices[i as usize].device_address;
-        if subdevices[i as usize].get_name().unwrap() != "EL4008" {
-            ec_config_interface.enable_dc_sync0(addr).unwrap();
-        }
-    }
-    let _res = ec_config_interface.request_state_change(EtherCATState::Op);
-    std::thread::sleep(Duration::from_millis(5000));
-
+    move_to_op(&ec_config_interface, &ec_app_interface);
+    //let op_subdevices = ec_app_interface.try_get_subdevices_vec_sync().unwrap();
     apply_rt();
-
-    let _op_subdevices = ec_app_interface.try_get_subdevices_vec_sync().unwrap();
 
     // Even though no frame was actually missed. For more accurate logic the counter of missed_frames
     // should be moved to the controller logic
@@ -135,7 +134,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ec_app_interface.send_outputs();
 
         // Spin until io thread has advanced past our last seen cycle
-        //while last_cycle == ethercat_control.app_handle.get_current_cycle() {}
         let current_controller_cycle = ec_app_interface.get_current_cycle();
         if last_cycle != 0 {
             if current_controller_cycle - last_cycle > 1 {
@@ -186,10 +184,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let json_string = format!("{:?}", cycle_times);
     let mut file = File::create("/tmp/output.json")?;
     file.write_all(json_string.as_bytes())?;
-
-    // Due to the startup logic missed frames is always at least one here not entirely sure why?
-    // will be decremented by one at the end and also it isnt actually a missed frame, just one 
-
 
     println!("\n================ BENCHMARK RESULTS ================");
     println!("Target Cycle Time:    {} µs", setup.cycle_time_us);
