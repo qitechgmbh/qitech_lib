@@ -349,9 +349,9 @@ where
     pub join_handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
 }
 
-pub type StandardEtherCATAppHandle = EtherCATAppHandle<TripleBufConsumer, TripleBufProducer>;
-pub type MockEtherCATAppHandle = EtherCATAppHandle<MockConsumer, MockProducer>;
-pub type StandardEtherCATController = EtherCATController<TripleBufConsumer, TripleBufProducer>;
+pub type StdEcatHandle = EtherCATAppHandle<Arc<Mailbox>, Arc<Mailbox>>;
+pub type MockEcatHandle = EtherCATAppHandle<MockConsumer, MockProducer>;
+pub type StdEcatController = EtherCATController<Arc<Mailbox>, Arc<Mailbox>>;
 
 /*Metadata for a Subdevice Contains start and end of the given subdevices pdu*/
 #[derive(Clone, Copy, Debug)]
@@ -740,7 +740,7 @@ pub fn init_ethercat(
     };
 
     let app_handle = EtherCATAppHandle {
-        input_consumer:  mailbox2,
+        input_consumer: mailbox2,
         output_producer: mailbox,
         cycle,
         cycle_time_us,
