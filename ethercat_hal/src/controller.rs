@@ -543,21 +543,6 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                         let mut is_all_op = false;
                         let mut not_all_op_cycles: u32 = 0;
                         loop {
-                            match self.output_consumer.read() {
-                                Some(full_buffer) => {
-                                    let mut current_offset = 0;
-                                    for subdevice in group.iter(&maindevice) {
-                                        let mut output = subdevice.outputs_raw_mut();
-                                        let len = output.len();
-                                        output.copy_from_slice(
-                                            &full_buffer[current_offset..current_offset + len],
-                                        );
-                                        current_offset += len;
-                                    }
-                                    self.output_consumer.finish_read();
-                                }
-                                None => {}
-                            };
                             let cycle_start = Instant::now();
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
                             self.dc_system_time_ns
@@ -642,9 +627,27 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                             } else {
                                 self.cycle.fetch_add(1, Relaxed);
                             }
+
+                            spinner.sleep_until(self.next_cycle - Duration::from_micros(10));
+                            match self.output_consumer.read() {
+                                Some(full_buffer) => {
+                                    let mut current_offset = 0;
+                                    for subdevice in group.iter(&maindevice) {
+                                        let mut output = subdevice.outputs_raw_mut();
+                                        let len = output.len();
+                                        output.copy_from_slice(
+                                            &full_buffer[current_offset..current_offset + len],
+                                        );
+                                        current_offset += len;
+                                    }
+                                    self.output_consumer.finish_read();
+                                }
+                                None => {}
+                            };
                             spinner.sleep_until(self.next_cycle);
                             self.cycle_time_us
                                 .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
+
                         }
                     });
                 }
