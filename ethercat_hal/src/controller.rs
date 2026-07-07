@@ -622,12 +622,8 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                 None => {}
                             }
 
-                            if self.cycle.load(Relaxed) == u64::MAX {
-                                self.cycle.store(0, Relaxed);
-                            } else {
-                                self.cycle.fetch_add(1, Relaxed);
-                            }
-
+                            // This gives the client side time to look at the inputs and write outputs
+                            // Might be a bit too tight if running < 125us but at that point it isnt really stable anyways
                             spinner.sleep_until(self.next_cycle - Duration::from_micros(10));
                             match self.output_consumer.read() {
                                 Some(full_buffer) => {
@@ -644,10 +640,15 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                 }
                                 None => {}
                             };
+                            // Sleep the rest of the deadline
                             spinner.sleep_until(self.next_cycle);
+                            if self.cycle.load(Relaxed) == u64::MAX {
+                                self.cycle.store(0, Relaxed);
+                            } else {
+                                self.cycle.fetch_add(1, Relaxed);
+                            }
                             self.cycle_time_us
                                 .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
-
                         }
                     });
                 }
