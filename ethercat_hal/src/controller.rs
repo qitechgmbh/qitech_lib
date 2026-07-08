@@ -307,11 +307,8 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                             continue;
                         }
                         ChannelRequests::ConfigureOversampling(device_address) => {
-                            let res = configure_oversampling(
-                                &mut preop_group,
-                                maindev,
-                                device_address,
-                            );
+                            let res =
+                                configure_oversampling(&mut preop_group, maindev, device_address);
                             send_response(
                                 msg.response_channel,
                                 ChannelResponse::ConfigureOversamplingResponse(res),

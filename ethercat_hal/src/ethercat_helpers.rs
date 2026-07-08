@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use crate::{
     EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest,
-    SdoType, get_async_runtime, machine_ident_read::MachineDeviceInfo, pdo::oversampling::OVERSAMPLE_FACTOR,
+    SdoType, get_async_runtime, machine_ident_read::MachineDeviceInfo,
+    pdo::oversampling::OVERSAMPLE_FACTOR,
 };
 use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
@@ -442,15 +443,10 @@ impl EtherCATThreadChannel {
         }
     }
 
-    pub fn configure_oversampling(
-        &self,
-        device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    pub fn configure_oversampling(&self, device_address: u16) -> Result<(), anyhow::Error> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req = ChannelRequest {
-            channel_request: crate::ChannelRequests::ConfigureOversampling(
-                device_address.into(),
-            ),
+            channel_request: crate::ChannelRequests::ConfigureOversampling(device_address.into()),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
         match self.0.send(req) {
@@ -632,12 +628,12 @@ pub fn configure_oversampling(
     maindevice: &MainDevice,
     device_address: usize,
 ) -> Result<(), anyhow::Error> {
-    let rt = get_async_runtime();    
+    let rt = get_async_runtime();
     rt.block_on(async {
         for mut subdevice in group.iter_mut(maindevice) {
             if subdevice.configured_address() == device_address as u16 {
                 // This is so dumb, Why would it need a 'static ref to TWO yes TWO u16
-                // Just copy them internally in ethercrab its a one time cost ... 
+                // Just copy them internally in ethercrab its a one time cost ...
                 subdevice.set_oversampling(&[
                     (0x1600, OVERSAMPLE_FACTOR as u16),
                     (0x1700, OVERSAMPLE_FACTOR as u16),
