@@ -14,8 +14,14 @@ use std::{env, f64::consts::PI, time::{Duration, Instant}};
 const CYCLE_TIME_US: u64 = 1000;
 const OVERSAMPLE: usize = OVERSAMPLE_FACTOR;
 
+//const SYNC0_PERIOD_US: u64 = CYCLE_TIME_US / OVERSAMPLE as u64;
+//const SYNC1_PERIOD_US: u64 = SYNC0_PERIOD_US * (OVERSAMPLE as u64 - 1);
+
 const SYNC0_PERIOD_US: u64 = CYCLE_TIME_US / OVERSAMPLE as u64;
-const SYNC1_PERIOD_US: u64 = SYNC0_PERIOD_US * (OVERSAMPLE as u64 - 1);
+
+// SYNC1 must be the full macro-interval matching the EtherCAT master loop
+const SYNC1_PERIOD_US: u64 = CYCLE_TIME_US;
+
 
 const SINE_FREQ_HZ: f64 = 50.0;
 const AMPLITUDE: f64 = 0.8;
