@@ -1,15 +1,16 @@
 use bitvec::slice::BitSlice;
 use ethercat_hal::{
-    DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig, devices::{
+    DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig,
+    devices::{
         EthercatDevice, EthercatDeviceProcessing,
         el4732::{EL4732, EL4732_PRODUCT_ID, EL4732Port, EL4732RxPdo},
-    }, init_ethercat, io::analog_output::{AnalogOutputDevice, AnalogOutputOutput}, pdo::oversampling::OVERSAMPLE_FACTOR, set_current_thread_rt_priority,
+    },
+    init_ethercat,
+    io::analog_output::{AnalogOutputDevice, AnalogOutputOutput},
+    pdo::oversampling::OVERSAMPLE_FACTOR,
+    set_current_thread_rt_priority,
 };
-use std::{
-    env,
-    f64::consts::PI,
-    time::{Duration},
-};
+use std::{env, f64::consts::PI, time::Duration};
 
 const CYCLE_TIME_US: u64 = 1000;
 const OVERSAMPLE: usize = OVERSAMPLE_FACTOR;
