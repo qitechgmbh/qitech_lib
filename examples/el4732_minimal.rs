@@ -1,13 +1,9 @@
 use bitvec::slice::BitSlice;
 use ethercat_hal::{
-    DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig,
-    devices::{
+    DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig, devices::{
         EthercatDevice, EthercatDeviceProcessing,
         el4732::{EL4732, EL4732_PRODUCT_ID, EL4732Port, EL4732RxPdo},
-    },
-    init_ethercat,
-    io::analog_output::{AnalogOutputDevice, AnalogOutputOutput},
-    pdo::oversampling::OVERSAMPLE_FACTOR,
+    }, init_ethercat, io::analog_output::{AnalogOutputDevice, AnalogOutputOutput}, pdo::oversampling::OVERSAMPLE_FACTOR, set_current_thread_rt_priority,
 };
 use std::{
     env,
@@ -21,6 +17,12 @@ const SYNC0_PERIOD_US: u64 = CYCLE_TIME_US / OVERSAMPLE as u64;
 const SYNC1_PERIOD_US: u64 = SYNC0_PERIOD_US * (OVERSAMPLE as u64 - 1);
 const SINE_FREQ_HZ: f64 = 50.0;
 const AMPLITUDE: f64 = 0.8;
+
+fn apply_rt() {
+    let id = core_affinity::CoreId { id: 2 };
+    set_current_thread_rt_priority(99);
+    core_affinity::set_for_current(id);
+}
 
 fn main() {
     let interface = env::args().nth(1).expect("No interface name given");
@@ -118,6 +120,7 @@ fn main() {
 
     let mut last_cycle = eth_handle.get_current_cycle();
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    apply_rt();
     loop {
         let current_cycle = eth_handle.get_current_cycle();
         let cycles_elapsed = current_cycle.wrapping_sub(last_cycle);
