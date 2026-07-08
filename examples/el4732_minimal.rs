@@ -122,40 +122,41 @@ fn main() {
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
     apply_rt();
     loop {
-        let current_cycle = eth_handle.get_current_cycle();
-        let cycles_elapsed = current_cycle.wrapping_sub(last_cycle);
-        last_cycle = current_cycle;
-
         for (i, slot) in samples_ch1.iter_mut().enumerate() {
             let p = phase + phase_step_per_slot * i as f64;
             *slot = (p.sin() * AMPLITUDE).clamp(-1.0, 1.0) as f32;
         }
 
-        let output = loop {
-            if let Some(out) = eth_handle.write_outputs() {
-                break out;
-            }
-        };
+        {
+            let output = loop {
+                if let Some(out) = eth_handle.write_outputs() {
+                    break out;
+                }
+            };
 
-        if OVERSAMPLE > 1 {
-            el4732.set_output_samples(EL4732Port::AO1 as usize, &samples_ch1);
-            el4732.set_output_samples(EL4732Port::AO2 as usize, &samples_ch2);
-        } else {
-            el4732.set_output(0, AnalogOutputOutput(samples_ch1[0]));
-            el4732.set_output(1, AnalogOutputOutput(0.0));
-        }
+            if OVERSAMPLE > 1 {
+                el4732.set_output_samples(EL4732Port::AO1 as usize, &samples_ch1);
+                el4732.set_output_samples(EL4732Port::AO2 as usize, &samples_ch2);
+            } else {
+                el4732.set_output(0, AnalogOutputOutput(samples_ch1[0]));
+                el4732.set_output(1, AnalogOutputOutput(0.0));
+            }
 
-        for subdevice in &subdevices {
-            if subdevice.product_id == EL4732_PRODUCT_ID {
-                el4732
-                    .output_pre_process()
-                    .expect("Failed to prepare output");
-                let out = &mut output[subdevice.start_rx..subdevice.end_rx];
-                el4732
-                    .output(BitSlice::from_slice_mut(out))
-                    .expect("Failed to write output");
+            for subdevice in &subdevices {
+                if subdevice.product_id == EL4732_PRODUCT_ID {
+                    el4732
+                        .output_pre_process()
+                        .expect("Failed to prepare output");
+                    let out = &mut output[subdevice.start_rx..subdevice.end_rx];
+                    el4732
+                        .output(BitSlice::from_slice_mut(out))
+                        .expect("Failed to write output");
+                }
             }
         }
+        let current_cycle = eth_handle.get_current_cycle();
+        let cycles_elapsed = current_cycle.wrapping_sub(last_cycle);
+        last_cycle = current_cycle;
 
         phase = (phase + phase_step_per_cycle * cycles_elapsed as f64) % (2.0 * PI);
         eth_handle.send_outputs();
