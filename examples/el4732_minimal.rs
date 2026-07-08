@@ -8,7 +8,7 @@ use ethercat_hal::{
 use std::{
     env,
     f64::consts::PI,
-    time::{Duration, Instant},
+    time::{Duration},
 };
 
 const CYCLE_TIME_US: u64 = 1000;
