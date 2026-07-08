@@ -306,13 +306,9 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                             );
                             continue;
                         }
-                        ChannelRequests::ConfigureOversampling(device_address, factor) => {
-                            let res = configure_oversampling(
-                                &mut preop_group,
-                                maindev,
-                                device_address,
-                                factor,
-                            );
+                        ChannelRequests::ConfigureOversampling(device_address) => {
+                            let res =
+                                configure_oversampling(&mut preop_group, maindev, device_address);
                             send_response(
                                 msg.response_channel,
                                 ChannelResponse::ConfigureOversamplingResponse(res),
@@ -335,10 +331,15 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                     let rt = get_async_runtime();
                     let res = rt
                         .block_on(async { group_to_transition.into_pre_op_pdi(device_ref).await });
+                    println!("into_pre_op_pdi returned: {:?}", res.as_ref().err());
 
                     group_preop_pdi = match res {
                         Ok(group) => group,
-                        Err(_) => todo!(),
+                        Err(e) => {
+                            return Err(anyhow::anyhow!(
+                                "Failed to transition group into PreOpPdi: {e:?}"
+                            ));
+                        }
                     };
 
                     loop {
