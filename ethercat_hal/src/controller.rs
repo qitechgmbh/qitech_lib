@@ -546,9 +546,12 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                         loop {
                             let cycle_start = Instant::now();
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                            let cycle_start_offset = res.extra.dc_system_time % self.current_config.target_cycle_time_us as u64;
+                            self.next_cycle =
+                                cycle_start + Duration::from_micros(self.current_config.target_cycle_time_us as u64 - cycle_start_offset);
                             self.dc_system_time_ns
-                                .store(res.extra.dc_system_time, Relaxed);
-                            self.next_cycle = cycle_start + res.extra.next_cycle_wait;
+                                .store(res.extra.dc_system_time, Relaxed); 
+
 
                             if !is_all_op {
                                 if res.all_op() {
