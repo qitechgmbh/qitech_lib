@@ -15,9 +15,9 @@ use std::{env, f64::consts::PI, time::Duration};
 const CYCLE_TIME_US: u64 = 1000;
 const OVERSAMPLE: usize = OVERSAMPLE_FACTOR;
 const SYNC0_PERIOD_US: u64 = CYCLE_TIME_US / OVERSAMPLE as u64;
-const SYNC1_PERIOD_US: u64 = SYNC0_PERIOD_US * (OVERSAMPLE as u64 - 1);
+const SYNC1_PERIOD_US: u64 = SYNC0_PERIOD_US * (OVERSAMPLE as u64-1);
 const SINE_FREQ_HZ: f64 = 50.0;
-const AMPLITUDE: f64 = 0.8;
+const AMPLITUDE: f64 = 0.4;
 
 fn apply_rt() {
     let id = core_affinity::CoreId { id: 2 };
@@ -40,7 +40,7 @@ fn main() {
     let mut dc_config = DcConfiguration::default();
     dc_config.start_delay = Duration::from_millis(100);
     dc_config.sync0_period = Duration::from_micros(SYNC0_PERIOD_US);
-    dc_config.sync0_shift = Duration::from_micros(SYNC1_PERIOD_US);
+    dc_config.sync0_shift = Duration::from_micros(SYNC0_PERIOD_US/2);
     dc_config.target_dc_tick = 500;
 
     /*
@@ -122,11 +122,9 @@ fn main() {
     let mut last_cycle = eth_handle.get_current_cycle();
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
     apply_rt();
+
+
     loop {
-        for (i, slot) in samples_ch1.iter_mut().enumerate() {
-            let p = phase + phase_step_per_slot * i as f64;
-            *slot = (p.sin() * AMPLITUDE).clamp(-1.0, 1.0) as f32;
-        }
 
         {
             let output = loop {
@@ -134,6 +132,13 @@ fn main() {
                     break out;
                 }
             };
+
+
+       for (i, slot) in samples_ch1.iter_mut().enumerate() {
+            let p = phase + phase_step_per_slot * i as f64;
+            *slot = (p.sin() * AMPLITUDE).clamp(-1.0, 1.0) as f32;
+        }
+
 
             if OVERSAMPLE > 1 {
                 el4732.set_output_samples(EL4732Port::AO1 as usize, &samples_ch1);
@@ -157,9 +162,13 @@ fn main() {
         }
         let current_cycle = eth_handle.get_current_cycle();
         let cycles_elapsed = current_cycle.wrapping_sub(last_cycle);
+	if cycles_elapsed >  1  {
+		println!("OMG WTF");
+	}
         last_cycle = current_cycle;
 
         phase = (phase + phase_step_per_cycle * cycles_elapsed as f64) % (2.0 * PI);
+//        println!("{} {:?}",phase,samples_ch1);
         eth_handle.send_outputs();
     }
 }

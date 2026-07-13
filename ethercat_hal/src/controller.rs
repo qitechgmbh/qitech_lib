@@ -131,7 +131,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                             pdu,
                             Timeouts {
                                 state_transition: Duration::from_millis(20000),
-                                pdu: Duration::from_micros(30_000),
+                                pdu: Duration::from_micros(300_000),
                                 eeprom: Duration::from_millis(100),
                                 wait_loop_delay: Duration::from_millis(0),
                                 mailbox_echo: Duration::from_millis(100),
@@ -546,9 +546,10 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                         loop {
                             let cycle_start = Instant::now();
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+			    let tx_rx_time = cycle_start.elapsed().as_micros();
                             let cycle_start_offset = res.extra.dc_system_time % self.current_config.target_cycle_time_us as u64;
                             self.next_cycle =
-                                cycle_start + Duration::from_micros(self.current_config.target_cycle_time_us as u64 - cycle_start_offset);
+                                cycle_start + Duration::from_micros(self.current_config.target_cycle_time_us as u64);
                             self.dc_system_time_ns
                                 .store(res.extra.dc_system_time, Relaxed); 
 
