@@ -1,5 +1,6 @@
 pub mod ip20_ec_di8_do8;
 pub mod wago_750_1506;
+pub mod wago_750_354;
 pub mod wago_750_402;
 pub mod wago_750_430;
 pub mod wago_750_455;
