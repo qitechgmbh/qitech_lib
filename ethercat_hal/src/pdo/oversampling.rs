@@ -1,4 +1,4 @@
-use crate::pdo::{PdoObject, RxPdoObject};
+use crate::pdo::{PdoObject, RxPdoObject, TxPdoObject};
 use bitvec::{field::BitField, order::Lsb0, slice::BitSlice};
 use ethercat_hal_derive::PdoObject as PdoObjectDerive;
 
@@ -46,6 +46,23 @@ impl RxPdoObject for AnalogOutputOversample {
             let start = i * 16;
             bits[start..start + 16].store_le(sample as u16);
         }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StartTimeNextOutput {
+    pub value: u32,
+}
+
+impl PdoObject for StartTimeNextOutput {
+    fn size(&self) -> usize {
+        32
+    }
+}
+
+impl TxPdoObject for StartTimeNextOutput {
+    fn read(&mut self, buffer: &BitSlice<u8, Lsb0>) {
+        self.value = buffer[0..32].load_le();
     }
 }
 
