@@ -12,10 +12,11 @@ use ethercat_hal::{
 };
 use std::{env, f64::consts::PI, time::Duration};
 
-const CYCLE_TIME_US: u64 = 1000;
+const CYCLE_TIME_US: u64 = 1000; // MICRO
+const CYCLE_TIME_NS: u32 = 1_000_000; // NANO
 const OVERSAMPLE: usize = OVERSAMPLE_FACTOR;
 const SYNC0_PERIOD_US: u64 = CYCLE_TIME_US / OVERSAMPLE as u64;
-const SYNC1_PERIOD_US: u64 = SYNC0_PERIOD_US * (OVERSAMPLE as u64-1);
+const SYNC1_PERIOD_US: u64 = SYNC0_PERIOD_US * (OVERSAMPLE as u64 - 1);
 const SINE_FREQ_HZ: f64 = 50.0;
 const AMPLITUDE: f64 = 0.4;
 
@@ -40,7 +41,7 @@ fn main() {
     let mut dc_config = DcConfiguration::default();
     dc_config.start_delay = Duration::from_millis(100);
     dc_config.sync0_period = Duration::from_micros(SYNC0_PERIOD_US);
-    dc_config.sync0_shift = Duration::from_micros(SYNC0_PERIOD_US/2);
+    dc_config.sync0_shift = Duration::from_micros(SYNC0_PERIOD_US / 2);
     dc_config.target_dc_tick = 500;
 
     /*
@@ -123,26 +124,42 @@ fn main() {
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
     apply_rt();
 
+    // === Debug Monitor ===
+    let danger_ns = (CYCLE_TIME_NS / (2 * OVERSAMPLE as u32)) as u64;
+    let mut prev_stno: Option<u32> = None;
+    let mut drift_ns: i64 = 0;
+    let mut max_abs_drift_ns: u64 = 0;
+    let mut delta_min_ns: u32 = u32::MAX;
+    let mut delta_max_ns: u32 = 0;
+    let mut missed_cycles: u64 = 0;
+    let mut stale_reads: u64 = 0;
+    let mut last_report = last_cycle;
+    // =====================
 
     loop {
-
+        // read inputs first
+        let stno = el4732
+            .txpdo
+            .start_time_next_output
+            .as_ref()
+            .map(|s| s.value)
+            .unwrap_or(0);
         {
+
             let output = loop {
                 if let Some(out) = eth_handle.write_outputs() {
                     break out;
                 }
             };
 
-
-       for (i, slot) in samples_ch1.iter_mut().enumerate() {
-            let p = phase + phase_step_per_slot * i as f64;
-            *slot = (p.sin() * AMPLITUDE).clamp(-1.0, 1.0) as f32;
-        }
-
+            for (i, slot) in samples_ch1.iter_mut().enumerate() {
+                let p = phase + phase_step_per_slot * i as f64;
+                *slot = (p.sin() * AMPLITUDE).clamp(-1.0, 1.0) as f32;
+            }
 
             if OVERSAMPLE > 1 {
-                el4732.set_output_samples(EL4732Port::AO1 as usize, &samples_ch1);
-                el4732.set_output_samples(EL4732Port::AO2 as usize, &samples_ch2);
+                el4732.set_output_samples(EL4732Port::AO1, &samples_ch1);
+                el4732.set_output_samples(EL4732Port::AO2, &samples_ch2);
             } else {
                 el4732.set_output(0, AnalogOutputOutput(samples_ch1[0]));
                 el4732.set_output(1, AnalogOutputOutput(0.0));
@@ -160,15 +177,57 @@ fn main() {
                 }
             }
         }
+
+        // cycle bookkeeping
         let current_cycle = eth_handle.get_current_cycle();
         let cycles_elapsed = current_cycle.wrapping_sub(last_cycle);
-	if cycles_elapsed >  1  {
-		println!("OMG WTF");
-	}
+        if cycles_elapsed > 1 {
+            println!("OMG WTF");
+        }
         last_cycle = current_cycle;
 
+        // === Debug ===
+        if cycles_elapsed > 1 {
+            missed_cycles += cycles_elapsed - 1;
+        }
+        if let Some(prev) = prev_stno {
+            let actual = stno.wrapping_sub(prev); // wrap-safe: real delta << 2^32 ns
+            if actual == 0 && cycles_elapsed >= 1 {
+                stale_reads += 1;
+            }
+            delta_min_ns = delta_min_ns.min(actual);
+            delta_max_ns = delta_max_ns.max(actual);
+            let expected = (cycles_elapsed as u32).wrapping_mul(CYCLE_TIME_NS);
+            drift_ns += actual as i64 - expected as i64;
+            max_abs_drift_ns = max_abs_drift_ns.max(drift_ns.unsigned_abs());
+        }
+        prev_stno = Some(stno);
+
+        if current_cycle.wrapping_sub(last_report) >= 3000 {
+            // ~3 s at 1 ms
+            last_report = current_cycle;
+            let dmin = if delta_min_ns == u32::MAX {
+                0
+            } else {
+                delta_min_ns
+            };
+            let warn = if max_abs_drift_ns >= danger_ns {
+                "  <-- WARN latch window"
+            } else {
+                ""
+            };
+            println!(
+                "[mon] cyc={current_cycle} drift={drift_ns:+} ns max|drift|={max_abs_drift_ns} ns \
+             delta[min={dmin} max={delta_max_ns}] missed={missed_cycles} stale={stale_reads} \
+             stno=0x{stno:08X}{warn}"
+            );
+            max_abs_drift_ns = 0;
+            delta_min_ns = u32::MAX;
+            delta_max_ns = 0;
+        }
+        // =============
         phase = (phase + phase_step_per_cycle * cycles_elapsed as f64) % (2.0 * PI);
-//        println!("{} {:?}",phase,samples_ch1);
+        //        println!("{} {:?}",phase,samples_ch1);
         eth_handle.send_outputs();
     }
 }

@@ -49,7 +49,7 @@ impl RxPdoObject for AnalogOutputOversample {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StartTimeNextOutput {
     pub value: u32,
 }

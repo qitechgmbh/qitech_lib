@@ -62,9 +62,9 @@ impl EL4732 {
     /// needs a different value (e.g. a sine wave). Values are in -1.0..=1.0.
     ///
     /// Panics if `samples.len()` does not match the configured oversample factor.
-    pub fn set_output_samples(&mut self, port: usize, samples: &[f32]) {
+    pub fn set_output_samples(&mut self, port: EL4732Port, samples: &[f32]) {
         match port {
-            0 => {
+            EL4732Port::AO1 => {
                 if let Some(ch) = self.rxpdo.ch1_samples.as_mut() {
                     assert_eq!(
                         samples.len(),
@@ -79,7 +79,7 @@ impl EL4732 {
                     cc.increment();
                 }
             }
-            1 => {
+            EL4732Port::AO2 => {
                 if let Some(ch) = self.rxpdo.ch2_samples.as_mut() {
                     assert_eq!(
                         samples.len(),
@@ -94,7 +94,6 @@ impl EL4732 {
                     cc.increment();
                 }
             }
-            _ => {}
         }
     }
 }
