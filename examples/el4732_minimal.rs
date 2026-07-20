@@ -3,7 +3,7 @@ use ethercat_hal::{
     DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig,
     devices::{
         EthercatDevice, EthercatDeviceProcessing,
-        el4732::{EL4732, EL4732_PRODUCT_ID, EL4732Port, EL4732RxPdo},
+        beckhoff_modules::el4732::{EL4732, EL4732_PRODUCT_ID, EL4732Port, EL4732RxPdo},
     },
     init_ethercat,
     io::analog_output::{AnalogOutputDevice, AnalogOutputOutput},

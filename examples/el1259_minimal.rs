@@ -4,7 +4,7 @@ use ethercat_hal::{
     coe::ConfigurableDevice,
     devices::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
-        el1259::{EL1259, EL1259_PRODUCT_ID},
+        beckhoff_modules::el1259::{EL1259, EL1259_PRODUCT_ID},
     },
     init_ethercat,
     io::multi_timestamp::{MultiTimestampEvent, MultiTimestampOutput},

@@ -1,75 +1,56 @@
-pub mod ek1100;
-pub mod el1002;
-pub mod el1008;
-mod el1124;
-pub mod el1259;
-pub mod el2002;
-pub mod el2004;
-pub mod el2008;
-pub mod el2024;
-pub mod el2521;
-pub mod el2522;
-pub mod el2634;
-pub mod el2809;
-pub mod el3001;
-pub mod el3021;
-pub mod el3024;
-pub mod el3062_0030;
-pub mod el3204;
-pub mod el4002;
-pub mod el4732;
-pub mod el5152;
-pub mod el6021;
-pub mod el7031;
-pub mod el7031_0030;
-pub mod el7041_0052;
-mod el9505;
-pub mod ep2339_0021;
+pub mod beckhoff_modules;
 pub mod panasonic_modules;
-pub mod wago_750_354;
 pub mod wago_modules;
 use crate::MetaSubdevice;
 
 #[cfg(feature = "mock")]
 use crate::TypeErasedValue;
-use crate::devices::el1124::{EL1124, EL1124_IDENTITY_A};
-use crate::devices::el1259::{EL1259, EL1259_IDENTITY_A};
-use crate::devices::el9505::{EL9505, EL9505_IDENTITY_A};
+use crate::devices::beckhoff_modules::el1124::{EL1124, EL1124_IDENTITY_A};
+use crate::devices::beckhoff_modules::el1259::{EL1259, EL1259_IDENTITY_A};
+use crate::devices::beckhoff_modules::el9505::{EL9505, EL9505_IDENTITY_A};
 use crate::pdo::oversampling::OVERSAMPLE_FACTOR;
 
-use super::devices::el1008::EL1008;
-use crate::devices::ep2339_0021::EP2339_0021_IDENTITY_A;
+use crate::devices::beckhoff_modules::el1008::EL1008;
+use crate::devices::beckhoff_modules::ep2339_0021::EP2339_0021_IDENTITY_A;
 use crate::devices::panasonic_modules::minas_a6::{self, MINAS_A6_IDENTITY_A};
+use beckhoff_modules::ek1100::{EK1100, EK1100_IDENTITY_A};
+use beckhoff_modules::el1002::{EL1002, EL1002_IDENTITY_A};
+use beckhoff_modules::el1008::{EL1008_IDENTITY_A, EL1008_IDENTITY_B};
+use beckhoff_modules::el2002::{EL2002, EL2002_IDENTITY_A, EL2002_IDENTITY_B};
+use beckhoff_modules::el2004::{EL2004, EL2004_IDENTITY_A};
+use beckhoff_modules::el2008::{EL2008, EL2008_IDENTITY_A, EL2008_IDENTITY_B};
+use beckhoff_modules::el2521::EL2521;
+use beckhoff_modules::el2521::{
+    EL2521_IDENTITY_0000_A, EL2521_IDENTITY_0000_B, EL2521_IDENTITY_0024_A,
+};
+use beckhoff_modules::el2522::{EL2522, EL2522_IDENTITY_A};
+use beckhoff_modules::el3001::EL3001_IDENTITY_A;
+use beckhoff_modules::el3021::EL3021_IDENTITY_A;
+use beckhoff_modules::el3024::EL3024_IDENTITY_A;
+use beckhoff_modules::el3062_0030::EL3062_0030_IDENTITY_A;
+use beckhoff_modules::el3204::EL3204_IDENTITY_A;
+use beckhoff_modules::el3204::EL3204_IDENTITY_B;
+use beckhoff_modules::el4002::EL4002;
+use beckhoff_modules::el4002::EL4002_IDENTITY_A;
+use beckhoff_modules::el4732::{EL4732, EL4732_IDENTITY_A, EL4732_IDENTITY_B, EL4732_IDENTITY_C};
+use beckhoff_modules::el5152::{EL5152, EL5152_IDENTITY_A};
+use beckhoff_modules::el6021::{
+    EL6021_IDENTITY_A, EL6021_IDENTITY_B, EL6021_IDENTITY_C, EL6021_IDENTITY_D,
+};
+use beckhoff_modules::el7031::{EL7031_IDENTITY_A, EL7031_IDENTITY_B};
+use beckhoff_modules::el7031_0030::EL7031_0030_IDENTITY_A;
+use beckhoff_modules::el7041_0052::EL7041_0052_IDENTITY_A;
+use beckhoff_modules::{
+    el1124, el3001, el3021, el3024, el3062_0030, el3204, el4732, el6021, el7031, el7031_0030,
+    el7041_0052, el9505, ep2339_0021,
+};
 use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;
-use ek1100::{EK1100, EK1100_IDENTITY_A};
-use el1002::{EL1002, EL1002_IDENTITY_A};
-use el1008::{EL1008_IDENTITY_A, EL1008_IDENTITY_B};
-use el2002::{EL2002, EL2002_IDENTITY_A, EL2002_IDENTITY_B};
-use el2004::{EL2004, EL2004_IDENTITY_A};
-use el2008::{EL2008, EL2008_IDENTITY_A, EL2008_IDENTITY_B};
-use el2521::EL2521;
-use el2521::{EL2521_IDENTITY_0000_A, EL2521_IDENTITY_0000_B, EL2521_IDENTITY_0024_A};
-use el2522::{EL2522, EL2522_IDENTITY_A};
-use el3001::EL3001_IDENTITY_A;
-use el3021::EL3021_IDENTITY_A;
-use el3024::EL3024_IDENTITY_A;
-use el3062_0030::EL3062_0030_IDENTITY_A;
-use el3204::EL3204_IDENTITY_A;
-use el3204::EL3204_IDENTITY_B;
-use el4002::EL4002;
-use el4002::EL4002_IDENTITY_A;
-use el4732::{EL4732, EL4732_IDENTITY_A, EL4732_IDENTITY_B, EL4732_IDENTITY_C};
-use el5152::{EL5152, EL5152_IDENTITY_A};
-use el6021::{EL6021_IDENTITY_A, EL6021_IDENTITY_B, EL6021_IDENTITY_C, EL6021_IDENTITY_D};
-use el7031::{EL7031_IDENTITY_A, EL7031_IDENTITY_B};
-use el7031_0030::EL7031_0030_IDENTITY_A;
-use el7041_0052::EL7041_0052_IDENTITY_A;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::{any::Any, fmt::Debug};
-use wago_750_354::{WAGO_750_354_IDENTITY_A, Wago750_354};
 use wago_modules::ip20_ec_di8_do8::{IP20_EC_DI8_DO8_IDENTITY, IP20EcDi8Do8};
+use wago_modules::wago_750_354::{WAGO_750_354_IDENTITY_A, Wago750_354};
 
 #[derive(Debug, Clone)]
 pub struct Module {

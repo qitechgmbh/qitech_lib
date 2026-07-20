@@ -559,7 +559,7 @@ pub const WAGO_750_XXX_MODULE_IDENT: SubDeviceProductTuple =
 // Registration in wago_750_354.rs  (Step 8 — do after completing this file)
 // =============================================================================
 //
-// Open `ethercat-hal/src/devices/wago_750_354.rs` and make TWO additions:
+// Open `ethercat-hal/src/devices/wago_modules/wago_750_354.rs` and make TWO additions:
 //
 // ── 1. Import your new constants (with the existing imports at the top) ───────
 //

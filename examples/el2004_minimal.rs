@@ -3,7 +3,7 @@ use ethercat_hal::{
     BECKHOFF_VENDOR_ID, EtherCATState,
     devices::{
         EthercatDevice, NewEthercatDevice,
-        el2004::{EL2004, EL2004_PRODUCT_ID},
+        beckhoff_modules::el2004::{EL2004, EL2004_PRODUCT_ID},
     },
     init_ethercat,
     io::digital_output::DigitalOutputDevice,
