@@ -35,9 +35,11 @@ fn main() {
     // CoE config must happen in PreOp (before Op transition)
     let mut el7037 = EL7037::new();
     let mut config = EL7037Configuration::default();
+
     config.stm_features.operation_mode = EL70x1OperationMode::DirectVelocity;
     // Include StmSynchronInfoData in TxPDO so MotorLoad + MotorDcCurrent are available
     config.pdo_assignment = EL7037PredefinedPdoAssignment::VelocityControlCompactWithInfoData;
+
     for subdevice in eth_control.controller.get_subdevices() {
         if subdevice.vendor == BECKHOFF_VENDOR_ID && subdevice.product_id == EL7037_PRODUCT_ID {
             el7037
@@ -93,7 +95,7 @@ fn main() {
         }
 
         // Alternate direction every 200 cycles
-        let target_steps_per_sec: f64 = if (step / 200) % 2 == 0 {
+        let target_steps_per_sec: f64 = if (step / 200).is_multiple_of(2) {
             500.0
         } else {
             -500.0
