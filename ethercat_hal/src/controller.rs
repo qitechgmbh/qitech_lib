@@ -434,7 +434,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                         match group_container.take().unwrap() {
                             GroupState::PreOp(group) => {
                                 let device = maindevice.as_ref().unwrap();
-                                let now = Instant::now(); // Moved inside                                
+                                let now = Instant::now(); // Moved inside
                                 let res = rt.block_on(group.tx_rx_dc(device)).expect("");
                                 if tick <= self.current_config.dc_config.target_dc_tick {
                                     spinner.sleep_until(now + res.extra.next_cycle_wait);
@@ -464,7 +464,6 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                 });
 
                                 if is_all_safe {
-                                    // --- Calculate and map offsets here ---
                                     let mut rx_offset = 0;
                                     let mut tx_offset = 0;
                                     let mut subdevice_guard =
@@ -511,7 +510,6 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
                     return futures::executor::block_on(async {
-
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
                                 let id = core_affinity::CoreId {
