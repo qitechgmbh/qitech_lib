@@ -17,7 +17,7 @@ const OVERSAMPLE: usize = OVERSAMPLE_FACTOR;
 const SYNC0_PERIOD_US: u64 = CYCLE_TIME_US / OVERSAMPLE as u64;
 const SYNC1_PERIOD_US: u64 = SYNC0_PERIOD_US * (OVERSAMPLE as u64 - 1);
 const SINE_FREQ_HZ: f64 = 50.0;
-const AMPLITUDE: f64 = 0.8;
+const AMPLITUDE: f64 = 0.4;
 
 fn apply_rt() {
     let id = core_affinity::CoreId { id: 2 };

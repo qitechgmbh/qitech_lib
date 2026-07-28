@@ -552,24 +552,23 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                         let pgain = 0.01 as f64;
                         let igain = 0.00002 as f64;
                         let sync_offset_ns: u64 =  500000;
-		        let mut offsettime : i64 = 0;
                         loop {
                             let cycle_start = Instant::now();
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");                         
                             delta =
                                 (res.extra.dc_system_time - sync_offset_ns) as i64 % cycle_time_ns;
-
                             if (delta > (cycle_time_ns / 2)) {
                                 delta = delta - cycle_time_ns
                             }
                             error = -delta;
+			    // Not sure what to clamp to, if at all Clamping seemed to have a negative effect? so just keep it as is
 			    integral = (integral + error);//.clamp(sync_offset_ns as i64*-1 * 10, sync_offset_ns as i64 * 10);
+			    // Maybe instead it makes sense to clamp offsettime?
                             let offsettime =
                                 ((error as f64 * pgain) + (integral as f64 * igain)) as i64;
                             self.dc_system_time_ns
                                 .store(res.extra.dc_system_time, Relaxed);
                             self.next_cycle = cycle_start + Duration::from_nanos(cycle_time_ns as u64 + offsettime as u64);
-
                             if !is_all_op {
                                 if res.all_op() {
                                     let mut subdevice_guard = self.subdevices.lock().await;

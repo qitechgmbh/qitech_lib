@@ -1,8 +1,7 @@
 use crate::pdo::{PdoObject, RxPdoObject};
 use bitvec::{field::BitField, order::Lsb0, slice::BitSlice};
 use ethercat_hal_derive::PdoObject as PdoObjectDerive;
-
-pub const OVERSAMPLE_FACTOR: usize = 10;
+pub const OVERSAMPLE_FACTOR: usize = 4;
 
 /// PDO Object for oversampling analog output terminals (e.g. EL4732)
 ///
