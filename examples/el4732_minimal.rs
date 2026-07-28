@@ -54,14 +54,13 @@ fn main() {
     let sync0_period_us: u64 = cycle_time_us / oversampling_factor as u64;
     let sync1_period_us: u64 = sync0_period_us * (oversampling_factor as u64 - 1);
 
-
     let mut el4732 = EL4732::new_with_oversample(oversampling_factor);
     let cycle_secs = cycle_time_us as f64 * 1e-6;
     let phase_step_per_slot = 2.0 * PI * sinewave_freq * cycle_secs / oversampling_factor as f64;
     let phase_step_per_cycle = 2.0 * PI * sinewave_freq * cycle_secs;
     let mut phase: f64 = 0.0;
     let mut samples_ch1 = vec![0.0f32; oversampling_factor];
-    let samples_ch2 =vec![0.0f32; oversampling_factor];
+    let samples_ch2 = vec![0.0f32; oversampling_factor];
 
     let mut dc_config = DcConfiguration::default();
     // Give some headroom for dc setup to finish
