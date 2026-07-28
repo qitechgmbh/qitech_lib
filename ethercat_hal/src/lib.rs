@@ -495,7 +495,7 @@ pub enum ChannelRequests {
     // Legacy code, only usable when feature legacy_code is set
     ReadMachineIdent(),
     EnableDCSync01(usize, Duration),
-    ConfigureOversampling(usize),
+    ConfigureOversampling(usize, Vec<(u16, u16)>),
     WriteMachineIdent(Vec<MachineDeviceInfo>),
 }
 

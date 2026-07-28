@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
-ethercrab = { git = "https://github.com/ethercrab-rs/ethercrab", branch = "main" }
+ethercrab = { git = "https://github.com/kraemr/ethercrab", rev = "c75c8c03fdf7f8ed8de5dfaf41a7e3e9d47afd81" }
 ethercat_hal_derive = { version = "0.1.0", path = "../ethercat_hal_derive" }
 units = { path = "../units" }
 bitvec = { version = "1.0.1", features = ["alloc"] }

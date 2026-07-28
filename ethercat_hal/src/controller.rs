@@ -306,9 +306,16 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                             );
                             continue;
                         }
-                        ChannelRequests::ConfigureOversampling(device_address) => {
-                            let res =
-                                configure_oversampling(&mut preop_group, maindev, device_address);
+                        ChannelRequests::ConfigureOversampling(
+                            device_address,
+                            oversampling_settings,
+                        ) => {
+                            let res = configure_oversampling(
+                                &mut preop_group,
+                                maindev,
+                                device_address,
+                                &oversampling_settings,
+                            );
                             send_response(
                                 msg.response_channel,
                                 ChannelResponse::ConfigureOversamplingResponse(res),
@@ -543,13 +550,31 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
 
                         let mut is_all_op = false;
                         let mut not_all_op_cycles: u32 = 0;
+                        let cycle_time_ns = self.current_config.target_cycle_time_us as i64 * 1000;
+                        let mut integral: i64 = 0;
+                        let mut error: i64;
+                        let mut delta: i64;
+                        let pgain = 0.01 as f64;
+                        let igain = 0.00002 as f64;
+                        let sync_offset_ns: u64 = 500000;
                         loop {
                             let cycle_start = Instant::now();
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                            delta =
+                                (res.extra.dc_system_time - sync_offset_ns) as i64 % cycle_time_ns;
+                            if delta > (cycle_time_ns / 2) {
+                                delta = delta - cycle_time_ns
+                            }
+                            error = -delta;
+                            // Not sure what to clamp to, if at all Clamping seemed to have a negative effect? so just keep it as is
+                            integral = integral + error; //.clamp(sync_offset_ns as i64*-1 * 10, sync_offset_ns as i64 * 10);
+                            // Maybe instead it makes sense to clamp offsettime?
+                            let offsettime =
+                                ((error as f64 * pgain) + (integral as f64 * igain)) as i64;
                             self.dc_system_time_ns
                                 .store(res.extra.dc_system_time, Relaxed);
-                            self.next_cycle = cycle_start + res.extra.next_cycle_wait;
-
+                            self.next_cycle = cycle_start
+                                + Duration::from_nanos(cycle_time_ns as u64 + offsettime as u64);
                             if !is_all_op {
                                 if res.all_op() {
                                     let mut subdevice_guard = self.subdevices.lock().await;
@@ -603,7 +628,6 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                     continue;
                                 }
                             }
-
                             match self.input_producer.input_buffer_mut() {
                                 Some(buffer) => {
                                     // We get a mutable slice to the whole buffer to make sub-slicing easier
@@ -625,7 +649,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
 
                             // This gives the client side time to look at the inputs and write outputs
                             // Might be a bit too tight if running < 125us but at that point it isnt really stable anyways
-                            spinner.sleep_until(self.next_cycle - Duration::from_micros(10));
+                            spinner.sleep_until(self.next_cycle - Duration::from_nanos(10000));
                             match self.output_consumer.read() {
                                 Some(full_buffer) => {
                                     let mut current_offset = 0;
@@ -641,8 +665,6 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                 }
                                 None => {}
                             };
-                            // Sleep the rest of the deadline
-                            spinner.sleep_until(self.next_cycle);
                             if self.cycle.load(Relaxed) == u64::MAX {
                                 self.cycle.store(0, Relaxed);
                             } else {
@@ -650,6 +672,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                             }
                             self.cycle_time_us
                                 .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
+                            spinner.sleep_until(self.next_cycle);
                         }
                     });
                 }
