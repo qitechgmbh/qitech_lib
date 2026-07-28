@@ -103,12 +103,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                             let res = set_irq_affinity(&interface, irq_core as u32);
                                             if res.is_err() {
                                                 println!("set_irq_affinity failed: {:?}", res);
-                                            } else {
-                                                println!(
-                                                    "set irq_affinity of {} to core {}",
-                                                    &interface, irq_core
-                                                );
-                                            }
+                                            } 
                                         }
                                     }
                                     None => (),
@@ -152,11 +147,9 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                         });
                         group = Some(match res {
                             Ok(group) => {
-                                println!("Initialized {} subdevices", &group.len());
                                 group
                             }
                             Err(err) => {
-                                println!("failed moving to PreOp from Init {:?}", err);
                                 self.state.store(EtherCATState::Init.into(), Relaxed);
                                 send_response(
                                     msg.response_channel,
@@ -324,7 +317,6 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                         }
                     }
                     let mut now = Instant::now();
-                    let start = Instant::now();
                     let mut averages = Vec::new();
 
                     if let Some(group_ref) = group.as_ref() {
@@ -338,7 +330,6 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                     let rt = get_async_runtime();
                     let res = rt
                         .block_on(async { group_to_transition.into_pre_op_pdi(device_ref).await });
-                    println!("into_pre_op_pdi returned: {:?}", res.as_ref().err());
 
                     group_preop_pdi = match res {
                         Ok(group) => group,
@@ -380,8 +371,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                             }
                                         }
                                         Err(ethercrab::error::Error::WorkingCounter { .. }) => 0,
-                                        Err(e) => {
-                                            println!("Failed to read DC system time: {:?}", e);
+                                        Err(_e) => {
                                             0
                                         }
                                     };
@@ -390,7 +380,6 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                 max_deviation = max_deviation.max(ema_next.abs() as u32);
                             }
                             if max_deviation < 300 {
-                                println!("Clocks settled after {} ms", start.elapsed().as_millis());
                                 break;
                             }
                         }
@@ -455,7 +444,6 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                         "EtherCAT PreOp → SafeOp transition failed: {e:?}. Terminating for a clean restart."
                                     ))?;
                                     group_container = Some(GroupState::SafeOp(group));
-                                    println!("Requested SAFE-OP");
                                 } else {
                                     group_container = Some(GroupState::PreOp(group));
                                 }
@@ -474,7 +462,6 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                 });
 
                                 if is_all_safe {
-                                    println!("SAFE-OP");
                                     // --- Calculate and map offsets here ---
                                     let mut rx_offset = 0;
                                     let mut tx_offset = 0;
@@ -515,7 +502,6 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                             ));
                         }
                     }
-                    println!("Started Transition to OP");
                     self.state.store(EtherCATState::Op.into(), Relaxed);
                 }
 
@@ -535,9 +521,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                 if opt.lock_memory {
                                     let flags = MCL_CURRENT | MCL_FUTURE;
                                     let result = unsafe { mlockall(flags) };
-                                    if result == 0 {
-                                        println!("All current and future memory pages locked.");
-                                    } else {
+                                    if result != 0 {
                                         eprintln!(
                                             "Warning: Memory locking failed! Result: {}",
                                             result
@@ -583,22 +567,13 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                     }
                                     self.all_subdevices_operational.store(true, Relaxed);
                                     drop(subdevice_guard);
-                                    println!("ALL OP");
                                     not_all_op_cycles = 0;
                                     is_all_op = true;
                                 } else {
                                     spinner.sleep_until(self.next_cycle);
                                     self.cycle_time_us
                                         .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
-                                    not_all_op_cycles += 1;
-
-                                    if not_all_op_cycles % 1000 == 0 {
-                                        println!(
-                                            "OP ramp: still waiting for all devices to reach OP ({} cycles elapsed of {} max)",
-                                            not_all_op_cycles,
-                                            self.current_config.op_ramp_grace_cycles
-                                        );
-                                    }
+                                    not_all_op_cycles += 1;                                    
 
                                     if not_all_op_cycles >= self.current_config.op_ramp_grace_cycles
                                     {
