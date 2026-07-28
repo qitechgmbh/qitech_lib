@@ -130,7 +130,7 @@ fn main() {
         .channel
         .request_state_change(EtherCATState::Op)
         .expect("Channel was not ready");
-    std::thread::sleep(Duration::from_millis(2000));
+    std::thread::sleep(Duration::from_millis(5000));
     loop {
         if eth_handle.check_all_op() {
             break;
