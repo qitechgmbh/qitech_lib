@@ -104,7 +104,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                             let res = set_irq_affinity(&interface, irq_core as u32);
                                             if res.is_err() {
                                                 eprintln!("set_irq_affinity failed performance may be degraded");
-                                            } 
+                                            }
                                         }
                                     }
                                     None => (),
@@ -138,7 +138,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                 dc_static_sync_iterations: 10_000,
                             },
                         ));
-                        
+
                         let rt = get_async_runtime();
                         let res = rt.block_on(async {
                             maindevice
@@ -148,9 +148,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                 .await
                         });
                         group = Some(match res {
-                            Ok(group) => {
-                                group
-                            }
+                            Ok(group) => group,
                             Err(err) => {
                                 self.state.store(EtherCATState::Init.into(), Relaxed);
                                 send_response(
@@ -373,9 +371,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                             }
                                         }
                                         Err(ethercrab::error::Error::WorkingCounter { .. }) => 0,
-                                        Err(_e) => {
-                                            0
-                                        }
+                                        Err(_e) => 0,
                                     };
 
                                 let ema_next = ema.next(diff as f64);
@@ -523,10 +519,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                     let flags = MCL_CURRENT | MCL_FUTURE;
                                     let result = unsafe { mlockall(flags) };
                                     if result != 0 {
-                                        bail!(
-                                            "Warning: Memory locking failed! Result: {}",
-                                            result,
-                                        );
+                                        bail!("Warning: Memory locking failed! Result: {}", result,);
                                     }
                                 }
                             }
@@ -575,7 +568,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                     spinner.sleep_until(self.next_cycle);
                                     self.cycle_time_us
                                         .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
-                                    not_all_op_cycles += 1;                                    
+                                    not_all_op_cycles += 1;
 
                                     if not_all_op_cycles >= self.current_config.op_ramp_grace_cycles
                                     {
