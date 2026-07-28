@@ -650,7 +650,6 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                             // This gives the client side time to look at the inputs and write outputs
                             // Might be a bit too tight if running < 125us but at that point it isnt really stable anyways
                             spinner.sleep_until(self.next_cycle - Duration::from_nanos(10000));
-                            //println!("delta: {}, integral: {}, offsettime: {} time till next cycle {}", error, integral, offsettime,cycle_time_ns as u64 - offsettime as u64);
                             //println!("time {:?} delta: {}, integral: {}, offsettime: {} time till next cycle {}", cycle_start.elapsed() + Duration::from_nanos(10000),error, integral, offsettime,cycle_time_ns as u64 - offsettime as u64 );
                             match self.output_consumer.read() {
                                 Some(full_buffer) => {
