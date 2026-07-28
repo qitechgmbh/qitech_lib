@@ -85,6 +85,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                         let pdu_rx = rx;
                         let interface = self.interface.clone().unwrap();
                         let opt = self.current_config.realtime_optimizations.clone();
+
                         _ethercat_tx_rx_handle = std::thread::Builder::new()
                             .name("EthercatTxRxThread".to_owned())
                             .spawn(move || {
@@ -102,7 +103,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                         if let Some(irq_core) = opt.pin_irq_core {
                                             let res = set_irq_affinity(&interface, irq_core as u32);
                                             if res.is_err() {
-                                                println!("set_irq_affinity failed: {:?}", res);
+                                                eprintln!("set_irq_affinity failed performance may be degraded");
                                             } 
                                         }
                                     }
@@ -137,6 +138,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                 dc_static_sync_iterations: 10_000,
                             },
                         ));
+                        
                         let rt = get_async_runtime();
                         let res = rt.block_on(async {
                             maindevice
@@ -509,6 +511,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                     let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
                     return futures::executor::block_on(async {
+
                         match &self.current_config.realtime_optimizations {
                             Some(opt) => {
                                 let id = core_affinity::CoreId {
@@ -522,9 +525,9 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                     let flags = MCL_CURRENT | MCL_FUTURE;
                                     let result = unsafe { mlockall(flags) };
                                     if result != 0 {
-                                        eprintln!(
+                                        bail!(
                                             "Warning: Memory locking failed! Result: {}",
-                                            result
+                                            result,
                                         );
                                     }
                                 }
@@ -541,6 +544,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                         let pgain = 0.01 as f64;
                         let igain = 0.00002 as f64;
                         let sync_offset_ns: u64 = 500000;
+
                         loop {
                             let cycle_start = Instant::now();
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
