@@ -4,9 +4,8 @@ use crate::pdo::oversampling::{AnalogOutputOversample, CycleCount};
 use crate::pdo::{RxPdo, TxPdo};
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
-
-const SM0_START : u16 = 0x1600;
-const SM1_START : u16 = 0x1700;
+const SM0_START: u16 = 0x1600;
+const SM1_START: u16 = 0x1700;
 
 /// EL4732 2-channel analog output device with oversampling support
 ////
@@ -52,7 +51,14 @@ impl EL4732 {
             rxpdo: EL4732RxPdo::new(oversample_factor),
             txpdo: EL4732TxPdo::default(),
             is_used: false,
-            configuration: EL4732Configuration { oversample_factor, oversampling_config: [(SM0_START, oversample_factor as u16),(SM1_START, oversample_factor as u16)].to_vec() },
+            configuration: EL4732Configuration {
+                oversample_factor,
+                oversampling_config: [
+                    (SM0_START, oversample_factor as u16),
+                    (SM1_START, oversample_factor as u16),
+                ]
+                .to_vec(),
+            },
         }
     }
 
@@ -190,14 +196,14 @@ pub enum EL4732Port {
 #[derive(Debug, Clone)]
 pub struct EL4732Configuration {
     pub oversample_factor: usize,
-    pub oversampling_config: Vec<(u16,u16)>,
+    pub oversampling_config: Vec<(u16, u16)>,
 }
 
 impl Default for EL4732Configuration {
     fn default() -> Self {
         Self {
             oversample_factor: 1,
-            oversampling_config: [(SM0_START, 1),(SM1_START, 1)].to_vec(),
+            oversampling_config: [(SM0_START, 1), (SM1_START, 1)].to_vec(),
         }
     }
 }

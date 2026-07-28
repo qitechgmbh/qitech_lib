@@ -1,15 +1,15 @@
 #[cfg(not(feature = "mock"))]
 use crate::{ChannelRequest, ChannelResponse, EtherCATThreadResponseChannel};
-#[cfg(not(feature = "mock"))]
-use std::time::Duration;
 use crate::{
     EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest,
-    SdoType, get_async_runtime, machine_ident_read::MachineDeviceInfo
+    SdoType, get_async_runtime, machine_ident_read::MachineDeviceInfo,
 };
 use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
 };
 use std::any::TypeId;
+#[cfg(not(feature = "mock"))]
+use std::time::Duration;
 
 pub trait EthercatResponseTypedResult: Sized {
     fn from_bool(_v: bool) -> anyhow::Result<Self> {
@@ -441,10 +441,17 @@ impl EtherCATThreadChannel {
         }
     }
 
-    pub fn configure_oversampling(&self, device_address: u16, oversampling_settings: Vec<(u16,u16)> ) -> Result<(), anyhow::Error> {
+    pub fn configure_oversampling(
+        &self,
+        device_address: u16,
+        oversampling_settings: Vec<(u16, u16)>,
+    ) -> Result<(), anyhow::Error> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req = ChannelRequest {
-            channel_request: crate::ChannelRequests::ConfigureOversampling(device_address.into(),oversampling_settings),
+            channel_request: crate::ChannelRequests::ConfigureOversampling(
+                device_address.into(),
+                oversampling_settings,
+            ),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
         match self.0.send(req) {
@@ -625,7 +632,7 @@ pub fn configure_oversampling(
     group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
     maindevice: &MainDevice,
     device_address: usize,
-    oversampling_settings: &[(u16,u16)]
+    oversampling_settings: &[(u16, u16)],
 ) -> Result<(), anyhow::Error> {
     let rt = get_async_runtime();
     rt.block_on(async {
