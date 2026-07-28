@@ -4,9 +4,13 @@ use crate::pdo::oversampling::{AnalogOutputOversample, CycleCount};
 use crate::pdo::{RxPdo, TxPdo};
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
+
+const SM0_START : u16 = 0x1600;
+const SM1_START : u16 = 0x1700;
+
 /// EL4732 2-channel analog output device with oversampling support
-///
-/// 16-bit resolution, -10V to +10V, E-Bus current: 180mA
+////
+/// 16-bit resolution, -10V to +10V
 ///
 /// `oversample_factor` must be one of: 1, 2, 3, 4, 5, 8, 10, 16, 20, 25, 32, 40, 50, 100
 /// (as defined in the EL4732 ESI DC OpModes)
@@ -14,10 +18,6 @@ use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 /// PDI layout per cycle:
 ///   SM0 (0x1000): ch1_cycle_count (u16) + [i16; N] = 2 + N*2 bytes
 ///   SM1 (0x1400): ch2_cycle_count (u16) + [i16; N] = 2 + N*2 bytes
-///
-/// DC sync is required for oversampling (AssignActivate = 0x0730).
-/// For N=1: use DcSync::Sync0
-/// For N>1: use DcSync::Sync01 { sync1_period: cycle_time / N }
 #[derive(EthercatDevice)]
 pub struct EL4732 {
     pub rxpdo: EL4732RxPdo,
@@ -52,7 +52,7 @@ impl EL4732 {
             rxpdo: EL4732RxPdo::new(oversample_factor),
             txpdo: EL4732TxPdo::default(),
             is_used: false,
-            configuration: EL4732Configuration { oversample_factor },
+            configuration: EL4732Configuration { oversample_factor, oversampling_config: [(SM0_START, oversample_factor as u16),(SM1_START, oversample_factor as u16)].to_vec() },
         }
     }
 
@@ -190,12 +190,14 @@ pub enum EL4732Port {
 #[derive(Debug, Clone)]
 pub struct EL4732Configuration {
     pub oversample_factor: usize,
+    pub oversampling_config: Vec<(u16,u16)>,
 }
 
 impl Default for EL4732Configuration {
     fn default() -> Self {
         Self {
             oversample_factor: 1,
+            oversampling_config: [(SM0_START, 1),(SM1_START, 1)].to_vec(),
         }
     }
 }

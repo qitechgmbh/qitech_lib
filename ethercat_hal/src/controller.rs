@@ -1,4 +1,3 @@
-use crate::devices::beckhoff_modules::el4732::EL4732_PRODUCT_ID;
 use crate::ethercat_helpers::configure_oversampling;
 use crate::ethercat_helpers::enable_dc_sync01;
 use crate::{
@@ -307,9 +306,9 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                             );
                             continue;
                         }
-                        ChannelRequests::ConfigureOversampling(device_address) => {
+                        ChannelRequests::ConfigureOversampling(device_address, oversampling_settings) => {
                             let res =
-                                configure_oversampling(&mut preop_group, maindev, device_address);
+                                configure_oversampling(&mut preop_group, maindev, device_address,&oversampling_settings);
                             send_response(
                                 msg.response_channel,
                                 ChannelResponse::ConfigureOversamplingResponse(res),
@@ -544,7 +543,6 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
 
                         let mut is_all_op = false;
                         let mut not_all_op_cycles: u32 = 0;
-                        let mut roundtrip_time = Duration::from_micros(0);
                         let cycle_time_ns = self.current_config.target_cycle_time_us as i64 * 1000;
                         let mut integral: i64 = 0;
                         let mut error: i64;
@@ -557,13 +555,13 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                             let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");                         
                             delta =
                                 (res.extra.dc_system_time - sync_offset_ns) as i64 % cycle_time_ns;
-                            if (delta > (cycle_time_ns / 2)) {
+                            if delta > (cycle_time_ns / 2) {
                                 delta = delta - cycle_time_ns
                             }
                             error = -delta;
-			    // Not sure what to clamp to, if at all Clamping seemed to have a negative effect? so just keep it as is
-			    integral = (integral + error);//.clamp(sync_offset_ns as i64*-1 * 10, sync_offset_ns as i64 * 10);
-			    // Maybe instead it makes sense to clamp offsettime?
+			                 // Not sure what to clamp to, if at all Clamping seemed to have a negative effect? so just keep it as is
+			                 integral = integral + error ;//.clamp(sync_offset_ns as i64*-1 * 10, sync_offset_ns as i64 * 10);
+			                 // Maybe instead it makes sense to clamp offsettime?
                             let offsettime =
                                 ((error as f64 * pgain) + (integral as f64 * igain)) as i64;
                             self.dc_system_time_ns
@@ -626,32 +624,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                 Some(buffer) => {
                                     // We get a mutable slice to the whole buffer to make sub-slicing easier
                                     let mut current_offset = 0;
-                                    for subdevice in group.iter(&maindevice) {
-                                        /*                             	  	if (subdevice.identity().product_id == EL4732_PRODUCT_ID) {
-                                                                let next_sync1_ts = u32::from_le_bytes(
-                                                                    subdevice.io_raw().inputs()[0..4].try_into().unwrap()
-                                                                );
-                                                                let dc_time_32 = (res.extra.dc_system_time & 0xFFFF_FFFF) as u32;
-                                                                let time_until_sync1 = next_sync1_ts.wrapping_sub(dc_time_32);
-                                                                let error_ns = (time_until_sync1 as i32) - sync_offset_ns as i32;
-                                                                let phase_correction_ns = error_ns / 10;
-                                                                let base_cycle = Duration::from_nanos(cycle_time_ns as u64);
-
-                                                                let duration = if phase_correction_ns >= 0 {
-                                                                    base_cycle + Duration::from_nanos(phase_correction_ns as u64)
-                                                                } else {
-                                                                    let abs_corr = phase_correction_ns.unsigned_abs() as u64;
-                                                                    if abs_corr < cycle_time_ns as u64{
-                                                                    base_cycle - Duration::from_nanos(abs_corr)
-                                                                    }else{
-                                                                       Duration::from_nanos(0)
-                                                                   }
-                                        //						    base_cycle - Duration::from_nanos(abs_corr)
-                                                                };
-                                                                                        //println!("dcref32 {} next sync1 ts {} time until sync1 {} duration until sync1 in nanos {}",dc_time_32, next_sync1_ts, time_until_sync1,duration.as_nanos());
-                                                                self.next_cycle = cycle_start + duration;
-
-                                                            }*/
+                                    for subdevice in group.iter(&maindevice) {                                      
                                         let len = subdevice.io_raw().inputs().len();
                                         if current_offset + len <= ETHERCAT_TX_RX_SIZE {
                                             buffer[current_offset..current_offset + len]
@@ -669,7 +642,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                             // This gives the client side time to look at the inputs and write outputs
                             // Might be a bit too tight if running < 125us but at that point it isnt really stable anyways
                             spinner.sleep_until(self.next_cycle - Duration::from_nanos(10000));
-//                            println!("delta: {}, integral: {}, offsettime: {} time till next cycle {}", error, integral, offsettime,cycle_time_ns as u64 - offsettime as u64);
+                            //println!("delta: {}, integral: {}, offsettime: {} time till next cycle {}", error, integral, offsettime,cycle_time_ns as u64 - offsettime as u64);
                             println!("time {:?} delta: {}, integral: {}, offsettime: {} time till next cycle {}", cycle_start.elapsed() + Duration::from_nanos(10000),error, integral, offsettime,cycle_time_ns as u64 - offsettime as u64 );
                             match self.output_consumer.read() {
                                 Some(full_buffer) => {
