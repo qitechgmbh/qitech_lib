@@ -591,8 +591,6 @@ pub fn set_current_thread_rt_priority(priority: i32) {
                 "Failed to set RT priority: {}. (Are you root / using sudo?)",
                 err
             );
-        } else {
-            println!("Thread priority set to SCHED_FIFO with level {}", priority);
         }
     }
 }
