@@ -40,7 +40,7 @@ fn main() {
     let mut dc_config = DcConfiguration::default();
     dc_config.start_delay = Duration::from_millis(100);
     dc_config.sync0_period = Duration::from_micros(SYNC0_PERIOD_US);
-    dc_config.sync0_shift = Duration::from_micros(SYNC0_PERIOD_US/2);
+    dc_config.sync0_shift = Duration::from_micros(SYNC0_PERIOD_US / 2);
     dc_config.target_dc_tick = 500;
 
     /*
