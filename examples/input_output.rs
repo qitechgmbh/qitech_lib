@@ -1,13 +1,20 @@
 /*
-	Requires an EL2004 and an EL1008 or similiar
-	where all 4 channels connect to the first 4 of an el1008, however with small changes an el1002,el1004 also works
+    Requires an EL2004 and an EL1008 or similiar
+    where all 4 channels connect to the first 4 of an el1008, however with small changes an el1002,el1004 also works
 */
 
 use bitvec::{order::Lsb0, slice::BitSlice};
 use ethercat_hal::{
-    BECKHOFF_VENDOR_ID, EtherCATState, devices::{
-        EthercatDevice, NewEthercatDevice, beckhoff_modules::{el1008::{EL1008, EL1008_PRODUCT_ID}, el2004::{EL2004, EL2004_PRODUCT_ID}},
-    }, init_ethercat, io::{digital_input::DigitalInputDevice, digital_output::DigitalOutputDevice},
+    BECKHOFF_VENDOR_ID, EtherCATState,
+    devices::{
+        EthercatDevice, NewEthercatDevice,
+        beckhoff_modules::{
+            el1008::{EL1008, EL1008_PRODUCT_ID},
+            el2004::{EL2004, EL2004_PRODUCT_ID},
+        },
+    },
+    init_ethercat,
+    io::{digital_input::DigitalInputDevice, digital_output::DigitalOutputDevice},
 };
 use std::{env, time::Duration};
 
@@ -60,22 +67,25 @@ fn main() {
     let mut el1008: EL1008 = EL1008::new();
 
     loop {
-    	// You can ignore this boolean but if you start reading while this is false you will
-    	// get stale data (might actually be fine depending on your use case)
-    	while eth_handle.check_inputs_ready() == false {}
+        // You can ignore this boolean but if you start reading while this is false you will
+        // get stale data (might actually be fine depending on your use case)
+        while eth_handle.check_inputs_ready() == false {}
         let inputs = eth_handle.get_inputs().unwrap();
-        for subdevice in &subdevices { 
-               if subdevice.vendor == BECKHOFF_VENDOR_ID
-                    && subdevice.product_id == EL1008_PRODUCT_ID
-                {
-                	let input_slice = &inputs[subdevice.start_tx..subdevice.end_tx];
-                	el1008.input(BitSlice::<u8, Lsb0>::from_slice(input_slice)).expect("Failed to write Tx PDO");
-                }
+        for subdevice in &subdevices {
+            if subdevice.vendor == BECKHOFF_VENDOR_ID && subdevice.product_id == EL1008_PRODUCT_ID {
+                let input_slice = &inputs[subdevice.start_tx..subdevice.end_tx];
+                el1008
+                    .input(BitSlice::<u8, Lsb0>::from_slice(input_slice))
+                    .expect("Failed to write Tx PDO");
+            }
         }
-        
+
         // Here, we just alternate which LED is on depending on the input terminal
         for i in 0..el2004.get_port_count() {
-            el2004.set_output(i, !el1008.get_input(i).expect("Failed to read input channel"));
+            el2004.set_output(
+                i,
+                !el1008.get_input(i).expect("Failed to read input channel"),
+            );
         }
 
         // We ONLY have outputs so no need to call get_inputs

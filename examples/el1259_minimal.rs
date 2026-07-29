@@ -85,7 +85,7 @@ fn main() {
 
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
     loop {
-        while eth_handle.check_inputs_ready() == false {}        
+        while eth_handle.check_inputs_ready() == false {}
         if let Some(input) = eth_handle.get_inputs() {
             for subdevice in &subdevices {
                 if subdevice.product_id == EL1259_PRODUCT_ID {
