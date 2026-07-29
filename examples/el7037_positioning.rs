@@ -4,13 +4,21 @@ use ethercat_hal::{
     coe::ConfigurableDevice,
     devices::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
-        el7037::{EL7037, EL7037_PRODUCT_ID, coe::EL7037Configuration, pdo::EL7037PredefinedPdoAssignment},
+        el7037::{
+            EL7037, EL7037_PRODUCT_ID, coe::EL7037Configuration, pdo::EL7037PredefinedPdoAssignment,
+        },
     },
     init_ethercat,
-    io::stepper_velocity_el70x1::StepperVelocityEL70x1Device,
-    shared_config::el70x7::EL70x1OperationMode,
+    shared_config::el70x7::{EL70x1OperationMode, EL7037FeedbackType},
 };
 use std::{env, time::Duration};
+
+enum State {
+    Reset,
+    WaitForReset,
+    Increment,
+    Decrement,
+}
 
 /// Minimal example: spin the motor on an EL7037 at ±1000 steps/s,
 /// switching direction every 200 cycles (~2 s at 10 ms per cycle).
@@ -36,16 +44,20 @@ fn main() {
     let mut el7037 = EL7037::new();
     let mut config = EL7037Configuration::default();
 
-    config.stm_features.operation_mode = EL70x1OperationMode::ExtendedPositionController;
-    // Include StmSynchronInfoData in TxPDO so MotorLoad + MotorDcCurrent are available
+    config.stm_features.operation_mode = EL70x1OperationMode::Automatic;
     config.pdo_assignment = EL7037PredefinedPdoAssignment::PositionControl;
 
     config.stm_motor.max_current = 1100;
+    config.stm_features.feedback_type = EL7037FeedbackType::Encoder;
 
     for subdevice in eth_control.controller.get_subdevices() {
         if subdevice.vendor == BECKHOFF_VENDOR_ID && subdevice.product_id == EL7037_PRODUCT_ID {
             el7037
-                .write_config(eth_control.channel.clone(), subdevice.device_address, &config)
+                .write_config(
+                    eth_control.channel.clone(),
+                    subdevice.device_address,
+                    &config,
+                )
                 .expect("EL7037 CoE config failed");
         }
     }
@@ -61,7 +73,9 @@ fn main() {
         }
     }
 
-    for step in 0.. {
+    let mut state = State::Reset;
+
+    loop {
         // --- Read inputs (TxPDO: encoder + motor status from device) ---
         if let Some(input) = eth_control.app_handle.get_inputs() {
             for subdevice in eth_control.controller.get_subdevices() {
@@ -77,29 +91,50 @@ fn main() {
             eth_control.app_handle.finish_read();
         }
 
-        let enc_status = el7037.txpdo.enc_status.as_mut().expect("No ENC Status");
-
-        println!("Counter = {}", enc_status.counter_value);
-
-        let stm_position = el7037.rxpdo.stm_position.as_mut().expect("No STM Position");
         let stm_control = el7037.rxpdo.stm_control.as_mut().expect("No STM Control");
-        stm_control.enable = true;
+        let enc_status = el7037.txpdo.enc_status.as_mut().expect("No Encoder Status");
+        let stm_position = el7037.rxpdo.stm_position.as_mut().expect("No STM Position");
+        let enc_control = el7037
+            .rxpdo
+            .enc_control
+            .as_mut()
+            .expect("No Encoder Control");
 
-        // if step % 100 == 0 {
-        //     stm_position.position += 5000;
-        // }
+        println!("POS = {}", enc_status.counter_value);
 
-        stm_position.position = step * 10;
+        match state {
+            State::Reset => {
+                stm_control.reset = true;
+                enc_control.set_counter = true;
+                enc_control.set_counter_value = 10000;
 
-        // if mode == 0 {
-        //     if stm_position.position == enc_status.counter_value {
-        //         mode = 1;
-        //     }
+                state = State::WaitForReset;
+            }
+            State::WaitForReset => {
+                stm_control.reset = false;
+                enc_control.set_counter = false;
 
-        //     stm_position.position = 0;
-        // } else {
-        //     stm_position.position = 20000;
-        // }
+                if enc_status.counter_value == 10000 {
+                    state = State::Increment;
+                }
+            }
+            State::Increment => {
+                stm_control.enable = true;
+                stm_position.position = 12000;
+
+                if enc_status.counter_value == 12000 {
+                    state = State::Decrement;
+                }
+            }
+            State::Decrement => {
+                stm_control.enable = true;
+                stm_position.position = 11000;
+
+                if enc_status.counter_value == 11000 {
+                    state = State::Increment;
+                }
+            }
+        }
 
         // --- Write outputs (RxPDO: velocity + control bits to device) ---
         let _ = el7037.output_pre_process();
