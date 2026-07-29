@@ -122,6 +122,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Even though no frame was actually missed. For more accurate logic the counter of missed_frames
     // should be moved to the controller logic
     while cycles_recorded < total_cycles {
+        // Spin until io thread has advanced past our last seen cycle
+        let current_controller_cycle = ec_app_interface.get_current_cycle();
+        if last_cycle != 0 {
+            if current_controller_cycle - last_cycle > 1 {
+                missed_frames += (current_controller_cycle - last_cycle - 1) as usize;
+            }
+        }
         while ec_app_interface.get_inputs().is_none() {}
         let _inputs = ec_app_interface.get_inputs().unwrap();
         // Do something with the inputs here
@@ -133,13 +140,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         outputs[0] = 0;
         ec_app_interface.send_outputs();
 
-        // Spin until io thread has advanced past our last seen cycle
-        let current_controller_cycle = ec_app_interface.get_current_cycle();
-        if last_cycle != 0 {
-            if current_controller_cycle - last_cycle > 1 {
-                missed_frames += (current_controller_cycle - last_cycle - 1) as usize;
-            }
-        }
 
         if current_controller_cycle > last_cycle {
             last_cycle = current_controller_cycle;
