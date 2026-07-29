@@ -57,6 +57,7 @@ where
     subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
     state: Arc<AtomicU8>,
     all_subdevices_operational: Arc<AtomicBool>,
+    inputs_ready: Arc<AtomicBool>,
     dc_system_time_ns: Arc<AtomicU64>,
     current_config: MasterConfiguration,
     requested_state: Option<EtherCATState>,
@@ -83,6 +84,7 @@ where
         state: Arc<AtomicU8>,
         subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
         all_subdevices_operational: Arc<AtomicBool>,
+        inputs_ready: Arc<AtomicBool>
     ) -> Self {
         Self {
             cycle,
@@ -99,6 +101,7 @@ where
             current_config: config,
             all_subdevices_operational,
             dc_system_time_ns,
+            inputs_ready
         }
     }
 }
@@ -247,6 +250,7 @@ where
     subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
     all_op: Arc<AtomicBool>,
     dc_sys_time: Arc<AtomicU64>,
+    inputs_ready: Arc<AtomicBool>,
 }
 
 impl<C, P> EtherCATAppHandle<C, P>
@@ -296,6 +300,10 @@ where
 
     pub fn get_state(&self) -> EtherCATState {
         self.state.load(Relaxed).into()
+    }
+
+    pub fn check_inputs_ready(&self) -> bool {
+        self.inputs_ready.load(Relaxed)
     }
 
     pub fn try_get_subdevices_vec_sync(&self) -> Result<Vec<MetaSubdevice>, anyhow::Error> {
@@ -349,9 +357,9 @@ where
     pub join_handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
 }
 
-pub type StdEcatHandle = EtherCATAppHandle<Arc<Mailbox>, Arc<Mailbox>>;
+pub type StdEcatHandle = EtherCATAppHandle<TripleBufConsumer, Arc<Mailbox>>;
 pub type MockEcatHandle = EtherCATAppHandle<MockConsumer, MockProducer>;
-pub type StdEcatController = EtherCATController<Arc<Mailbox>, Arc<Mailbox>>;
+pub type StdEcatController = EtherCATController<Arc<Mailbox>, TripleBufProducer>;
 
 /*Metadata for a Subdevice Contains start and end of the given subdevices pdu*/
 #[derive(Clone, Copy, Debug)]
@@ -685,14 +693,10 @@ impl Default for MasterConfiguration {
 pub fn init_ethercat(
     interface_name: &str,
     config: Option<MasterConfiguration>,
-) -> EtherCATControl<Arc<Mailbox>, Arc<Mailbox>> {
+) -> EtherCATControl<TripleBufConsumer, Arc<Mailbox>> {
     use std::sync::atomic::AtomicU8;
     let (tx, rx) = mpsc::channel();
     let mailbox = Arc::new(Mailbox {
-        data: [0u8; ETHERCAT_TX_RX_SIZE].into(),
-        full: AtomicBool::new(false),
-    });
-    let mailbox2 = Arc::new(Mailbox {
         data: [0u8; ETHERCAT_TX_RX_SIZE].into(),
         full: AtomicBool::new(false),
     });
@@ -705,10 +709,18 @@ pub fn init_ethercat(
     let dc_sys_time: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
     let subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>> =
         Arc::new(Mutex::new([MetaSubdevice::default(); MAX_SUBDEVICES]));
+    let inputs_ready = Arc::new(AtomicBool::new(false));
+
+    // input refers to ethercat tx
+    // which is consumed by clientside code and produced by the controller
+    let (input_producer, input_consumer) =
+        triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
 
     let mut controller = match config {
         Some(conf) => EtherCATController::new(
-            mailbox2.clone(),
+            TripleBufProducer {
+                output_producer: input_producer,
+            },
             mailbox.clone(),
             rx,
             Some(interface_name.to_string()),
@@ -720,9 +732,12 @@ pub fn init_ethercat(
             state.clone(),
             subdevices.clone(),
             all_op.clone(),
+            inputs_ready.clone()
         ),
         None => EtherCATController::new(
-            mailbox2.clone(),
+            TripleBufProducer {
+                output_producer: input_producer,
+            },
             mailbox.clone(),
             rx,
             Some(interface_name.to_string()),
@@ -734,11 +749,12 @@ pub fn init_ethercat(
             state.clone(),
             subdevices.clone(),
             all_op.clone(),
+            inputs_ready.clone()
         ),
     };
 
     let app_handle = EtherCATAppHandle {
-        input_consumer: mailbox2,
+        input_consumer: TripleBufConsumer { input_consumer },
         output_producer: mailbox,
         cycle,
         cycle_time_us,
@@ -748,6 +764,7 @@ pub fn init_ethercat(
         subdevices,
         all_op,
         dc_sys_time,
+        inputs_ready,
     };
 
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx);

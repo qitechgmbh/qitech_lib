@@ -1,3 +1,4 @@
+use crate::TripleBufProducer;
 use crate::ethercat_helpers::configure_oversampling;
 use crate::ethercat_helpers::enable_dc_sync01;
 use crate::{
@@ -27,7 +28,7 @@ use std::{
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
 
-impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
+impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
     pub fn ethercat_state_machine(&mut self) -> Result<(), anyhow::Error> {
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> =
@@ -532,9 +533,12 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                         let mut integral: i64 = 0;
                         let mut error: i64;
                         let mut delta: i64;
+                        // TODO Make these configurable?
                         let pgain = 0.01 as f64;
                         let igain = 0.00002 as f64;
-                        let sync_offset_ns: u64 = 500000;
+                        // sync_offset_ns is 50% of macro cycle time(Sync1 FULL period) 
+                        // This essentially means we send the frame 50% into the sync1 period
+                        let sync_offset_ns: u64 = self.current_config.target_cycle_time_us as u64 / 2;
 
                         loop {
                             let cycle_start = Instant::now();
@@ -598,6 +602,7 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                     continue;
                                 }
                             }
+
                             match self.input_producer.input_buffer_mut() {
                                 Some(buffer) => {
                                     // We get a mutable slice to the whole buffer to make sub-slicing easier
@@ -616,6 +621,8 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                 }
                                 None => {}
                             }
+                            self.inputs_ready.store(true, Relaxed);
+
 
                             // This gives the client side time to look at the inputs and write outputs
                             // Might be a bit too tight if running < 125us but at that point it isnt really stable anyways
@@ -635,14 +642,15 @@ impl EtherCATController<Arc<Mailbox>, Arc<Mailbox>> {
                                 }
                                 None => {}
                             };
+                            spinner.sleep_until(self.next_cycle);                            
+                            self.cycle_time_us
+                                .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
                             if self.cycle.load(Relaxed) == u64::MAX {
                                 self.cycle.store(0, Relaxed);
                             } else {
                                 self.cycle.fetch_add(1, Relaxed);
                             }
-                            self.cycle_time_us
-                                .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
-                            spinner.sleep_until(self.next_cycle);
+                            self.inputs_ready.store(false, Relaxed);
                         }
                     });
                 }
