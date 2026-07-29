@@ -536,9 +536,10 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         // TODO Make these configurable?
                         let pgain = 0.01 as f64;
                         let igain = 0.00002 as f64;
-                        // sync_offset_ns is 50% of macro cycle time(Sync1 FULL period) 
+                        // sync_offset_ns is 50% of macro cycle time(Sync1 FULL period)
                         // This essentially means we send the frame 50% into the sync1 period
-                        let sync_offset_ns: u64 = self.current_config.target_cycle_time_us as u64 / 2;
+                        let sync_offset_ns: u64 =
+                            self.current_config.target_cycle_time_us as u64 / 2;
 
                         loop {
                             let cycle_start = Instant::now();
@@ -623,7 +624,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             }
                             self.inputs_ready.store(true, Relaxed);
 
-
                             // This gives the client side time to look at the inputs and write outputs
                             // Might be a bit too tight if running < 125us but at that point it isnt really stable anyways
                             spinner.sleep_until(self.next_cycle - Duration::from_nanos(10000));
@@ -642,7 +642,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 }
                                 None => {}
                             };
-                            spinner.sleep_until(self.next_cycle);                            
+                            spinner.sleep_until(self.next_cycle);
                             self.cycle_time_us
                                 .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
                             if self.cycle.load(Relaxed) == u64::MAX {

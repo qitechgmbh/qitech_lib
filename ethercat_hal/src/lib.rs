@@ -84,7 +84,7 @@ where
         state: Arc<AtomicU8>,
         subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
         all_subdevices_operational: Arc<AtomicBool>,
-        inputs_ready: Arc<AtomicBool>
+        inputs_ready: Arc<AtomicBool>,
     ) -> Self {
         Self {
             cycle,
@@ -101,7 +101,7 @@ where
             current_config: config,
             all_subdevices_operational,
             dc_system_time_ns,
-            inputs_ready
+            inputs_ready,
         }
     }
 }
@@ -732,7 +732,7 @@ pub fn init_ethercat(
             state.clone(),
             subdevices.clone(),
             all_op.clone(),
-            inputs_ready.clone()
+            inputs_ready.clone(),
         ),
         None => EtherCATController::new(
             TripleBufProducer {
@@ -749,7 +749,7 @@ pub fn init_ethercat(
             state.clone(),
             subdevices.clone(),
             all_op.clone(),
-            inputs_ready.clone()
+            inputs_ready.clone(),
         ),
     };
 
