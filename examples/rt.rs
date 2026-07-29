@@ -122,7 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Even though no frame was actually missed. For more accurate logic the counter of missed_frames
     // should be moved to the controller logic
     while cycles_recorded < total_cycles {
-        while ec_app_interface.get_inputs().is_none() {}
+        while ec_app_interface.check_inputs_ready() == false {}
         let _inputs = ec_app_interface.get_inputs().unwrap();
         // Do something with the inputs here
         // ...
