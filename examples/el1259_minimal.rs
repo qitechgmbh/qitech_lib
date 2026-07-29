@@ -10,12 +10,10 @@ use ethercat_hal::{
     io::multi_timestamp::{MultiTimestampEvent, MultiTimestampOutput},
 };
 use std::{env, time::Duration};
-
 const INIT_DELAY_NS: u64 = 20_000_000;
 const PULSE_DELAY_NS: u64 = 200_000;
 const PULSE_WIDTH_NS: u64 = 50_000;
 const BURST_DELAY_NS: u64 = 50_000_000;
-
 const PULSES_PER_BURST: usize = 5;
 const N_CHANNELS: usize = 8;
 
@@ -34,12 +32,10 @@ fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
     let eth_control = init_ethercat(&interface, None);
     let mut eth_handle = eth_control.app_handle;
-
     eth_control
         .channel
         .request_state_change(EtherCATState::PreOp)
         .expect("Channel was not ready");
-
     loop {
         if matches!(eth_handle.get_state(), EtherCATState::PreOp) {
             break;
@@ -56,7 +52,6 @@ fn main() {
                     &el1259.get_config(),
                 )
                 .expect("Failed to write config");
-
             eth_control
                 .channel
                 .enable_dc_sync0(subdevice.device_address)
@@ -90,6 +85,7 @@ fn main() {
 
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
     loop {
+        while eth_handle.check_inputs_ready() == false {}        
         if let Some(input) = eth_handle.get_inputs() {
             for subdevice in &subdevices {
                 if subdevice.product_id == EL1259_PRODUCT_ID {
