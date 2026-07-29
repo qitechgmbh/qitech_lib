@@ -47,11 +47,23 @@ pub struct StmMotorConfiguration {
     /// default: `0x00C8` (200dec) = 200 steps
     pub motor_full_steps: u16,
 
+    /// # 0x8010:07
+    /// Encoder increments (4- fold) (Unit: steps / revolution)
+    ///
+    /// default: `0x1000` (4096dec) = 4096
+    pub encoder_increments: u16,
+
     /// # 0x8010:09
     /// Maximum possible start velocity of the motor
     ///
     /// default: `0x0000` (0dec)
     pub start_velocity: u16,
+
+    /// # 0x8010:0A
+    /// Inductance of the motor (Unit: 0.01 mH)
+    ///
+    /// default: `0x0000` (0dec) = 0 mH
+    pub motor_coil_inductance: u16,
 
     /// # 0x8010:10
     /// Switch-on delay of the driver stage
@@ -76,7 +88,9 @@ impl Default for StmMotorConfiguration {
             motor_coil_resistance: 0x0064, // 100 = 1 ohm
             motor_emf: 0x00C8,             // 200 mV/(rad/s)
             motor_full_steps: 0x00C8,      // 200 steps
+            encoder_increments: 0x1000,    // 4096 steps / revolution
             start_velocity: 0x0000,        // 0
+            motor_coil_inductance: 0x0000, // 0 mH
             drive_on_delay_time: 0x0064,   // 100 ms = 0.1s
             drive_off_delay_time: 0x0064,  // 100 ms = 0.1s
         }
@@ -104,7 +118,9 @@ impl StmMotorConfiguration {
         ecat_channel.sdo_write(device_address, 0x8010, 0x04, self.motor_coil_resistance)?;
         ecat_channel.sdo_write(device_address, 0x8010, 0x05, self.motor_emf)?;
         ecat_channel.sdo_write(device_address, 0x8010, 0x06, self.motor_full_steps)?;
+        ecat_channel.sdo_write(device_address, 0x8010, 0x07, self.encoder_increments)?;
         ecat_channel.sdo_write(device_address, 0x8010, 0x09, self.start_velocity)?;
+        ecat_channel.sdo_write(device_address, 0x8010, 0x0A, self.motor_coil_inductance)?;
         ecat_channel.sdo_write(device_address, 0x8010, 0x10, self.drive_on_delay_time)?;
         ecat_channel.sdo_write(device_address, 0x8010, 0x11, self.drive_off_delay_time)?;
         Ok(())
@@ -262,15 +278,24 @@ impl From<EL70x7InfoData> for u8 {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum EL7037FeedbackType {
+    /// Uses the motor's encoder rather then the internal state machine to count microsteps
+    Encoder,
+    /// Uses internal state machine to count microsteps
+    InternalCounter,
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // STM Features
 // ────────────────────────────────────────────────────────────────────────────
 
 /// EL7037 STM features (object 0x8012).
 ///
-/// Differs from `el70x1::StmFeatures` in two ways:
+/// Differs from `el70x1::StmFeatures` in three ways:
 /// - Uses `EL70x7InfoData` for info data selection (supports `MotorLoad`/`MotorDcCurrent`)
 /// - `write_config` explicitly writes `operation_mode` (0x8012:01), required on EL7037
+/// - `feedback_type` can be unset to use motor's encoder
 #[derive(Debug, Clone)]
 pub struct StmFeatures {
     /// # 0x8012:01
@@ -284,6 +309,12 @@ pub struct StmFeatures {
     ///
     /// default: `0x01` (1dec) = 2000 full steps/second
     pub speed_range: EL70x1SpeedRange,
+
+    /// # 0x8012:08
+    /// Feedback Type
+    ///
+    /// default: `Internal counter`
+    pub feedback_type: EL7037FeedbackType,
 
     /// # 0x8012:09
     /// Activates reversal of the motor rotation direction.
@@ -333,6 +364,7 @@ impl Default for StmFeatures {
         Self {
             operation_mode: EL70x1OperationMode::Automatic,
             speed_range: EL70x1SpeedRange::Steps2000,
+            feedback_type: EL7037FeedbackType::InternalCounter,
             invert_motor_polarity: false,
             select_info_data_1: EL70x7InfoData::MotorCurrentCoilA,
             select_info_data_2: EL70x7InfoData::MotorCurrentCoilB,
@@ -352,6 +384,9 @@ impl StmFeatures {
     ) -> Result<(), anyhow::Error> {
         ecat_channel.sdo_write(device_address, 0x8012, 0x01, u8::from(self.operation_mode))?;
         ecat_channel.sdo_write(device_address, 0x8012, 0x05, u8::from(self.speed_range))?;
+        if matches!(self.feedback_type, EL7037FeedbackType::Encoder) {
+            ecat_channel.sdo_write(device_address, 0x8012, 0x08, false)?;
+        }
         ecat_channel.sdo_write(device_address, 0x8012, 0x09, self.invert_motor_polarity)?;
         ecat_channel.sdo_write(
             device_address,
