@@ -8,10 +8,8 @@ pub mod interface_discovery;
 pub mod io;
 pub mod pdo;
 pub mod shared_config;
-//#[cfg(feature = "legacy_code")]
-pub mod machine_ident_read;
-use ethercrab::PduStorage;
-use machine_ident_read::MachineDeviceInfo;
+pub const ETHERCAT_TX_RX_SIZE: usize = 4096;
+pub const MAX_SUBDEVICES: usize = 32;
 use std::cell::UnsafeCell;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
@@ -37,13 +35,6 @@ fn get_async_runtime() -> &'static Runtime {
 }
 
 pub const BECKHOFF_VENDOR_ID: u32 = 0x2;
-pub const ETHERCAT_TX_RX_SIZE: usize = 4096;
-pub const MAX_SUBDEVICES: usize = 32;
-pub const MAX_PDU_DATA: usize = PduStorage::element_size(512);
-pub const MAX_FRAMES: usize = 32;
-pub const PDI_LEN: usize = 1024;
-
-static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
 pub struct EtherCATController<C, P>
 where
     C: Consumer,
@@ -442,6 +433,35 @@ pub struct SdoReadRequest {
     pub sub_index: u16,
     pub type_flag: SdoType,
 }
+
+
+#[derive(Debug, Copy, Clone)]
+pub struct MachineDeviceInfo {
+    pub role: u16,
+    pub machine_id: u16,
+    pub machine_vendor: u16,
+    pub machine_serial: u16,
+    pub device_address: u16,
+}
+
+pub struct MachineDeviceAddresses {
+    pub vendor_word: u16,
+    pub serial_word: u16,
+    pub machine_word: u16,
+    pub role_word: u16,
+}
+
+impl Default for MachineDeviceAddresses {
+    fn default() -> Self {
+        Self {
+            vendor_word: 0x0028,
+            machine_word: 0x0029,
+            serial_word: 0x002a,
+            role_word: 0x002b,
+        }
+    }
+}
+
 
 // LEGACY CODE HIDE BEHIND FLAG
 pub struct MachineIdent {}

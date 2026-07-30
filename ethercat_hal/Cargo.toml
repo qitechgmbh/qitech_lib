@@ -27,6 +27,7 @@ approx = "0.5.1"
 [lib]
 
 [features]
-default = []
+default = ["ethercrab"]
 mock = []
 legacy_code = []
+ethercrab = []

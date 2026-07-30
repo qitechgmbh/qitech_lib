@@ -1,18 +1,21 @@
-use crate::TripleBufProducer;
-use crate::ethercat_helpers::configure_oversampling;
-use crate::ethercat_helpers::enable_dc_sync01;
+pub const MAX_PDU_DATA: usize = PduStorage::element_size(512);
+pub const MAX_FRAMES: usize = 32;
+pub const PDI_LEN: usize = 1024;
+static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
+use crate::MAX_SUBDEVICES;
+
+use crate::{ETHERCAT_TX_RX_SIZE, TripleBufProducer};
+use crate::controller::ethercrab_funcs::{configure_oversampling, enable_dc_sync, enable_dc_sync01, read_device_identifications, sdo_read, sdo_write, write_device_identifications};
 use crate::{
-    ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES,
-    PDI_LEN, PDU_STORAGE, Producer, SdoType,
-    ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
+    ChannelRequests, ChannelResponse, Consumer, EtherCATState, Producer, SdoType,    
     get_async_runtime,
-    machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
 };
 use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority};
 use anyhow::bail;
 #[cfg(target_os = "linux")]
 use common::set_irq_affinity;
+use ethercrab::PduStorage;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
     std::ethercat_now,

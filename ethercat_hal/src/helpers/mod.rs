@@ -40,7 +40,6 @@ pub async fn set_mut_beckhoff_eeprom_lock_active<'a>(
             subdevice.name()
         );
     }
-
     Ok(())
 }
 
