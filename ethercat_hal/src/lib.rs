@@ -15,7 +15,7 @@ use machine_ident_read::MachineDeviceInfo;
 use std::cell::UnsafeCell;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{Receiver};
 use std::sync::{Arc, OnceLock, mpsc::Sender};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -49,16 +49,9 @@ where
     C: Consumer,
     P: Producer,
 {
-    cycle: Arc<AtomicU64>,
-    cycle_time_us: Arc<AtomicU64>,
-    subdevice_count: Arc<AtomicU64>, // maybe a Mailbox<Status> or smth like that makes more sense?
+    status: EcatStatus,
     next_cycle: Instant,
     interface: Option<String>,
-    subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
-    state: Arc<AtomicU8>,
-    all_subdevices_operational: Arc<AtomicBool>,
-    inputs_ready: Arc<AtomicBool>,
-    dc_system_time_ns: Arc<AtomicU64>,
     current_config: MasterConfiguration,
     requested_state: Option<EtherCATState>,
     rx_channel: Receiver<ChannelRequest>,
@@ -77,31 +70,17 @@ where
         rx: Receiver<ChannelRequest>,
         interface: Option<String>,
         config: MasterConfiguration,
-        cycle: Arc<AtomicU64>,
-        cycle_time_us: Arc<AtomicU64>,
-        subdevice_count: Arc<AtomicU64>,
-        dc_system_time_ns: Arc<AtomicU64>,
-        state: Arc<AtomicU8>,
-        subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
-        all_subdevices_operational: Arc<AtomicBool>,
-        inputs_ready: Arc<AtomicBool>,
+        status: EcatStatus
     ) -> Self {
         Self {
-            cycle,
-            cycle_time_us,
             interface,
-            subdevice_count,
-            next_cycle: std::time::Instant::now(),
-            subdevices,
-            state,
+            next_cycle: std::time::Instant::now(),            
+            status,
             requested_state: None,
             rx_channel: rx,
             input_producer: input,
             output_consumer: output,
-            current_config: config,
-            all_subdevices_operational,
-            dc_system_time_ns,
-            inputs_ready,
+            current_config: config,            
         }
     }
 }
@@ -242,15 +221,7 @@ where
 {
     pub input_consumer: C,
     pub output_producer: P,
-    cycle: Arc<AtomicU64>,
-    cycle_time_us: Arc<AtomicU64>,
-    next_cycle_us: Arc<AtomicU64>,
-    subdevice_count: Arc<AtomicU64>,
-    state: Arc<AtomicU8>,
-    subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
-    all_op: Arc<AtomicBool>,
-    dc_sys_time: Arc<AtomicU64>,
-    inputs_ready: Arc<AtomicBool>,
+    pub status : EcatStatus,
 }
 
 impl<C, P> EtherCATAppHandle<C, P>
@@ -259,11 +230,11 @@ where
     P: Producer,
 {
     pub fn check_all_op(&self) -> bool {
-        self.all_op.load(Relaxed)
+        self.status.all_op.load(Relaxed)
     }
 
     pub fn get_dc_sys_time_ns(&self) -> u64 {
-        self.dc_sys_time.load(Relaxed)
+        self.status.dc_sys_time.load(Relaxed)
     }
 
     pub fn get_inputs(&mut self) -> Option<&[u8]> {
@@ -283,37 +254,37 @@ where
     }
 
     pub fn get_current_cycle(&self) -> u64 {
-        self.cycle.load(Relaxed)
+        self.status.cycle.load(Relaxed)
     }
 
     pub fn get_cycle_time_us(&self) -> u64 {
-        self.cycle_time_us.load(Relaxed)
+        self.status.cycle_time_us.load(Relaxed)
     }
 
     pub fn get_next_cycle_us(&self) -> u64 {
-        self.next_cycle_us.load(Relaxed)
+        self.status.next_cycle_us.load(Relaxed)
     }
 
     pub fn get_subdevice_count(&self) -> u64 {
-        self.subdevice_count.load(Relaxed)
+        self.status.subdevice_count.load(Relaxed)
     }
 
     pub fn get_state(&self) -> EtherCATState {
-        self.state.load(Relaxed).into()
+        self.status.state.load(Relaxed).into()
     }
 
     pub fn check_inputs_ready(&self) -> bool {
-        self.inputs_ready.load(Relaxed)
+        self.status.inputs_ready.load(Relaxed)
     }
 
     pub fn try_get_subdevices_vec_sync(&self) -> Result<Vec<MetaSubdevice>, anyhow::Error> {
-        let unlocked = self.subdevices.blocking_lock();
+        let unlocked = self.status.subdevices.blocking_lock();
         let count = self.get_subdevice_count() as usize;
         Ok(unlocked.clone()[0..count].to_vec())
     }
 
     pub async fn try_get_subdevices_vec(&self) -> Result<Vec<MetaSubdevice>, anyhow::Error> {
-        let unlocked = self.subdevices.lock().await;
+        let unlocked = self.status.subdevices.lock().await;
         let count = self.get_subdevice_count() as usize;
         Ok(unlocked.clone()[0..count].to_vec())
     }
@@ -528,7 +499,6 @@ pub fn init_ethercat_mock(
     faked_subdevices: Vec<MetaSubdevice>,
     _machine_infos: Option<Vec<MachineDeviceInfo>>,
 ) -> EtherCATControl<MockConsumer, MockProducer> {
-    let (_, rx) = mpsc::channel(); // wont actually get used in any way, just here to avoid handling options in the controller ...
     let mock_producer = [0u8; ETHERCAT_TX_RX_SIZE];
     let mock_consumer = [0u8; ETHERCAT_TX_RX_SIZE];
 
@@ -539,38 +509,26 @@ pub fn init_ethercat_mock(
         buffer: mock_consumer,
     };
 
-    let producer_c = MockProducer {
-        buffer: [0u8; ETHERCAT_TX_RX_SIZE],
-    };
-    let consumer_c = MockConsumer {
-        buffer: [0u8; ETHERCAT_TX_RX_SIZE],
-    };
-
     let channel: EtherCATThreadChannel = EtherCATThreadChannel {
         sdo_map: std::collections::HashMap::new(),
         machine_device_infos: vec![],
     };
+
+    let mut ecat_status = EcatStatus::default();
+    ecat_status.subdevice_count = Arc::new(AtomicU64::new(faked_subdevices.len() as u64 ));
+    let mut guard = ecat_status.subdevices.blocking_lock();
+    for i in 0..faked_subdevices.len() {
+        guard[i] = faked_subdevices[i];
+    }
+    drop(guard);
+
     let app_handle = EtherCATAppHandle {
         input_consumer: consumer,
         output_producer: producer,
+        status: ecat_status.clone()
     };
 
-    let mut controller = EtherCATController::new(
-        producer_c,
-        consumer_c,
-        rx,
-        None,
-        MasterConfiguration::default(),
-    );
-
-    controller.subdevice_count = faked_subdevices.len();
-    for i in 0..faked_subdevices.len() {
-        controller.subdevices[i] = faked_subdevices[i];
-    }
-
-    let controller = Arc::new(controller);
     return EtherCATControl {
-        controller,
         channel,
         app_handle,
         join_handle: None,
@@ -689,82 +647,89 @@ impl Default for MasterConfiguration {
     }
 }
 
+pub struct EcatStatus {
+    pub cycle: Arc<AtomicU64>,
+    pub cycle_time_us: Arc<AtomicU64>,
+    pub next_cycle_us: Arc<AtomicU64>,
+    pub subdevice_count: Arc<AtomicU64>,
+    pub state: Arc<AtomicU8>,
+    pub all_op: Arc<AtomicBool>,
+    pub dc_sys_time: Arc<AtomicU64>,
+    pub subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
+    pub inputs_ready: Arc<AtomicBool>,
+}
+
+impl Default for EcatStatus {
+    fn default() -> Self {
+        Self { 
+            cycle: Default::default(),
+            cycle_time_us: Default::default(), 
+            next_cycle_us: Default::default(), 
+            subdevice_count: Default::default(), 
+            state: Arc::new(AtomicU8::new(EtherCATState::NoInterface.into())), 
+            all_op: Arc::new(AtomicBool::new(false)), 
+            dc_sys_time: Default::default(), 
+            subdevices: Arc::new(Mutex::new([MetaSubdevice::default(); MAX_SUBDEVICES])), 
+            inputs_ready: Default::default() 
+        }
+    }
+}
+
+impl Clone for EcatStatus {    
+    fn clone(&self) -> Self {
+        Self { 
+            cycle: self.cycle.clone(),
+            cycle_time_us: self.cycle_time_us.clone(), 
+            next_cycle_us: self.next_cycle_us.clone(), 
+            subdevice_count: self.subdevice_count.clone(), 
+            state: self.state.clone(), 
+            all_op: self.all_op.clone(), 
+            dc_sys_time: self.dc_sys_time.clone(), 
+            subdevices: self.subdevices.clone(), 
+            inputs_ready: self.inputs_ready.clone() 
+        }
+    }
+}
+
 #[cfg(not(feature = "mock"))]
 pub fn init_ethercat(
     interface_name: &str,
     config: Option<MasterConfiguration>,
 ) -> EtherCATControl<TripleBufConsumer, Arc<Mailbox>> {
-    use std::sync::atomic::AtomicU8;
-    let (tx, rx) = mpsc::channel();
+    let (tx, rx) = std::sync::mpsc::channel();
     let mailbox = Arc::new(Mailbox {
         data: [0u8; ETHERCAT_TX_RX_SIZE].into(),
         full: AtomicBool::new(false),
     });
-    let cycle: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-    let cycle_time_us: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-    let next_cycle_us: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-    let subdevice_count: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-    let state: Arc<AtomicU8> = Arc::new(AtomicU8::new(EtherCATState::NoInterface.into()));
-    let all_op: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
-    let dc_sys_time: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-    let subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>> =
-        Arc::new(Mutex::new([MetaSubdevice::default(); MAX_SUBDEVICES]));
-    let inputs_ready = Arc::new(AtomicBool::new(false));
-
+    let ecat_status = EcatStatus::default();
     // input refers to ethercat tx
     // which is consumed by clientside code and produced by the controller
     let (input_producer, input_consumer) =
         triple_buffer::triple_buffer(&[0u8; ETHERCAT_TX_RX_SIZE]);
 
-    let mut controller = match config {
-        Some(conf) => EtherCATController::new(
-            TripleBufProducer {
-                output_producer: input_producer,
-            },
-            mailbox.clone(),
-            rx,
-            Some(interface_name.to_string()),
-            conf,
-            cycle.clone(),
-            cycle_time_us.clone(),
-            subdevice_count.clone(),
-            dc_sys_time.clone(),
-            state.clone(),
-            subdevices.clone(),
-            all_op.clone(),
-            inputs_ready.clone(),
-        ),
-        None => EtherCATController::new(
-            TripleBufProducer {
-                output_producer: input_producer,
-            },
-            mailbox.clone(),
-            rx,
-            Some(interface_name.to_string()),
-            MasterConfiguration::default(),
-            cycle.clone(),
-            cycle_time_us.clone(),
-            subdevice_count.clone(),
-            dc_sys_time.clone(),
-            state.clone(),
-            subdevices.clone(),
-            all_op.clone(),
-            inputs_ready.clone(),
-        ),
+    let config = match config {
+        Some(conf) => {
+            conf
+        },
+        None => {
+            MasterConfiguration::default()
+        },
     };
+    let mut controller = EtherCATController::new(
+            TripleBufProducer {
+                output_producer: input_producer,
+            },
+            mailbox.clone(),
+            rx,
+            Some(interface_name.to_string()),
+            config,
+            ecat_status.clone()
+    );
 
     let app_handle = EtherCATAppHandle {
         input_consumer: TripleBufConsumer { input_consumer },
         output_producer: mailbox,
-        cycle,
-        cycle_time_us,
-        next_cycle_us,
-        subdevice_count,
-        state,
-        subdevices,
-        all_op,
-        dc_sys_time,
-        inputs_ready,
+        status: ecat_status,
     };
 
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx);
