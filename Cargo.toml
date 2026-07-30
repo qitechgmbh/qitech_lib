@@ -23,4 +23,5 @@ core_affinity = "0.8.3"
 
 [features]
 # This defines 'mock' at the root level and passes it to 'ethercat_hal'
+default = []
 mock = ["ethercat_hal/mock"]

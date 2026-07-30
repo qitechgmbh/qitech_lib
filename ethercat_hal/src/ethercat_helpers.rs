@@ -8,7 +8,6 @@ use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
 };
 use std::any::TypeId;
-#[cfg(not(feature = "mock"))]
 use std::time::Duration;
 
 pub trait EthercatResponseTypedResult: Sized {

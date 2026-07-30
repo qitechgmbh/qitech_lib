@@ -50,12 +50,12 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         let spinner = SpinSleeper::new(200_000);
 
         loop {
-            let state: EtherCATState = self.state.load(Relaxed).into();
+            let state: EtherCATState = self.status.state.load(Relaxed).into();
 
             match state {
                 EtherCATState::NoInterface => {
                     if self.interface.is_some() {
-                        self.state.store(EtherCATState::Init.into(), Relaxed);
+                        self.status.state.store(EtherCATState::Init.into(), Relaxed);
                     }
                 }
                 EtherCATState::Boot => {
@@ -151,7 +151,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         group = Some(match res {
                             Ok(group) => group,
                             Err(err) => {
-                                self.state.store(EtherCATState::Init.into(), Relaxed);
+                                self.status.state.store(EtherCATState::Init.into(), Relaxed);
                                 send_response(
                                     msg.response_channel,
                                     ChannelResponse::ChangeState(Err(err.into())),
@@ -159,7 +159,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 continue;
                             }
                         });
-                        self.state.store(EtherCATState::PreOp.into(), Relaxed);
+                        self.status.state.store(EtherCATState::PreOp.into(), Relaxed);
                         send_response(msg.response_channel, ChannelResponse::ChangeState(Ok(())));
                     };
                 }
@@ -167,7 +167,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let mut i = 0;
                     let maindev = maindevice.as_ref().unwrap();
                     let mut preop_group = group.as_mut().unwrap();
-                    let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
+                    let mut subdevice_guard = get_async_runtime().block_on(self.status.subdevices.lock());
 
                     for subdevice in preop_group.iter(&maindev) {
                         let bytes = subdevice.name().as_bytes();
@@ -182,7 +182,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     }
 
                     drop(subdevice_guard);
-                    self.subdevice_count.store(i as u64, Relaxed);
+                    self.status.subdevice_count.store(i as u64, Relaxed);
                     let msg = match self.rx_channel.try_recv() {
                         Ok(value) => value,
                         Err(_e) => continue,
@@ -191,7 +191,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     match msg.channel_request {
                         ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {
                             EtherCATState::NoInterface => {
-                                self.state.store(ether_catstate.into(), Relaxed);
+                                self.status.state.store(ether_catstate.into(), Relaxed);
                                 send_response(
                                     msg.response_channel,
                                     ChannelResponse::ChangeState(Ok(())),
@@ -396,7 +396,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         ))
                         .unwrap(),
                     );
-                    self.state.store(EtherCATState::PreopPdi.into(), Relaxed);
+                    self.status.state.store(EtherCATState::PreopPdi.into(), Relaxed);
                 }
                 EtherCATState::PreopPdi => {
                     // State machine to handle transition to SafeOp with process data
@@ -464,7 +464,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     let mut rx_offset = 0;
                                     let mut tx_offset = 0;
                                     let mut subdevice_guard =
-                                        get_async_runtime().block_on(self.subdevices.lock());
+                                        get_async_runtime().block_on(self.status.subdevices.lock());
                                     for (i, subdevice) in group_back.iter(device).enumerate() {
                                         let length_tx = subdevice.io_raw().inputs().len();
                                         let length_rx = subdevice.io_raw().outputs().len();
@@ -500,7 +500,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             ));
                         }
                     }
-                    self.state.store(EtherCATState::Op.into(), Relaxed);
+                    self.status.state.store(EtherCATState::Op.into(), Relaxed);
                 }
 
                 EtherCATState::Op => {
@@ -555,23 +555,23 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             // Maybe instead it makes sense to clamp offsettime?
                             let offsettime =
                                 ((error as f64 * pgain) + (integral as f64 * igain)) as i64;
-                            self.dc_system_time_ns
+                            self.status.dc_sys_time
                                 .store(res.extra.dc_system_time, Relaxed);
                             self.next_cycle = cycle_start
                                 + Duration::from_nanos(cycle_time_ns as u64 + offsettime as u64);
                             if !is_all_op {
                                 if res.all_op() {
-                                    let mut subdevice_guard = self.subdevices.lock().await;
-                                    for i in 0..self.subdevice_count.load(Relaxed) {
+                                    let mut subdevice_guard = self.status.subdevices.lock().await;
+                                    for i in 0..self.status.subdevice_count.load(Relaxed) {
                                         subdevice_guard[i as usize].initialized = true;
                                     }
-                                    self.all_subdevices_operational.store(true, Relaxed);
+                                    self.status.all_op.store(true, Relaxed);
                                     drop(subdevice_guard);
                                     not_all_op_cycles = 0;
                                     is_all_op = true;
                                 } else {
                                     spinner.sleep_until(self.next_cycle);
-                                    self.cycle_time_us
+                                    self.status.cycle_time_us
                                         .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
                                     not_all_op_cycles += 1;
 
@@ -579,7 +579,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     {
                                         // Read AL status now (only at timeout) for the error message.
                                         let mut erroring_subdevices: Vec<(usize, u16)> = Vec::new();
-                                        for index in 0..self.subdevice_count.load(Relaxed) {
+                                        for index in 0..self.status.subdevice_count.load(Relaxed) {
                                             if let Ok(subdevice) =
                                                 group.subdevice(maindevice, index as usize)
                                             {
@@ -622,7 +622,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 }
                                 None => {}
                             }
-                            self.inputs_ready.store(true, Relaxed);
+                            self.status.inputs_ready.store(true, Relaxed);
 
                             // This gives the client side time to look at the inputs and write outputs
                             // Might be a bit too tight if running < 125us but at that point it isnt really stable anyways
@@ -643,14 +643,14 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 None => {}
                             };
                             spinner.sleep_until(self.next_cycle);
-                            self.cycle_time_us
+                            self.status.cycle_time_us
                                 .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
-                            if self.cycle.load(Relaxed) == u64::MAX {
-                                self.cycle.store(0, Relaxed);
+                            if self.status.cycle.load(Relaxed) == u64::MAX {
+                                self.status.cycle.store(0, Relaxed);
                             } else {
-                                self.cycle.fetch_add(1, Relaxed);
+                                self.status.cycle.fetch_add(1, Relaxed);
                             }
-                            self.inputs_ready.store(false, Relaxed);
+                            self.status.inputs_ready.store(false, Relaxed);
                         }
                     });
                 }
