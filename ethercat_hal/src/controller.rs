@@ -558,7 +558,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             self.dc_system_time_ns
                                 .store(res.extra.dc_system_time, Relaxed);
                             self.next_cycle = cycle_start
-                                + Duration::from_nanos(cycle_time_ns as u64 + offsettime as u64);
+                                + Duration::from_nanos((cycle_time_ns + offsettime.clamp(cycle_time_ns*-1, cycle_time_ns)) as u64);
+                                
                             if !is_all_op {
                                 if res.all_op() {
                                     let mut subdevice_guard = self.subdevices.lock().await;
