@@ -14,7 +14,6 @@ pub fn sdo_write(
     for device in group.iter(maindevice) {
         if device.configured_address() == request.device_address {
             let runtime = get_async_runtime();
-
             let res = match request.type_flag {
                 SdoType::U8 => runtime.block_on(device.sdo_write(
                     request.index,

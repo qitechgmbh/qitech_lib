@@ -7,9 +7,11 @@ use crate::{
 use ethercrab::{
     EtherCrabWireWrite,
 };
+
 use std::any::TypeId;
 use std::time::Duration;
 use crate::MachineDeviceInfo;
+
 pub trait EthercatResponseTypedResult: Sized {
     fn from_bool(_v: bool) -> anyhow::Result<Self> {
         Err(anyhow::anyhow!("Conversion from bool not supported"))
