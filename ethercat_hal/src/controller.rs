@@ -539,7 +539,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         // sync_offset_ns is 50% of macro cycle time(Sync1 FULL period)
                         // This essentially means we send the frame 50% into the sync1 period
                         let sync_offset_ns: u64 =
-                            self.current_config.target_cycle_time_us as u64 / 2;
+                            (self.current_config.target_cycle_time_us as u64 * 1000) / 2;
 
                         loop {
                             let cycle_start = Instant::now();
