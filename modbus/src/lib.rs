@@ -19,6 +19,7 @@ pub struct SerialDeviceManager {
     pub devices: HashMap<String, SerialDeviceMeta>,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct ModbusSettings {
     pub baudrate: u32,
     pub bits: u8,
@@ -115,14 +116,14 @@ impl Into<tokio_serial::Parity> for Parity {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Parity {
     None,
     Even,
     Odd,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ModbusType {
     Rtu,
     Tcp,
