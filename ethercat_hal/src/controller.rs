@@ -4,7 +4,7 @@ use crate::ethercat_helpers::enable_dc_sync01;
 use crate::{
     ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES,
     PDI_LEN, PDU_STORAGE, Producer, SdoType,
-    ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
+    ethercat_helpers::{enable_dc_sync, register_read, sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
@@ -14,8 +14,8 @@ use anyhow::bail;
 #[cfg(target_os = "linux")]
 use common::set_irq_affinity;
 use ethercrab::{
-    MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
-    std::ethercat_now,
+    AlStatusCode, MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup,
+    Timeouts, std::ethercat_now,
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
 };
 use libc::{MCL_CURRENT, MCL_FUTURE, mlockall};
@@ -257,6 +257,14 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 }
                             }
 
+                            continue;
+                        }
+                        ChannelRequests::RegisterReadRequest(request) => {
+                            let res = register_read(maindev, preop_group, request);
+                            send_response(
+                                msg.response_channel,
+                                ChannelResponse::RegisterResponseU16(res),
+                            );
                             continue;
                         }
                         ChannelRequests::ReadMachineIdent() => {
@@ -583,26 +591,36 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     if not_all_op_cycles >= self.current_config.op_ramp_grace_cycles
                                     {
                                         // Read AL status now (only at timeout) for the error message.
-                                        let mut erroring_subdevices: Vec<(usize, u16)> = Vec::new();
+                                        let mut erroring_subdevices: Vec<(usize, AlStatusCode)> =
+                                            Vec::new();
                                         for index in 0..self.subdevice_count.load(Relaxed) {
                                             if let Ok(subdevice) =
                                                 group.subdevice(maindevice, index as usize)
                                             {
-                                                let code: u16 = subdevice
-                                                    .register_read(0x0134u16)
+                                                let code: AlStatusCode = subdevice
+                                                    .register_read(RegisterAddress::AlStatusCode)
                                                     .await
-                                                    .unwrap_or(0);
-                                                if code != 0 {
+                                                    .unwrap_or(AlStatusCode::Unknown(0));
+                                                if code != AlStatusCode::NoError {
                                                     erroring_subdevices
                                                         .push((index as usize, code));
                                                 }
                                             }
                                         }
+                                        // AlStatusCode's Display already renders "0x00xx: <reason>",
+                                        // matching the hex codes ETG1000.6 lists them under.
+                                        let al_errors = erroring_subdevices
+                                            .iter()
+                                            .map(|(index, code)| {
+                                                format!("subdevice #{index}: {code}")
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join(", ");
                                         bail!(
                                             "EtherCAT OP ramp timed out after {} cycles without all devices reaching OP. \
-                                         AL errors at timeout: {:?}. Terminating for a clean restart.",
+                                         AL errors at timeout: [{}]. Terminating for a clean restart.",
                                             not_all_op_cycles,
-                                            erroring_subdevices
+                                            al_errors
                                         );
                                     }
                                     continue;

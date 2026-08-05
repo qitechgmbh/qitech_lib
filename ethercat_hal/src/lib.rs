@@ -472,6 +472,13 @@ pub struct SdoReadRequest {
     pub type_flag: SdoType,
 }
 
+/// A raw ESC register read request. Registers relevant for diagnosing state-transition failures
+#[derive(Debug)]
+pub struct RegisterReadRequest {
+    pub device_address: u16,
+    pub register: u16,
+}
+
 // LEGACY CODE HIDE BEHIND FLAG
 pub struct MachineIdent {}
 
@@ -484,6 +491,7 @@ pub enum ChannelResponse {
     SdoResponseI16(Result<i16, anyhow::Error>),
     SdoResponseI32(Result<i32, anyhow::Error>),
     SdoWriteResponse(Result<(), anyhow::Error>),
+    RegisterResponseU16(Result<u16, anyhow::Error>),
     ChangeState(Result<(), anyhow::Error>),
     MachineDeviceInfoResponse(Result<Vec<MachineDeviceInfo>, anyhow::Error>),
     WriteMachineInfoResponse(Result<(), anyhow::Error>),
@@ -496,6 +504,7 @@ pub enum ChannelResponse {
 pub enum ChannelRequests {
     SdoWriteRequest(SdoRequest),
     SdoReadRequest(SdoReadRequest),
+    RegisterReadRequest(RegisterReadRequest),
     ChangeState(EtherCATState),
     // usize in this case is the device_address
     EnableDCSync0(usize),
