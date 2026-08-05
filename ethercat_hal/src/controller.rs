@@ -15,7 +15,8 @@ use anyhow::bail;
 use common::set_irq_affinity;
 use ethercrab::{
     AlStatusCode, MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup,
-    Timeouts, std::ethercat_now,
+    Timeouts,
+    std::ethercat_now,
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
 };
 use libc::{MCL_CURRENT, MCL_FUTURE, mlockall};
