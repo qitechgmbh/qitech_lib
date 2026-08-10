@@ -36,7 +36,6 @@ impl Drop for LaserDevice {
         // Dropping the `tx` channel will cause the background actor's channel to close.
         // The background task will break out of its loop, run `ctx.disconnect().await`,
         // and gracefully clean up the serial connection.
-        println!("drop is called");
         self.handle.abort();
     }
 }

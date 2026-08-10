@@ -1,10 +1,15 @@
-use crate::ParseError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Telemetry {
     pub status: Status,
     pub sensors: Sensors,
     pub error: ErrorCode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseError {
+    DataTooSmall(u32,u16),
+    InvalidValue(u32,u16),
 }
 
 impl Telemetry {
