@@ -112,7 +112,10 @@ fn main() -> Result<(), anyhow::Error> {
         });
 
         if got_reply {
-            println!("\nmodule answered a direct unicast read. bus stats: {:?}", bus.stats());
+            println!(
+                "\nmodule answered a direct unicast read. bus stats: {:?}",
+                bus.stats()
+            );
             return Ok(());
         }
         std::thread::sleep(Duration::from_millis(200));

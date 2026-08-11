@@ -1,7 +1,7 @@
 //! On-hardware smoke test: sweep a subnet for XTREM modules, then poll the first one.
 //!
 //! ```text
-//! cargo run --example discover -- --bind 0.0.0.0:5556 --broadcast 192.168.4.255:4445
+//! cargo run --example discover -- --bind 0.0.0.0:5555 --broadcast 192.168.4.255:4444
 //! ```
 //!
 //! `--bind` is the port the modules send to (register `0700h`), `--broadcast` is the subnet
