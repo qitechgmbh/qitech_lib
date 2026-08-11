@@ -3,18 +3,40 @@ use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 
 /// Factory default for register `0701h`, the port the XTREM *listens* on.
 /// The host sends its requests here.
-pub const DEFAULT_DEVICE_LOCAL_PORT: u16 = 5555;
+///
+/// Verified against real hardware 2026-08-11: earlier values here had this swapped with
+/// [`DEFAULT_DEVICE_REMOTE_PORT`], which produced total silence (nothing on the wire was
+/// wrong, the two sides were just listening on each other's assumed ports).
+pub const DEFAULT_DEVICE_LOCAL_PORT: u16 = 4444;
 
 /// Factory default for register `0700h`, the port the XTREM *sends* to.
 /// The host binds this port to receive responses and stream data.
-pub const DEFAULT_DEVICE_REMOTE_PORT: u16 = 4444;
+pub const DEFAULT_DEVICE_REMOTE_PORT: u16 = 5555;
 
 /// Open the receive socket in non-blocking mode with broadcast enabled.
 ///
-/// Binding `0.0.0.0` is deliberate: the modules answer to the port configured in register
-/// `0700h` rather than to the source port of the request, so the socket has to be reachable
-/// on every local address.
+/// `bind_addr` must be `0.0.0.0` (a specific port, unspecified IP) on a real deployment — this
+/// is a hard requirement, not a style preference. Verified against real hardware: the module
+/// never unicasts its reply to the requester's source IP, it always sends to the subnet
+/// broadcast address (`255.255.255.255`), even in response to a unicast request. A socket bound
+/// to one specific LAN address silently never receives those — the kernel drops them before the
+/// application ever sees them, with no error on either side. Binding `0.0.0.0` is the only way
+/// to actually receive replies.
+///
+/// Loopback (`127.0.0.0/8`) is exempt: it's the standard pattern for a hermetic test fixture
+/// that replies with a real unicast (see `tests/loopback.rs`), and loopback delivery has none of
+/// the broadcast-drop behavior this check exists to catch.
 pub fn bind_socket(bind_addr: SocketAddrV4) -> io::Result<UdpSocket> {
+    if !bind_addr.ip().is_unspecified() && !bind_addr.ip().is_loopback() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "xtrem bind address must be 0.0.0.0:<port>, got {bind_addr}: the module \
+                 replies to the broadcast address, never to the requester's unicast IP, so a \
+                 socket bound to a specific LAN interface address never receives anything back"
+            ),
+        ));
+    }
     let socket = UdpSocket::bind(bind_addr)?;
     socket.set_broadcast(true)?;
     socket.set_nonblocking(true)?;

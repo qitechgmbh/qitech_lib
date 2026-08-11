@@ -7,9 +7,14 @@
 //! honoring broadcast addressing and `discover()` needs to be bypassed for this hardware.
 //!
 //! ```text
-//! cargo run -p xtrem --example probe_direct -- --target 192.168.4.87:4444 --bind 192.168.4.1:5555
-//! cargo run -p xtrem --example probe_direct -- --target 192.168.4.87:4444 --bind 192.168.4.1:5555 --device-id 2
+//! cargo run -p xtrem --example probe_direct -- --target 192.168.4.87:4444 --bind 0.0.0.0:5555
+//! cargo run -p xtrem --example probe_direct -- --target 192.168.4.87:4444 --bind 0.0.0.0:5555 --device-id 2
 //! ```
+//!
+//! `--bind` must be `0.0.0.0` — the module always replies to the broadcast address, never to the
+//! requester's unicast IP (confirmed with `tcpdump` against real hardware), so a socket bound to
+//! a specific interface address never receives anything back. [`bind_socket`](../src/transport/udp.rs)
+//! enforces this and will refuse a non-wildcard `--bind`.
 
 use std::net::SocketAddrV4;
 use std::time::{Duration, Instant};

@@ -177,8 +177,8 @@ use xtrem::{ScaleMode, XtremDevice, XtremScale, discovery};
 use xtrem::transport::{XtremBus, XtremBusConfig};
 
 let bus = XtremBus::open(XtremBusConfig {
-    bind_addr: "0.0.0.0:4444".parse()?,       // register 0700h default (module -> host)
-    broadcast_addr: "192.168.4.255:5555".parse()?, // register 0701h default (host -> module)
+    bind_addr: "0.0.0.0:5555".parse()?,       // register 0700h default (module -> host)
+    broadcast_addr: "192.168.4.255:4444".parse()?, // register 0701h default (host -> module)
     host_id: 0x00,
     verify_lrc: true,
     crlf: true,
@@ -203,10 +203,15 @@ loop {
 Run the real CLI against hardware:
 
 ```bash
-cargo run --example discover -- --bind 0.0.0.0:4444 --broadcast 192.168.4.255:5555
+cargo run --example discover -- --bind 0.0.0.0:5555 --broadcast 192.168.4.255:4444
 # --no-lrc      if the module has LRC checking disabled (register 0011h)
 # --stream <ms> use stream mode instead of polling
 ```
+
+`--bind` must stay `0.0.0.0` — never a specific interface IP, even on a multi-homed host. The
+module always replies to the broadcast address, never to the requester's unicast source IP, so a
+socket bound to one specific address silently never sees the reply; [`udp::bind_socket`](src/transport/udp.rs)
+now refuses to open a socket bound to anything else, for exactly this reason.
 
 ## Testing
 
@@ -234,14 +239,32 @@ a code problem. If you're bringing up a new module, in order of likelihood:
    power-cycling the module is the fastest way to confirm whether it's even trying.
 
 2. **Routing, if the host has multiple interfaces.** On a multi-homed machine, sending to a
-   `169.254.0.0/16` (link-local) broadcast address can silently go out the *wrong* interface — that
-   subnet is scoped per-interface at the OS level, and an unscoped socket bound to `0.0.0.0` picks
-   whichever interface owns the default route, not necessarily the one the module is on. Bind
-   `--bind` to the specific interface address (not `0.0.0.0`) if discovery finds nothing despite
-   the module clearly being connected. `route -n get <broadcast-addr>` vs.
-   `route -n get -ifscope <if> <broadcast-addr>` shows the discrepancy directly.
+   `169.254.0.0/16` (link-local) or the global `255.255.255.255` broadcast address can silently go
+   out the *wrong* interface — that address has no single unambiguous route across interfaces, so
+   the kernel's choice depends on the default route, not necessarily the interface the module is
+   on. **The fix is not to bind the socket to a specific interface address** — `bind_socket`
+   actively refuses that (see below) because it breaks receiving this module's replies entirely.
+   Instead, target `--broadcast` at the *subnet's own directed broadcast address*
+   (`192.168.4.255`, not `255.255.255.255`) — a directed broadcast has an unambiguous route via
+   whichever interface actually holds that subnet, resolved from the destination address alone,
+   independent of what the socket is bound to. [`broadcast_addr_for`](src/transport/udp.rs)
+   computes this correctly from an interface's own IP + prefix length. `route -n get
+   <broadcast-addr>` vs. `route -n get -ifscope <if> <broadcast-addr>` shows the discrepancy
+   directly if you're still unsure which interface a given address would route through.
 
-3. **The documented UDP/TCP port defaults may not apply to your specific expansion hardware.** The
+3. **The module replies to the broadcast address, never to the requester's unicast IP — even for a
+   unicast request.** Confirmed against real hardware with `tcpdump`: a request sent
+   `192.168.4.1:5555 → 192.168.4.28:4444` came back as `192.168.4.28:4444 → 255.255.255.255:5555`,
+   not `→ 192.168.4.1:5555`. A socket bound to one specific local address (rather than `0.0.0.0`)
+   never sees that reply — the kernel discards it before the application layer, with no error
+   anywhere, which looks identical to "nothing is listening" or "wrong port" from the caller's
+   side. This is why `bind_socket` now hard-errors on a non-wildcard bind address instead of
+   silently accepting one. If `discover`/`XtremBus` still gets zero replies after confirming this,
+   capture with `sudo tcpdump -i <if> -n "udp and host <module-ip>"` while sending a request —
+   if the module's reply shows up on the wire at all, the transport layer is not the problem
+   anymore and the search moves to frame decoding or LRC.
+
+4. **The documented UDP/TCP port defaults may not apply to your specific expansion hardware.** The
    spec's `0700h`/`0701h`/`0702h` port defaults are documented under the Wi-Fi module section
    specifically (§17). A wired-Ethernet expansion board is a physically different piece of
    hardware and may be a generic third-party serial-to-Ethernet bridge module underneath (look for
@@ -252,7 +275,7 @@ a code problem. If you're bringing up a new module, in order of likelihood:
    answer, not a transient failure), that's a hardware provisioning question, not something to
    debug further in this crate.
 
-4. **UART0 (RS232) is always present**, independent of whatever UART1 expansion is installed, and
+5. **UART0 (RS232) is always present**, independent of whatever UART1 expansion is installed, and
    speaks the exact same frame format over a USB-to-RS232 adapter instead of UDP. It doesn't touch
    whatever the network module's state is, so it's a clean fallback for validating the protocol
    against real hardware when the network path is blocked. This crate doesn't implement a serial
@@ -260,7 +283,7 @@ a code problem. If you're bringing up a new module, in order of likelihood:
    fully transport-agnostic, so adding one would only mean writing a new `transport/serial.rs`
    alongside the existing UDP one, not touching the codec.
 
-5. **Don't run a full 65535-port scan against one of these modules.** They run minimal embedded
+6. **Don't run a full 65535-port scan against one of these modules.** They run minimal embedded
    TCP/IP stacks (lwIP, in the one case investigated) not built for scan-level traffic volume, and
    a full sweep can make the module stop responding to *everything*, including ICMP, well before
    it's actually crashed — `ping` afterward is the fast way to confirm it's still alive. Prefer a
