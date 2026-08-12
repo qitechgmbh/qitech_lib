@@ -111,6 +111,7 @@ fn main() -> Result<(), anyhow::Error> {
     );
 
     let mut last_print = Instant::now();
+    let mut last_reading_at = None;
     loop {
         scale.send_next_request()?;
         scale.handle_response()?;
@@ -119,9 +120,18 @@ fn main() -> Result<(), anyhow::Error> {
             eprintln!("error: {error}");
         }
 
-        // Report at 2 Hz regardless of how fast the readings arrive.
-        if last_print.elapsed() >= Duration::from_millis(500) {
+        // Poll mode re-reads 0107h every tick, so report it on our own 2 Hz timer. Stream
+        // mode only gets a new reading every `interval_ms` (the module's own push rate, not
+        // ours) — print exactly when one lands instead of re-printing a stale reading or
+        // lagging a fresh one behind a fixed clock.
+        let should_print = match (args.mode, scale.reading) {
+            (ScaleMode::Stream { .. }, Some(reading)) => Some(reading.at) != last_reading_at,
+            _ => last_print.elapsed() >= Duration::from_millis(500),
+        };
+
+        if should_print {
             last_print = Instant::now();
+            last_reading_at = scale.reading.map(|reading| reading.at);
             match scale.reading {
                 Some(reading) => println!(
                     "{:>10.2} g net  (gross {:>10.2} g, tare {:>8.2} g){}{}{}",

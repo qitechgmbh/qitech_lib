@@ -3,10 +3,6 @@ use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 
 /// Factory default for register `0701h`, the port the XTREM *listens* on.
 /// The host sends its requests here.
-///
-/// Verified against real hardware 2026-08-11: earlier values here had this swapped with
-/// [`DEFAULT_DEVICE_REMOTE_PORT`], which produced total silence (nothing on the wire was
-/// wrong, the two sides were just listening on each other's assumed ports).
 pub const DEFAULT_DEVICE_LOCAL_PORT: u16 = 4444;
 
 /// Factory default for register `0700h`, the port the XTREM *sends* to.
