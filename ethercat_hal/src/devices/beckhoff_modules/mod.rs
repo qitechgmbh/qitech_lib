@@ -1,7 +1,7 @@
 pub mod ek1100;
 pub mod el1002;
 pub mod el1008;
-pub(crate) mod el1124;
+pub mod el1124;
 pub mod el1259;
 pub mod el2002;
 pub mod el2004;
@@ -17,6 +17,7 @@ pub mod el3024;
 pub mod el3062_0030;
 pub mod el3204;
 pub mod el4002;
+pub mod el4008;
 pub mod el4732;
 pub mod el5152;
 pub mod el6021;
