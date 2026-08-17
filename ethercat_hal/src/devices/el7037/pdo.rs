@@ -138,8 +138,8 @@ impl PredefinedPdoAssignment<EL7037TxPdo, EL7037RxPdo> for EL7037PredefinedPdoAs
                 stm_synchron_info_data: None,
                 pos_status_compact: None,
                 pos_status: None,
-                stm_internal_position: None,
-                stm_external_position: None,
+                stm_internal_position: Some(StmInternalPosition::default()),
+                stm_external_position: Some(StmExternalPosition::default()),
             },
             Self::PositionInterfaceCompact => EL7037TxPdo {
                 enc_status_compact: None,

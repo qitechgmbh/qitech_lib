@@ -4,7 +4,9 @@ use ethercat_hal::{
     coe::ConfigurableDevice,
     devices::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
-        el7037::{EL7037, EL7037_PRODUCT_ID, coe::EL7037Configuration, pdo::EL7037PredefinedPdoAssignment},
+        el7037::{
+            EL7037, EL7037_PRODUCT_ID, coe::EL7037Configuration, pdo::EL7037PredefinedPdoAssignment,
+        },
     },
     init_ethercat,
     io::stepper_velocity_el70x1::StepperVelocityEL70x1Device,
@@ -43,7 +45,11 @@ fn main() {
     for subdevice in eth_control.controller.get_subdevices() {
         if subdevice.vendor == BECKHOFF_VENDOR_ID && subdevice.product_id == EL7037_PRODUCT_ID {
             el7037
-                .write_config(eth_control.channel.clone(), subdevice.device_address, &config)
+                .write_config(
+                    eth_control.channel.clone(),
+                    subdevice.device_address,
+                    &config,
+                )
                 .expect("EL7037 CoE config failed");
         }
     }

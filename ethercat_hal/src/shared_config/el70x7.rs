@@ -47,11 +47,23 @@ pub struct StmMotorConfiguration {
     /// default: `0x00C8` (200dec) = 200 steps
     pub motor_full_steps: u16,
 
+    /// # 0x8010:07
+    /// Encoder increments (4- fold) (Unit: steps / revolution)
+    ///
+    /// default: `0x1000` (4096dec) = 4096
+    pub encoder_increments: u16,
+
     /// # 0x8010:09
     /// Maximum possible start velocity of the motor
     ///
     /// default: `0x0000` (0dec)
     pub start_velocity: u16,
+
+    /// # 0x8010:0A
+    /// Inductance of the motor (Unit: 0.01 mH)
+    ///
+    /// default: `0x0000` (0dec) = 0 mH
+    pub motor_coil_inductance: u16,
 
     /// # 0x8010:10
     /// Switch-on delay of the driver stage
@@ -76,7 +88,9 @@ impl Default for StmMotorConfiguration {
             motor_coil_resistance: 0x0064, // 100 = 1 ohm
             motor_emf: 0x00C8,             // 200 mV/(rad/s)
             motor_full_steps: 0x00C8,      // 200 steps
+            encoder_increments: 0x1000,    // 4096 steps / revolution
             start_velocity: 0x0000,        // 0
+            motor_coil_inductance: 0x0000, // 0 mH
             drive_on_delay_time: 0x0064,   // 100 ms = 0.1s
             drive_off_delay_time: 0x0064,  // 100 ms = 0.1s
         }
@@ -104,7 +118,9 @@ impl StmMotorConfiguration {
         ecat_channel.sdo_write(device_address, 0x8010, 0x04, self.motor_coil_resistance)?;
         ecat_channel.sdo_write(device_address, 0x8010, 0x05, self.motor_emf)?;
         ecat_channel.sdo_write(device_address, 0x8010, 0x06, self.motor_full_steps)?;
+        ecat_channel.sdo_write(device_address, 0x8010, 0x07, self.encoder_increments)?;
         ecat_channel.sdo_write(device_address, 0x8010, 0x09, self.start_velocity)?;
+        ecat_channel.sdo_write(device_address, 0x8010, 0x0A, self.motor_coil_inductance)?;
         ecat_channel.sdo_write(device_address, 0x8010, 0x10, self.drive_on_delay_time)?;
         ecat_channel.sdo_write(device_address, 0x8010, 0x11, self.drive_off_delay_time)?;
         Ok(())

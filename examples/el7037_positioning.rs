@@ -44,10 +44,17 @@ fn main() {
     let mut el7037 = EL7037::new();
     let mut config = EL7037Configuration::default();
 
-    config.stm_features.operation_mode = EL70x1OperationMode::Automatic;
+    config.stm_features.operation_mode = EL70x1OperationMode::PositionController;
     config.pdo_assignment = EL7037PredefinedPdoAssignment::PositionControl;
 
+    config.encoder.reversion_of_rotation = true;
     config.stm_motor.max_current = 1100;
+    // config.stm_motor.motor_coil_resistance = 175;
+    // config.stm_motor.motor_coil_inductance = 330;
+    config.stm_motor.encoder_increments = 4000;
+    // config.pos_configuration.position_lag_max = 3;
+    // config.pos_configuration.velocity_min = 100;
+    // config.pos_configuration.velocity_max = 1000;
     config.stm_features.feedback_type = EL7037FeedbackType::Encoder;
 
     for subdevice in eth_control.controller.get_subdevices() {
@@ -59,6 +66,12 @@ fn main() {
                     &config,
                 )
                 .expect("EL7037 CoE config failed");
+
+            // Kp factor pos.
+            eth_control
+                .channel
+                .sdo_write(subdevice.device_address, 0x8014, 0x02, 3u16)
+                .expect("KP write failed");
         }
     }
 
@@ -91,46 +104,74 @@ fn main() {
             eth_control.app_handle.finish_read();
         }
 
-        let stm_control = el7037.rxpdo.stm_control.as_mut().expect("No STM Control");
         let enc_status = el7037.txpdo.enc_status.as_mut().expect("No Encoder Status");
+        let stm_status = el7037.txpdo.stm_status.as_mut().expect("No STM Status");
+        let stm_control = el7037.rxpdo.stm_control.as_mut().expect("No STM Control");
         let stm_position = el7037.rxpdo.stm_position.as_mut().expect("No STM Position");
+        let stm_external_position = el7037
+            .txpdo
+            .stm_external_position
+            .as_mut()
+            .expect("No STM External Position");
+        let stm_internal_position = el7037
+            .txpdo
+            .stm_internal_position
+            .as_mut()
+            .expect("No STM Internal Position");
         let enc_control = el7037
             .rxpdo
             .enc_control
             .as_mut()
             .expect("No Encoder Control");
 
-        println!("POS = {}", enc_status.counter_value);
+        println!(
+            "ENC = {}, ExPOS = {}, InPOS = {}",
+            enc_status.counter_value,
+            stm_external_position.external_position,
+            stm_internal_position.internal_position
+        );
+
+        if stm_status.motor_stall {
+            println!("STALLL STSALLL STALLL");
+        }
+
+        if stm_status.error {
+            panic!("Motor Error");
+        }
 
         match state {
             State::Reset => {
+                print!("reset: ");
                 stm_control.reset = true;
                 enc_control.set_counter = true;
-                enc_control.set_counter_value = 10000;
+                enc_control.set_counter_value = 1000;
 
                 state = State::WaitForReset;
             }
             State::WaitForReset => {
+                print!("wait: ");
                 stm_control.reset = false;
                 enc_control.set_counter = false;
 
-                if enc_status.counter_value == 10000 {
+                if enc_status.counter_value == 1000 {
                     state = State::Increment;
                 }
             }
             State::Increment => {
+                print!("inc: ");
                 stm_control.enable = true;
-                stm_position.position = 12000;
+                stm_position.position = 10000;
 
-                if enc_status.counter_value == 12000 {
+                if enc_status.counter_value == 10000 {
                     state = State::Decrement;
                 }
             }
             State::Decrement => {
+                print!("dec: ");
                 stm_control.enable = true;
-                stm_position.position = 11000;
+                stm_position.position = 10500;
 
-                if enc_status.counter_value == 11000 {
+                if enc_status.counter_value == 10500 {
                     state = State::Increment;
                 }
             }
