@@ -12,7 +12,7 @@ mod value;
 
 pub use address::DataAddress;
 pub use error::ProtocolError;
-pub use frame::{BROADCAST_ID, ETX, Frame, STX, lrc};
+pub use frame::{BROADCAST_ID, ETX, Frame, MAX_DATA_LEN, MAX_FRAME_LEN, STX, lrc};
 pub use function::{ExecuteResult, Function, WriteResult};
 pub use status::{DeviceState, WeighingError, WeighingStatus, WifiState};
 pub use value::{

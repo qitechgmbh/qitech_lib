@@ -1,5 +1,5 @@
 use super::udp;
-use crate::protocol::{DataAddress, Frame, ProtocolError};
+use crate::protocol::{DataAddress, Frame, MAX_FRAME_LEN, ProtocolError};
 use common::get_async_runtime;
 use std::collections::HashMap;
 use std::net::{SocketAddr, SocketAddrV4};
@@ -9,10 +9,6 @@ use std::time::Instant;
 use tokio::net::UdpSocket;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
-
-/// Datagrams larger than this are impossible: `D_L` is 8 bits, so the longest legal frame is
-/// 255 data bytes plus 17 bytes of framing.
-const RECV_BUF_LEN: usize = 512;
 
 /// How many frames may queue up for a device before the oldest are dropped.
 const DEVICE_QUEUE_LEN: usize = 8;
@@ -253,7 +249,9 @@ impl XtremBusHandle {
 }
 
 async fn receive_loop(inner: Arc<BusInner>) {
-    let mut buf = [0u8; RECV_BUF_LEN];
+    // Exactly the largest datagram the protocol can produce; a longer one carries no frame
+    // this bus could decode anyway.
+    let mut buf = [0u8; MAX_FRAME_LEN];
 
     loop {
         let (len, from) = match inner.socket.recv_from(&mut buf).await {

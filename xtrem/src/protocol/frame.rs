@@ -11,6 +11,14 @@ pub const BROADCAST_ID: u8 = 0xFF;
 /// `ID_O`(2) + `ID_D`(2) + `F`(1) + `D_ADDRESS`(4) + `D_L`(2) + `LRC`(2).
 const MIN_BODY_LEN: usize = 13;
 
+/// `D_L` is two hex characters, so DATA can never be longer than this.
+pub const MAX_DATA_LEN: usize = u8::MAX as usize;
+
+/// Longest datagram the protocol can produce: STX + body + the largest possible DATA + ETX,
+/// plus the optional CR+LF terminator. Nothing legal exceeds this, so it is the size a
+/// receive buffer needs to be.
+pub const MAX_FRAME_LEN: usize = 1 + MIN_BODY_LEN + MAX_DATA_LEN + 1 + 2;
+
 /// Offset of the first `D_L` character within the body.
 const DATA_LENGTH_OFFSET: usize = 9;
 /// Offset of the first DATA byte within the body.
