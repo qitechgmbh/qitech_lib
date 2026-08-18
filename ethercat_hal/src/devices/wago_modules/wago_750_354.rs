@@ -10,7 +10,7 @@ use super::{
     wago_750_672::{self, WAGO_750_672_MODULE_IDENT, WAGO_750_672_PRODUCT_ID},
     wago_750_1506::{self, WAGO_750_1506_MODULE_IDENT, WAGO_750_1506_PRODUCT_ID},
 };
-use crate::{EtherCATThreadChannel};
+use crate::EtherCATThreadChannel;
 use crate::devices::{
     DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed, Module,
     NewEthercatDevice, SubDeviceIdentityTuple,
@@ -332,8 +332,12 @@ impl Wago750_354 {
             return;
         }
         smol::block_on(async {
-            let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), true).await;
-            let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), false).await;
+            let _ = self
+                .get_pdo_offsets(device_address, ecat_channel.clone(), true)
+                .await;
+            let _ = self
+                .get_pdo_offsets(device_address, ecat_channel.clone(), false)
+                .await;
         });
         for module in &mut self.slots {
             match module {
