@@ -332,8 +332,8 @@ impl Wago750_354 {
             return;
         }
         smol::block_on(async {
-            let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), true);
-            let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), false);
+            let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), true).await;
+            let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), false).await;
         });
         for module in &mut self.slots {
             match module {

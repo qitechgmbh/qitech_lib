@@ -1,9 +1,15 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use ethercat_hal::{
-    EtherCATState, devices::{
+    EtherCATState,
+    devices::{
         EthercatDevice, NewEthercatDevice,
-        wago_modules::{wago_750_354::{WAGO_750_354_IDENTITY_A, Wago750_354}, wago_750_531::Wago750_531},
-    }, init_ethercat, io::digital_output::DigitalOutputDevice
+        wago_modules::{
+            wago_750_354::{WAGO_750_354_IDENTITY_A, Wago750_354},
+            wago_750_531::Wago750_531,
+        },
+    },
+    init_ethercat,
+    io::digital_output::DigitalOutputDevice,
 };
 use std::{env, time::Duration};
 
@@ -42,31 +48,27 @@ fn main() {
     let coupler_subdev = subdevices
         .iter()
         .find(|s| {
-            s.vendor == WAGO_750_354_IDENTITY_A.0
-                && s.product_id == WAGO_750_354_IDENTITY_A.1
+            s.vendor == WAGO_750_354_IDENTITY_A.0 && s.product_id == WAGO_750_354_IDENTITY_A.1
         })
         .expect("No Wago 750-354 coupler found on the bus");
 
     // Initialize the coupler and discover its bus modules (750-531, etc.)
     let mut coupler = Wago750_354::new();
-    let modules = Wago750_354::initialize_modules(
-        eth_control.channel.clone(),
-        coupler_subdev.device_address,
-    )
-    .expect("Failed to initialize coupler modules");
+    let modules =
+        Wago750_354::initialize_modules(eth_control.channel.clone(), coupler_subdev.device_address)
+            .expect("Failed to initialize coupler modules");
     for module in &modules {
-        println!("  Found module: {} (product_id: 0x{:08x})", module.name, module.product_id);
+        println!(
+            "  Found module: {} (product_id: 0x{:08x})",
+            module.name, module.product_id
+        );
     }
     for module in modules {
         coupler.set_module(module);
     }
-    coupler.init_slot_modules(
-        eth_control.channel.clone(),
-        coupler_subdev.device_address,
-    );
+    coupler.init_slot_modules(eth_control.channel.clone(), coupler_subdev.device_address);
 
     // Verify slot 0 has a device
-    // NOTE: The 750-531 must be added to the init_slot_modules match arms in Wago750_354
     assert!(
         coupler.slot_devices[0].is_some(),
         "No device in slot 0 — is the 750-531 registered in init_slot_modules?"
@@ -85,6 +87,16 @@ fn main() {
             _ => std::thread::sleep(Duration::from_millis(10)),
         }
     }
+
+    // Re-fetch subdevices now that we're in Op — the PDO offsets (start_rx, end_rx, etc.)
+    // are only populated during the SafeOp transition, so the earlier snapshot had zeros.
+    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    let coupler_subdev = subdevices
+        .iter()
+        .find(|s| {
+            s.vendor == WAGO_750_354_IDENTITY_A.0 && s.product_id == WAGO_750_354_IDENTITY_A.1
+        })
+        .expect("No Wago 750-354 coupler found on the bus");
 
     // Main loop: cycle through the 4 digital outputs
     let port_count = 4;
@@ -105,14 +117,13 @@ fn main() {
         // Write outputs to the EtherCAT bus
         // The coupler's output() delegates to all slot devices
         if let Some(outputs) = eth_handle.write_outputs() {
-            let subdevice_outputs =
-                &mut outputs[coupler_subdev.start_rx..coupler_subdev.end_rx];
+            let subdevice_outputs = &mut outputs[coupler_subdev.start_rx..coupler_subdev.end_rx];
             coupler
                 .output(BitSlice::<u8, Lsb0>::from_slice_mut(subdevice_outputs))
                 .expect("Failed to write Rx PDO");
         }
 
         eth_handle.send_outputs();
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(500));
     }
 }
