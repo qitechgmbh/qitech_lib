@@ -8,6 +8,7 @@ bitvec = "1.0.1"
 ethercat_hal = { path = "ethercat_hal" }
 ethercat_hal_derive = { path = "ethercat_hal_derive" }
 modbus = { path = "modbus"}
+xtrem = { path = "xtrem" }
 machines = { path = "machines" }
 units = {path = "units"}
 common = {path = "common"}

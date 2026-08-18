@@ -1,0 +1,20 @@
+[package]
+name        = "xtrem"
+version     = "0.1.0"
+edition     = "2024"
+description = "GRAM XTREM / XTREM-S weighing module communication protocol (UDP)"
+
+[dependencies]
+tokio = { version = "1.49.0", features = ["sync","rt-multi-thread","macros","net","time"] }
+anyhow = "1.0.102"
+common = {path = "../common"}
+units = {path = "../units"}
+
+# Integration tests build a fake XTREM module, so they need the runtime and socket types
+# directly rather than through the library surface.
+[dev-dependencies]
+tokio = { version = "1.49.0", features = ["sync","rt-multi-thread","macros","net","time"] }
+common = {path = "../common"}
+units = {path = "../units"}
+
+[lib]
