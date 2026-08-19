@@ -78,6 +78,9 @@ src/
   devices/         XtremDevice trait + XtremScale (the weighing driver)
 examples/
   discover.rs      CLI: sweep a subnet, then poll the first module found
+  assign_ids.rs    CLI: give every module a unique device ID (fixes [COLLISION])
+  poll_multi.rs    CLI: poll every discovered module off one shared bus
+  stream_csv.rs    CLI: stream every module at a fixed interval, log samples to CSV
 tests/
   loopback.rs      integration tests against a fake XTREM module on 127.0.0.1
 ```
@@ -200,6 +203,15 @@ Run the real CLI against hardware:
 cargo run --example discover -- --bind 0.0.0.0:5555 --broadcast 192.168.4.255:4444
 # --no-lrc      if the module has LRC checking disabled (register 0011h)
 # --stream <ms> use stream mode instead of polling
+```
+
+Log every module at 20 ms into a CSV, with a live table on the terminal:
+
+```bash
+cargo run --example stream_csv -- --bind 0.0.0.0:5555 --broadcast 192.168.4.255:4444
+# --interval <ms>  stream interval, default 20
+# --out <path>     CSV path, default xtrem_stream_<unix_ms>.csv
+# --seconds <n>    stop after n seconds, so the streams get shut down cleanly
 ```
 
 `--bind` must stay `0.0.0.0` — never a specific interface IP, even on a multi-homed host. The
