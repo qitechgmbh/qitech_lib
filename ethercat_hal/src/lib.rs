@@ -1,3 +1,4 @@
+pub mod al_diagnostics;
 pub mod coe;
 pub mod controller;
 pub mod debugging;
@@ -10,6 +11,7 @@ pub mod pdo;
 pub mod shared_config;
 //#[cfg(feature = "legacy_code")]
 pub mod machine_ident_read;
+use al_diagnostics::{TransitionLog, TransitionReport};
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
 use std::cell::UnsafeCell;
@@ -62,6 +64,10 @@ where
     current_config: MasterConfiguration,
     requested_state: Option<EtherCATState>,
     rx_channel: Receiver<ChannelRequest>,
+    /// Separate from `rx_channel` so it can be drained in every state without swallowing a
+    /// `ChangeState`/`Shutdown` the current arm cannot honour.
+    diagnostic_channel: Receiver<DiagnosticRequest>,
+    transition_log: TransitionLog,
     input_producer: P,
     output_consumer: C,
 }
@@ -75,6 +81,7 @@ where
         input: P,
         output: C,
         rx: Receiver<ChannelRequest>,
+        diagnostic_channel: Receiver<DiagnosticRequest>,
         interface: Option<String>,
         config: MasterConfiguration,
         cycle: Arc<AtomicU64>,
@@ -85,6 +92,7 @@ where
         subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
         all_subdevices_operational: Arc<AtomicBool>,
         inputs_ready: Arc<AtomicBool>,
+        transition_log: TransitionLog,
     ) -> Self {
         Self {
             cycle,
@@ -96,6 +104,8 @@ where
             state,
             requested_state: None,
             rx_channel: rx,
+            diagnostic_channel,
+            transition_log,
             input_producer: input,
             output_consumer: output,
             current_config: config,
@@ -251,6 +261,7 @@ where
     all_op: Arc<AtomicBool>,
     dc_sys_time: Arc<AtomicU64>,
     inputs_ready: Arc<AtomicBool>,
+    transition_log: TransitionLog,
 }
 
 impl<C, P> EtherCATAppHandle<C, P>
@@ -317,6 +328,17 @@ where
         let count = self.get_subdevice_count() as usize;
         Ok(unlocked.clone()[0..count].to_vec())
     }
+
+    /// Every transition attempted so far with the AL status of each subdevice afterwards,
+    /// oldest first. Shared state, so it stays readable after the state-machine thread ends.
+    pub fn get_transition_reports(&self) -> Vec<TransitionReport> {
+        self.transition_log.reports()
+    }
+
+    /// The most recent failed transition — i.e. why the master is not in OP.
+    pub fn get_last_transition_failure(&self) -> Option<TransitionReport> {
+        self.transition_log.last_failure()
+    }
 }
 
 #[derive(Hash, Eq, PartialEq, PartialOrd, Clone)]
@@ -333,9 +355,10 @@ pub struct TypeErasedValue {
 }
 
 // Wrapper to easily refactor later on
+// `.0` is drained per-state, `.1` in every state.
 #[cfg(not(feature = "mock"))]
 #[derive(Clone)]
-pub struct EtherCATThreadChannel(pub Sender<ChannelRequest>);
+pub struct EtherCATThreadChannel(pub Sender<ChannelRequest>, pub Sender<DiagnosticRequest>);
 
 #[cfg(feature = "mock")]
 #[derive(Clone)]
@@ -408,7 +431,7 @@ impl Default for MetaSubdevice {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum EtherCATState {
     NoInterface = 0,
@@ -472,11 +495,26 @@ pub struct SdoReadRequest {
     pub type_flag: SdoType,
 }
 
-/// A raw ESC register read request. Registers relevant for diagnosing state-transition failures
+/// A diagnostic read, serviced from any master state.
+///
+/// Answered with raw `FPRD` reads needing only the `MainDevice`, so unlike [`ChannelRequests`]
+/// these do not depend on holding a `SubDeviceGroup`.
 #[derive(Debug)]
-pub struct RegisterReadRequest {
-    pub device_address: u16,
-    pub register: u16,
+pub enum DiagnosticRequest {
+    RegisterRead {
+        device_address: u16,
+        register: u16,
+        response_channel: Sender<DiagnosticResponse>,
+    },
+    AlStatusSnapshot {
+        response_channel: Sender<DiagnosticResponse>,
+    },
+}
+
+#[derive(Debug)]
+pub enum DiagnosticResponse {
+    RegisterReadResponse(Result<u16, anyhow::Error>),
+    AlStatusSnapshotResponse(Vec<al_diagnostics::SubDeviceAlStatus>),
 }
 
 // LEGACY CODE HIDE BEHIND FLAG
@@ -491,7 +529,6 @@ pub enum ChannelResponse {
     SdoResponseI16(Result<i16, anyhow::Error>),
     SdoResponseI32(Result<i32, anyhow::Error>),
     SdoWriteResponse(Result<(), anyhow::Error>),
-    RegisterResponseU16(Result<u16, anyhow::Error>),
     ChangeState(Result<(), anyhow::Error>),
     MachineDeviceInfoResponse(Result<Vec<MachineDeviceInfo>, anyhow::Error>),
     WriteMachineInfoResponse(Result<(), anyhow::Error>),
@@ -504,7 +541,6 @@ pub enum ChannelResponse {
 pub enum ChannelRequests {
     SdoWriteRequest(SdoRequest),
     SdoReadRequest(SdoReadRequest),
-    RegisterReadRequest(RegisterReadRequest),
     ChangeState(EtherCATState),
     // usize in this case is the device_address
     EnableDCSync0(usize),
@@ -705,6 +741,8 @@ pub fn init_ethercat(
 ) -> EtherCATControl<TripleBufConsumer, Arc<Mailbox>> {
     use std::sync::atomic::AtomicU8;
     let (tx, rx) = mpsc::channel();
+    let (diagnostic_tx, diagnostic_rx) = mpsc::channel();
+    let transition_log = TransitionLog::new();
     let mailbox = Arc::new(Mailbox {
         data: [0u8; ETHERCAT_TX_RX_SIZE].into(),
         full: AtomicBool::new(false),
@@ -732,6 +770,7 @@ pub fn init_ethercat(
             },
             mailbox.clone(),
             rx,
+            diagnostic_rx,
             Some(interface_name.to_string()),
             conf,
             cycle.clone(),
@@ -742,6 +781,7 @@ pub fn init_ethercat(
             subdevices.clone(),
             all_op.clone(),
             inputs_ready.clone(),
+            transition_log.clone(),
         ),
         None => EtherCATController::new(
             TripleBufProducer {
@@ -749,6 +789,7 @@ pub fn init_ethercat(
             },
             mailbox.clone(),
             rx,
+            diagnostic_rx,
             Some(interface_name.to_string()),
             MasterConfiguration::default(),
             cycle.clone(),
@@ -759,6 +800,7 @@ pub fn init_ethercat(
             subdevices.clone(),
             all_op.clone(),
             inputs_ready.clone(),
+            transition_log.clone(),
         ),
     };
 
@@ -774,9 +816,10 @@ pub fn init_ethercat(
         all_op,
         dc_sys_time,
         inputs_ready,
+        transition_log,
     };
 
-    let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx);
+    let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx, diagnostic_tx);
     let join_handle = std::thread::Builder::new()
         .name("EthercatStateMachine".into())
         .spawn(move || controller.ethercat_state_machine())

@@ -4,7 +4,8 @@ use crate::ethercat_helpers::enable_dc_sync01;
 use crate::{
     ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES,
     PDI_LEN, PDU_STORAGE, Producer, SdoType,
-    ethercat_helpers::{enable_dc_sync, register_read, sdo_read, sdo_write},
+    al_diagnostics::EtherCATTransition,
+    ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
@@ -14,8 +15,7 @@ use anyhow::bail;
 #[cfg(target_os = "linux")]
 use common::set_irq_affinity;
 use ethercrab::{
-    AlStatusCode, MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup,
-    Timeouts,
+    MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
     std::ethercat_now,
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
 };
@@ -142,20 +142,19 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         ));
 
                         let rt = get_async_runtime();
-                        let res = rt.block_on(async {
-                            maindevice
-                                .as_ref()
-                                .unwrap()
-                                .init_single_group::<MAX_SUBDEVICES, PDI_LEN>(ethercat_now)
-                                .await
-                        });
+                        let maindev = maindevice.as_ref().unwrap();
+                        let res = rt.block_on(self.transition(
+                            EtherCATTransition::InitGroup,
+                            maindev,
+                            maindev.init_single_group::<MAX_SUBDEVICES, PDI_LEN>(ethercat_now),
+                        ));
                         group = Some(match res {
                             Ok(group) => group,
                             Err(err) => {
                                 self.state.store(EtherCATState::Init.into(), Relaxed);
                                 send_response(
                                     msg.response_channel,
-                                    ChannelResponse::ChangeState(Err(err.into())),
+                                    ChannelResponse::ChangeState(Err(err)),
                                 );
                                 continue;
                             }
@@ -184,6 +183,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                     drop(subdevice_guard);
                     self.subdevice_count.store(i as u64, Relaxed);
+
+                    get_async_runtime().block_on(self.service_diagnostic_request(maindev));
+
                     let msg = match self.rx_channel.try_recv() {
                         Ok(value) => value,
                         Err(_e) => continue,
@@ -260,14 +262,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                             continue;
                         }
-                        ChannelRequests::RegisterReadRequest(request) => {
-                            let res = register_read(maindev, preop_group, request);
-                            send_response(
-                                msg.response_channel,
-                                ChannelResponse::RegisterResponseU16(res),
-                            );
-                            continue;
-                        }
                         ChannelRequests::ReadMachineIdent() => {
                             let res = read_device_identifications(preop_group, maindev);
                             send_response(
@@ -338,27 +332,23 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let group_to_transition = group.take().expect("Group missing in PreOp");
                     let device_ref = maindevice.as_ref().expect("MainDevice missing");
                     let rt = get_async_runtime();
-                    let res = rt
-                        .block_on(async { group_to_transition.into_pre_op_pdi(device_ref).await });
 
-                    group_preop_pdi = match res {
-                        Ok(group) => group,
-                        Err(e) => {
-                            return Err(anyhow::anyhow!(
-                                "Failed to transition group into PreOpPdi: {e:?}"
-                            ));
-                        }
-                    };
+                    group_preop_pdi = rt.block_on(self.transition(
+                        EtherCATTransition::PreOpToPreOpPdi,
+                        device_ref,
+                        group_to_transition.into_pre_op_pdi(device_ref),
+                    ))?;
 
                     loop {
                         let deadline = Instant::now()
                             + Duration::from_micros(
                                 self.current_config.target_cycle_time_us as u64,
                             );
-                        rt.block_on(
-                            group_preop_pdi.tx_rx_sync_system_time(&maindevice.as_ref().unwrap()),
-                        )
-                        .expect("TX/RX");
+                        rt.block_on(self.guard(
+                            EtherCATTransition::TxRx(EtherCATState::PreOp),
+                            device_ref,
+                            group_preop_pdi.tx_rx_sync_system_time(device_ref),
+                        ))?;
 
                         if now.elapsed() >= Duration::from_millis(25) {
                             now = Instant::now();
@@ -394,17 +384,19 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         spinner.sleep_until(deadline);
                     }
                     let device = maindevice.as_ref().unwrap();
-                    group_preop_pdi_dc = Some(
-                        rt.block_on(group_preop_pdi.configure_dc_sync(
+                    // A bad DC config shows up as InvalidDcSyncConfiguration (0x0030).
+                    group_preop_pdi_dc = Some(rt.block_on(self.transition(
+                        EtherCATTransition::ConfigureDcSync,
+                        device,
+                        group_preop_pdi.configure_dc_sync(
                             device,
                             DcConfiguration {
                                 start_delay: self.current_config.dc_config.start_delay,
                                 sync0_period: self.current_config.dc_config.sync0_period,
                                 sync0_shift: self.current_config.dc_config.sync0_shift,
                             },
-                        ))
-                        .unwrap(),
-                    );
+                        ),
+                    ))?);
                     self.state.store(EtherCATState::PreopPdi.into(), Relaxed);
                 }
                 EtherCATState::PreopPdi => {
@@ -437,19 +429,28 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let mut tick = 0;
                     let rt = get_async_runtime();
                     let group_safe_op = loop {
+                        if let Some(device) = maindevice.as_ref() {
+                            rt.block_on(self.service_diagnostic_request(device));
+                        }
+
                         match group_container.take().unwrap() {
                             GroupState::PreOp(group) => {
                                 let device = maindevice.as_ref().unwrap();
                                 let now = Instant::now(); // Moved inside
-                                let res = rt.block_on(group.tx_rx_dc(device)).expect("");
+                                let res = rt.block_on(self.guard(
+                                    EtherCATTransition::TxRx(EtherCATState::PreopPdi),
+                                    device,
+                                    group.tx_rx_dc(device),
+                                ))?;
                                 if tick <= self.current_config.dc_config.target_dc_tick {
                                     spinner.sleep_until(now + res.extra.next_cycle_wait);
                                 }
 
                                 if tick > self.current_config.dc_config.target_dc_tick {
-                                    let group_res = rt.block_on(group.into_safe_op(device));
-                                    let group = group_res.map_err(|e| anyhow::anyhow!(
-                                        "EtherCAT PreOp → SafeOp transition failed: {e:?}. Terminating for a clean restart."
+                                    let group = rt.block_on(self.transition(
+                                        EtherCATTransition::PreOpPdiToSafeOp,
+                                        device,
+                                        group.into_safe_op(device),
                                     ))?;
                                     group_container = Some(GroupState::SafeOp(group));
                                 } else {
@@ -459,22 +460,24 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             GroupState::SafeOp(group) => {
                                 let device = maindevice.as_ref().unwrap();
                                 // Apply the same logic here
-                                let (is_all_safe, group_back, _) = rt.block_on(async {
-                                    let now = Instant::now();
-                                    let res = group.tx_rx_dc(device).await.expect("TX/RX");
-                                    let ready = res.is_in_state(ethercrab::SubDeviceState::SafeOp);
-                                    if !ready {
-                                        spinner.sleep_until(now + res.extra.next_cycle_wait);
-                                    }
-                                    (ready, group, res.extra.next_cycle_wait)
-                                });
+                                let now = Instant::now();
+                                let res = rt.block_on(self.guard(
+                                    EtherCATTransition::TxRx(EtherCATState::PreopPdi),
+                                    device,
+                                    group.tx_rx_dc(device),
+                                ))?;
+                                let is_all_safe =
+                                    res.is_in_state(ethercrab::SubDeviceState::SafeOp);
+                                if !is_all_safe {
+                                    spinner.sleep_until(now + res.extra.next_cycle_wait);
+                                }
 
                                 if is_all_safe {
                                     let mut rx_offset = 0;
                                     let mut tx_offset = 0;
                                     let mut subdevice_guard =
                                         get_async_runtime().block_on(self.subdevices.lock());
-                                    for (i, subdevice) in group_back.iter(device).enumerate() {
+                                    for (i, subdevice) in group.iter(device).enumerate() {
                                         let length_tx = subdevice.io_raw().inputs().len();
                                         let length_rx = subdevice.io_raw().outputs().len();
 
@@ -488,27 +491,23 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                         tx_offset += length_tx;
                                     }
                                     drop(subdevice_guard);
-                                    break group_back;
+                                    break group;
                                 } else {
-                                    group_container = Some(GroupState::SafeOp(group_back));
+                                    group_container = Some(GroupState::SafeOp(group));
                                 }
                             }
                         }
                         tick += 1;
                     };
 
-                    match rt.block_on(group_safe_op.request_into_op(&maindevice.as_ref().unwrap()))
-                    {
-                        Ok(group) => group_op = Some(group),
-                        Err(e) => {
-                            // request_into_op consumes the group — no retry possible.
-                            // Return Err so the state-machine thread ends cleanly;
-                            // the supervisor (systemd) restarts the process.
-                            return Err(anyhow::anyhow!(
-                                "EtherCAT SAFE-OP -> OP transition failed: {e:?}. Terminating for a clean restart."
-                            ));
-                        }
-                    }
+                    // Consumes the group, so no retry is possible. The Err ends the thread
+                    // cleanly and the supervisor (systemd) restarts the process.
+                    let device = maindevice.as_ref().unwrap();
+                    group_op = Some(rt.block_on(self.transition(
+                        EtherCATTransition::SafeOpToOpRequest,
+                        device,
+                        group_safe_op.request_into_op(device),
+                    ))?);
                     self.state.store(EtherCATState::Op.into(), Relaxed);
                 }
 
@@ -538,6 +537,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                         let mut is_all_op = false;
                         let mut not_all_op_cycles: u32 = 0;
+                        let ramp_started = Instant::now();
                         let cycle_time_ns = self.current_config.target_cycle_time_us as i64 * 1000;
                         let mut integral: i64 = 0;
                         let mut error: i64;
@@ -552,7 +552,13 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                         loop {
                             let cycle_start = Instant::now();
-                            let res = group.tx_rx_dc(&maindevice).await.expect("TX_RX Failed");
+                            let res = self
+                                .guard(
+                                    EtherCATTransition::TxRx(EtherCATState::Op),
+                                    maindevice,
+                                    group.tx_rx_dc(maindevice),
+                                )
+                                .await?;
                             delta =
                                 (res.extra.dc_system_time - sync_offset_ns) as i64 % cycle_time_ns;
                             if delta > (cycle_time_ns / 2) {
@@ -591,38 +597,16 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                                     if not_all_op_cycles >= self.current_config.op_ramp_grace_cycles
                                     {
-                                        // Read AL status now (only at timeout) for the error message.
-                                        let mut erroring_subdevices: Vec<(usize, AlStatusCode)> =
-                                            Vec::new();
-                                        for index in 0..self.subdevice_count.load(Relaxed) {
-                                            if let Ok(subdevice) =
-                                                group.subdevice(maindevice, index as usize)
-                                            {
-                                                let code: AlStatusCode = subdevice
-                                                    .register_read(RegisterAddress::AlStatusCode)
-                                                    .await
-                                                    .unwrap_or(AlStatusCode::Unknown(0));
-                                                if code != AlStatusCode::NoError {
-                                                    erroring_subdevices
-                                                        .push((index as usize, code));
-                                                }
-                                            }
-                                        }
-                                        // AlStatusCode's Display already renders "0x00xx: <reason>",
-                                        // matching the hex codes ETG1000.6 lists them under.
-                                        let al_errors = erroring_subdevices
-                                            .iter()
-                                            .map(|(index, code)| {
-                                                format!("subdevice #{index}: {code}")
-                                            })
-                                            .collect::<Vec<_>>()
-                                            .join(", ");
-                                        bail!(
-                                            "EtherCAT OP ramp timed out after {} cycles without all devices reaching OP. \
-                                         AL errors at timeout: [{}]. Terminating for a clean restart.",
-                                            not_all_op_cycles,
-                                            al_errors
-                                        );
+                                        self.record(
+                                            EtherCATTransition::OpRamp,
+                                            maindevice,
+                                            ramp_started,
+                                            Err::<(), _>(format!(
+                                                "not all subdevices reached OP within \
+                                                 {not_all_op_cycles} cycles"
+                                            )),
+                                        )
+                                        .await?;
                                     }
                                     continue;
                                 }
@@ -647,6 +631,10 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 None => {}
                             }
                             self.inputs_ready.store(true, Relaxed);
+
+                            // Inside the window already reserved for the client side, so a
+                            // register read costs the cycle nothing it was going to use.
+                            self.service_diagnostic_request(maindevice).await;
 
                             // This gives the client side time to look at the inputs and write outputs
                             // Might be a bit too tight if running < 125us but at that point it isnt really stable anyways

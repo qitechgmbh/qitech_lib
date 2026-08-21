@@ -1,8 +1,11 @@
 #[cfg(not(feature = "mock"))]
 use crate::{ChannelRequest, ChannelResponse, EtherCATThreadResponseChannel};
+#[cfg(not(feature = "mock"))]
+use crate::{DiagnosticRequest, DiagnosticResponse};
 use crate::{
-    EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, RegisterReadRequest,
-    SdoReadRequest, SdoRequest, SdoType, get_async_runtime, machine_ident_read::MachineDeviceInfo,
+    EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest,
+    SdoType, al_diagnostics::SubDeviceAlStatus, get_async_runtime,
+    machine_ident_read::MachineDeviceInfo,
 };
 use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
@@ -10,6 +13,11 @@ use ethercrab::{
 use std::any::TypeId;
 #[cfg(not(feature = "mock"))]
 use std::time::Duration;
+
+/// Above the state machine's own snapshot deadline, so a slow bus reports results rather than
+/// timing out here.
+#[cfg(not(feature = "mock"))]
+const DIAGNOSTIC_TIMEOUT: Duration = Duration::from_millis(1500);
 
 pub trait EthercatResponseTypedResult: Sized {
     fn from_bool(_v: bool) -> anyhow::Result<Self> {
@@ -200,6 +208,12 @@ impl EtherCATThreadChannel {
         ))
     }
 
+    pub fn al_status_snapshot(&self) -> Result<Vec<SubDeviceAlStatus>, anyhow::Error> {
+        Err(anyhow::anyhow!(
+            "al_status_snapshot is not supported in mock mode"
+        ))
+    }
+
     pub fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, anyhow::Error> {
         Ok(self.machine_device_infos.clone())
     }
@@ -291,33 +305,45 @@ impl EtherCATThreadChannel {
     /// Read a raw ESC register from a subdevice, e.g.
     /// `register_read(addr, RegisterAddress::AlStatusCode)`.
     ///
-    /// Only serviced while the master is in [`EtherCATState::PreOp`]
+    /// Serviced in every master state, including `Op`.
     pub fn register_read(
         &self,
         device_address: u16,
         register: impl Into<u16>,
     ) -> Result<u16, anyhow::Error> {
-        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
-        let req: ChannelRequest = ChannelRequest {
-            channel_request: crate::ChannelRequests::RegisterReadRequest(RegisterReadRequest {
-                device_address,
-                register: register.into(),
-            }),
-            response_channel: EtherCATThreadResponseChannel(tx),
-        };
+        let (tx, rx) = std::sync::mpsc::channel::<DiagnosticResponse>();
 
-        match self.0.send(req) {
-            Ok(_) => (),
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
+        if let Err(e) = self.1.send(DiagnosticRequest::RegisterRead {
+            device_address,
+            register: register.into(),
+            response_channel: tx,
+        }) {
+            return Err(anyhow::anyhow!(e));
+        }
 
-        let response = match rx.recv_timeout(Duration::from_millis(500)) {
-            Ok(res) => res,
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
-        match response {
-            ChannelResponse::RegisterResponseU16(result) => result,
-            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+        match rx.recv_timeout(DIAGNOSTIC_TIMEOUT) {
+            Ok(DiagnosticResponse::RegisterReadResponse(result)) => result,
+            Ok(_) => Err(anyhow::anyhow!("Unexpected DiagnosticResponse")),
+            Err(e) => Err(anyhow::anyhow!(e)),
+        }
+    }
+
+    /// Probe a running bus. For the state a *transition* left it in, use
+    /// [`EtherCATAppHandle::get_last_transition_failure`](crate::EtherCATAppHandle::get_last_transition_failure)
+    /// instead — that one is recorded automatically.
+    pub fn al_status_snapshot(&self) -> Result<Vec<SubDeviceAlStatus>, anyhow::Error> {
+        let (tx, rx) = std::sync::mpsc::channel::<DiagnosticResponse>();
+
+        if let Err(e) = self.1.send(DiagnosticRequest::AlStatusSnapshot {
+            response_channel: tx,
+        }) {
+            return Err(anyhow::anyhow!(e));
+        }
+
+        match rx.recv_timeout(DIAGNOSTIC_TIMEOUT) {
+            Ok(DiagnosticResponse::AlStatusSnapshotResponse(statuses)) => Ok(statuses),
+            Ok(_) => Err(anyhow::anyhow!("Unexpected DiagnosticResponse")),
+            Err(e) => Err(anyhow::anyhow!(e)),
         }
     }
 
@@ -634,26 +660,6 @@ where
         }
     }
     Err(anyhow::anyhow!("Unknown Subdevice"))
-}
-
-/// Read a raw ESC register (e.g. `RegisterAddress::AlStatusCode`) from a subdevice in the group.
-pub fn register_read(
-    maindevice: &MainDevice,
-    group: &SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
-    request: RegisterReadRequest,
-) -> Result<u16, anyhow::Error> {
-    for device in group.iter(maindevice) {
-        if device.configured_address() == request.device_address {
-            let runtime = get_async_runtime();
-            let res: Result<u16, ethercrab::error::Error> =
-                runtime.block_on(device.register_read::<u16>(request.register));
-            return Ok(res?);
-        }
-    }
-    Err(anyhow::anyhow!(
-        "Unknown Subdevice 0x{:04X}",
-        request.device_address
-    ))
 }
 
 pub fn enable_dc_sync(
