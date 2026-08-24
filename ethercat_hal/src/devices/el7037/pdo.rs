@@ -8,40 +8,35 @@ use ethercat_hal_derive::{RxPdo, TxPdo};
 
 #[derive(Debug, Clone, TxPdo)]
 pub struct EL7037TxPdo {
-    /// 0x1A00
     #[pdo_object_index(0x1A00)]
     pub enc_status_compact: Option<EncStatusCompact>,
 
-    /// 0x1A01
     #[pdo_object_index(0x1A01)]
     pub enc_status: Option<EncStatus>,
 
-    /// 0x1A02
     #[pdo_object_index(0x1A02)]
     pub enc_timestamp_compact: Option<EncTimestampCompact>,
 
-    /// 0x1A03
     #[pdo_object_index(0x1A03)]
     pub stm_status: Option<StmStatus>,
 
-    /// 0x1A04
     #[pdo_object_index(0x1A04)]
     pub stm_synchron_info_data: Option<StmSynchronInfoData>,
 
-    /// 0x1A05
-    #[pdo_object_index(0x1A05)]
+    // TODO:
+    // #[pdo_object_index(0x1A05)]
+    // pub stm_motor_load: Option<StmMotorLoad>,
+
+    #[pdo_object_index(0x1A06)]
     pub pos_status_compact: Option<PosStatusCompact>,
 
-    /// 0x1A06
-    #[pdo_object_index(0x1A06)]
+    #[pdo_object_index(0x1A07)]
     pub pos_status: Option<PosStatus>,
 
-    /// 0x1A07
-    #[pdo_object_index(0x1A07)]
+    #[pdo_object_index(0x1A08)]
     pub stm_internal_position: Option<StmInternalPosition>,
 
-    /// 0x1A08
-    #[pdo_object_index(0x1A08)]
+    #[pdo_object_index(0x1A09)]
     pub stm_external_position: Option<StmExternalPosition>,
 }
 

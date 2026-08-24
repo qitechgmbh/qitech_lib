@@ -13,6 +13,7 @@ use ethercat_hal::{
 };
 use std::{env, time::Duration};
 
+#[derive(Debug)]
 enum State {
     Reset,
     WaitForReset,
@@ -39,6 +40,7 @@ fn main() {
             _ => std::thread::sleep(Duration::from_millis(10)),
         }
     }
+    println!("preop");
 
     // CoE config must happen in PreOp (before Op transition)
     let mut el7037 = EL7037::new();
@@ -49,12 +51,13 @@ fn main() {
 
     config.encoder.reversion_of_rotation = true;
     config.stm_motor.max_current = 1100;
-    // config.stm_motor.motor_coil_resistance = 175;
-    // config.stm_motor.motor_coil_inductance = 330;
-    config.stm_motor.encoder_increments = 4000;
-    // config.pos_configuration.position_lag_max = 3;
-    // config.pos_configuration.velocity_min = 100;
-    // config.pos_configuration.velocity_max = 1000;
+    config.stm_motor.motor_coil_resistance = 175;
+    config.stm_motor.motor_coil_inductance = 330;
+    config.stm_motor.encoder_increments = 2000;
+    config.pos_configuration.target_window = 100;
+    config.pos_configuration.position_lag_max = 3;
+    config.pos_configuration.velocity_min = 100;
+    config.pos_configuration.velocity_max = 1000;
     config.stm_features.feedback_type = EL7037FeedbackType::Encoder;
 
     for subdevice in eth_control.controller.get_subdevices() {
@@ -68,10 +71,10 @@ fn main() {
                 .expect("EL7037 CoE config failed");
 
             // Kp factor pos.
-            eth_control
-                .channel
-                .sdo_write(subdevice.device_address, 0x8014, 0x02, 3u16)
-                .expect("KP write failed");
+            // eth_control
+            //     .channel
+            //     .sdo_write(subdevice.device_address, 0x8014, 0x02, 5u16)
+            //     .expect("KP write failed");
         }
     }
 
@@ -125,53 +128,51 @@ fn main() {
             .expect("No Encoder Control");
 
         println!(
-            "ENC = {}, ExPOS = {}, InPOS = {}",
+            "{:?}: READY = {}, READY_TO_ENABLE = {}, ENC = {}, MOV_POS={}, MOVE_NEG={}, ExPOS = {}, InPOS = {}, SET_CNT_DONE = {}",
+            state,
+            stm_status.ready,
+            stm_status.ready_to_enable,
             enc_status.counter_value,
+            stm_status.moving_positive,
+            stm_status.moving_negative,
             stm_external_position.external_position,
-            stm_internal_position.internal_position
+            stm_internal_position.internal_position,
+            enc_status.set_counter_done,
         );
-
-        if stm_status.motor_stall {
-            println!("STALLL STSALLL STALLL");
-        }
 
         if stm_status.error {
             panic!("Motor Error");
         }
 
+        stm_control.reset = false;
+        enc_control.set_counter = false;
+
         match state {
             State::Reset => {
-                print!("reset: ");
                 stm_control.reset = true;
                 enc_control.set_counter = true;
                 enc_control.set_counter_value = 1000;
+                stm_position.position = 1000;
 
                 state = State::WaitForReset;
             }
             State::WaitForReset => {
-                print!("wait: ");
-                stm_control.reset = false;
-                enc_control.set_counter = false;
-
-                if enc_status.counter_value == 1000 {
+                if enc_status.set_counter_done {
+                    assert_eq!(enc_status.counter_value, 1000);
                     state = State::Increment;
                 }
             }
             State::Increment => {
-                print!("inc: ");
+                stm_position.position = 5000;
                 stm_control.enable = true;
-                stm_position.position = 10000;
 
-                if enc_status.counter_value == 10000 {
-                    state = State::Decrement;
-                }
+                // state = State::Decrement;
             }
             State::Decrement => {
-                print!("dec: ");
-                stm_control.enable = true;
-                stm_position.position = 10500;
-
-                if enc_status.counter_value == 10500 {
+                if enc_status.counter_value > 4000 {
+                    stm_control.enable = stm_status.ready_to_enable;
+                    stm_position.position = 4000;
+                } else {
                     state = State::Increment;
                 }
             }
