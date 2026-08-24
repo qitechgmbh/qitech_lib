@@ -893,10 +893,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "machines"
-version = "0.1.0"
-
-[[package]]
 name = "memchr"
 version = "2.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1169,7 +1165,6 @@ dependencies = [
  "core_affinity",
  "ethercat_hal",
  "ethercat_hal_derive",
- "machines",
  "modbus",
  "postcard",
  "serde",
