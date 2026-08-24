@@ -17,6 +17,7 @@ pub trait AnalogVoltageOutputDevice {
 }
 
 #[derive(Debug, Clone)]
+#[deprecated(note = "Use AnalogVoltageOutputDevice instead, which supports floats directly")]
 pub struct AnalogOutputOutput(pub f32);
 
 impl From<f32> for AnalogOutputOutput {
@@ -31,6 +32,7 @@ impl From<AnalogOutputOutput> for f32 {
     }
 }
 
+#[deprecated(note = "Use AnalogVoltageOutputDevice instead")]
 pub trait AnalogOutputDevice {
     fn set_output(&mut self, port: usize, value: AnalogOutputOutput);
     fn get_port_count(&self) -> usize;
