@@ -1,8 +1,6 @@
 use crate::pdo::PredefinedPdoAssignment;
 use crate::pdo::el70x7::{
-    EncControl, EncControlCompact, EncStatus, EncStatusCompact, EncTimestampCompact, PosControl,
-    PosControl2, PosControlCompact, PosStatus, PosStatusCompact, StmControl, StmExternalPosition,
-    StmInternalPosition, StmPosition, StmStatus, StmSynchronInfoData, StmVelocity,
+    EncControl, EncControlCompact, EncStatus, EncStatusCompact, EncTimestampCompact, PosActualPositionLag, PosControl, PosControl2, PosControlCompact, PosStatus, PosStatusCompact, StmControl, StmExternalPosition, StmInternalPosition, StmPosition, StmStatus, StmSynchronInfoData, StmVelocity
 };
 use ethercat_hal_derive::{RxPdo, TxPdo};
 
@@ -38,6 +36,9 @@ pub struct EL7037TxPdo {
 
     #[pdo_object_index(0x1A09)]
     pub stm_external_position: Option<StmExternalPosition>,
+
+    #[pdo_object_index(0x1A0A)]
+    pub pos_actual_position_lag: Option<PosActualPositionLag>,
 }
 
 #[derive(Debug, Clone, RxPdo)]
@@ -102,6 +103,7 @@ impl PredefinedPdoAssignment<EL7037TxPdo, EL7037RxPdo> for EL7037PredefinedPdoAs
                 pos_status: None,
                 stm_internal_position: None,
                 stm_external_position: None,
+                pos_actual_position_lag: None,
             },
             Self::VelocityControlCompactWithInfoData => EL7037TxPdo {
                 enc_status_compact: Some(EncStatusCompact::default()),
@@ -113,6 +115,7 @@ impl PredefinedPdoAssignment<EL7037TxPdo, EL7037RxPdo> for EL7037PredefinedPdoAs
                 pos_status: None,
                 stm_internal_position: None,
                 stm_external_position: None,
+                pos_actual_position_lag: None,
             },
             Self::VelocityControl => EL7037TxPdo {
                 enc_status_compact: None,
@@ -124,6 +127,7 @@ impl PredefinedPdoAssignment<EL7037TxPdo, EL7037RxPdo> for EL7037PredefinedPdoAs
                 pos_status: None,
                 stm_internal_position: None,
                 stm_external_position: None,
+                pos_actual_position_lag: None,
             },
             Self::PositionControl => EL7037TxPdo {
                 enc_status_compact: None,
@@ -135,6 +139,7 @@ impl PredefinedPdoAssignment<EL7037TxPdo, EL7037RxPdo> for EL7037PredefinedPdoAs
                 pos_status: None,
                 stm_internal_position: Some(StmInternalPosition::default()),
                 stm_external_position: Some(StmExternalPosition::default()),
+                pos_actual_position_lag: Some(PosActualPositionLag::default()),
             },
             Self::PositionInterfaceCompact => EL7037TxPdo {
                 enc_status_compact: None,
@@ -146,6 +151,7 @@ impl PredefinedPdoAssignment<EL7037TxPdo, EL7037RxPdo> for EL7037PredefinedPdoAs
                 pos_status: None,
                 stm_internal_position: None,
                 stm_external_position: None,
+                pos_actual_position_lag: None,
             },
             Self::PositionInterface => EL7037TxPdo {
                 enc_status_compact: None,
@@ -157,6 +163,7 @@ impl PredefinedPdoAssignment<EL7037TxPdo, EL7037RxPdo> for EL7037PredefinedPdoAs
                 pos_status: Some(PosStatus::default()),
                 stm_internal_position: None,
                 stm_external_position: None,
+                pos_actual_position_lag: None,
             },
             Self::PositionInterfaceWithInfoData => EL7037TxPdo {
                 enc_status_compact: None,
@@ -168,6 +175,7 @@ impl PredefinedPdoAssignment<EL7037TxPdo, EL7037RxPdo> for EL7037PredefinedPdoAs
                 pos_status: Some(PosStatus::default()),
                 stm_internal_position: None,
                 stm_external_position: None,
+                pos_actual_position_lag: None,
             },
             Self::PositionInterfaceAutoStart => EL7037TxPdo {
                 enc_status_compact: None,
@@ -179,6 +187,7 @@ impl PredefinedPdoAssignment<EL7037TxPdo, EL7037RxPdo> for EL7037PredefinedPdoAs
                 pos_status: Some(PosStatus::default()),
                 stm_internal_position: None,
                 stm_external_position: None,
+                pos_actual_position_lag: None,
             },
             Self::PositionInterfaceAutoStartWithInfoData => EL7037TxPdo {
                 enc_status_compact: None,
@@ -190,6 +199,7 @@ impl PredefinedPdoAssignment<EL7037TxPdo, EL7037RxPdo> for EL7037PredefinedPdoAs
                 pos_status: Some(PosStatus::default()),
                 stm_internal_position: None,
                 stm_external_position: None,
+                pos_actual_position_lag: None,
             },
         }
     }

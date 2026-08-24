@@ -17,6 +17,7 @@ use std::{env, time::Duration};
 enum State {
     Reset,
     WaitForReset,
+    WaitForReady,
     Increment,
     Decrement,
 }
@@ -51,13 +52,13 @@ fn main() {
 
     config.encoder.reversion_of_rotation = true;
     config.stm_motor.max_current = 1100;
-    config.stm_motor.motor_coil_resistance = 175;
-    config.stm_motor.motor_coil_inductance = 330;
-    config.stm_motor.encoder_increments = 2000;
-    config.pos_configuration.target_window = 100;
-    config.pos_configuration.position_lag_max = 3;
-    config.pos_configuration.velocity_min = 100;
-    config.pos_configuration.velocity_max = 1000;
+    // config.stm_motor.motor_coil_resistance = 175;
+    // config.stm_motor.motor_coil_inductance = 330;
+    config.stm_motor.encoder_increments = 4000;
+    // config.pos_configuration.target_window = 100;
+    // config.pos_configuration.position_lag_max = 3;
+    // config.pos_configuration.velocity_min = 100;
+    // config.pos_configuration.velocity_max = 1000;
     config.stm_features.feedback_type = EL7037FeedbackType::Encoder;
 
     for subdevice in eth_control.controller.get_subdevices() {
@@ -109,6 +110,7 @@ fn main() {
 
         let enc_status = el7037.txpdo.enc_status.as_mut().expect("No Encoder Status");
         let stm_status = el7037.txpdo.stm_status.as_mut().expect("No STM Status");
+        let position_lag = el7037.txpdo.pos_actual_position_lag.as_mut().expect("No Position Lag");
         let stm_control = el7037.rxpdo.stm_control.as_mut().expect("No STM Control");
         let stm_position = el7037.rxpdo.stm_position.as_mut().expect("No STM Position");
         let stm_external_position = el7037
@@ -128,7 +130,7 @@ fn main() {
             .expect("No Encoder Control");
 
         println!(
-            "{:?}: READY = {}, READY_TO_ENABLE = {}, ENC = {}, MOV_POS={}, MOVE_NEG={}, ExPOS = {}, InPOS = {}, SET_CNT_DONE = {}",
+            "{:?}: READY = {}, READY_TO_ENABLE = {}, ENC = {}, MOV_POS={}, MOVE_NEG={}, ExPOS = {}, InPOS = {}, SET_CNT_DONE = {}, POS_LAG = {}",
             state,
             stm_status.ready,
             stm_status.ready_to_enable,
@@ -138,32 +140,41 @@ fn main() {
             stm_external_position.external_position,
             stm_internal_position.internal_position,
             enc_status.set_counter_done,
+            position_lag.actual_position_lag,
         );
 
         if stm_status.error {
             panic!("Motor Error");
         }
 
-        stm_control.reset = false;
-        enc_control.set_counter = false;
-
         match state {
             State::Reset => {
                 stm_control.reset = true;
                 enc_control.set_counter = true;
                 enc_control.set_counter_value = 1000;
-                stm_position.position = 1000;
 
                 state = State::WaitForReset;
             }
             State::WaitForReset => {
+                stm_control.reset = false;
+
                 if enc_status.set_counter_done {
                     assert_eq!(enc_status.counter_value, 1000);
+
+                    enc_control.set_counter = false;
+                    stm_control.enable = true;
+                    stm_position.position = enc_status.counter_value;
+
+                    state = State::WaitForReady;
+                }
+            }
+            State::WaitForReady => {
+                if stm_status.ready {
                     state = State::Increment;
                 }
             }
             State::Increment => {
-                stm_position.position = 5000;
+                stm_position.position = 2000;
                 stm_control.enable = true;
 
                 // state = State::Decrement;
