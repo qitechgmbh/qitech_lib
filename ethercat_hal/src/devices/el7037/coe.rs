@@ -3,8 +3,8 @@ use crate::{
     coe::{ConfigurableDevice, Configuration},
     pdo::PredefinedPdoAssignment,
     shared_config::el70x7::{
-        EncConfiguration, PosConfiguration, PosFeatures, StmControllerConfiguration, StmFeatures,
-        StmMotorConfiguration,
+        EncConfiguration, PosConfiguration, PosFeatures, StmControllerConfiguration,
+        StmControllerSettings3Configuration, StmFeatures, StmMotorConfiguration,
     },
 };
 
@@ -19,8 +19,11 @@ pub struct EL7037Configuration {
     /// STM motor configuration
     pub stm_motor: StmMotorConfiguration,
 
-    /// STM controller configuration
+    /// STM controller configuration (0x8011, current loop)
     pub stm_controller_1: StmControllerConfiguration,
+
+    /// STM controller configuration (0x8014, position and velocity loop)
+    pub stm_controller_3: StmControllerSettings3Configuration,
 
     /// STM features
     pub stm_features: StmFeatures,
@@ -41,6 +44,7 @@ impl Default for EL7037Configuration {
             encoder: EncConfiguration::default(),
             stm_motor: StmMotorConfiguration::default(),
             stm_controller_1: StmControllerConfiguration::default(),
+            stm_controller_3: StmControllerSettings3Configuration::default(),
             stm_features: StmFeatures {
                 select_info_data_1: crate::shared_config::el70x7::EL70x7InfoData::MotorLoad,
                 select_info_data_2: crate::shared_config::el70x7::EL70x7InfoData::MotorDcCurrent,
@@ -65,6 +69,8 @@ impl Configuration for EL7037Configuration {
             .write_config(ecat_channel.clone(), device_address)?;
         self.stm_controller_1
             .write_config(ecat_channel.clone(), device_address, 0x8011)?;
+        self.stm_controller_3
+            .write_config(ecat_channel.clone(), device_address)?;
         self.stm_features
             .write_config(ecat_channel.clone(), device_address)?;
         self.pos_configuration

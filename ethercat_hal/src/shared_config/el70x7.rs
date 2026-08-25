@@ -173,6 +173,74 @@ impl StmControllerConfiguration {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// STM Controller Settings 3 (position and velocity loop)
+// ────────────────────────────────────────────────────────────────────────────
+
+/// EL7037 position and velocity controller configuration (object 0x8014).
+///
+/// This is the loop that decides how a positioning move *settles*: the position
+/// controller is what "pulls" the motor into the target window during the
+/// PRE_TARGET phase. It is a different object from 0x8011, which only tunes the
+/// current loop.
+///
+/// CoE objects persist in the terminal, so leaving this object unwritten means
+/// the drive silently keeps whatever a previous commissioning session left in
+/// it. A terminal found in the field with `kp_factor_pos` at 5 instead of 500
+/// had almost no position authority: moves never converged into the target
+/// window and the axis kept hunting after the travel command had finished.
+#[derive(Debug, Clone)]
+pub struct StmControllerSettings3Configuration {
+    /// # 0x8014:01
+    /// Feed forward (pilot control) of the position controller
+    ///
+    /// default: `0x000186A0` (100000dec)
+    pub feed_forward_pos: u32,
+
+    /// # 0x8014:02
+    /// Kp control factor of the position controller
+    ///
+    /// default: `0x01F4` (500dec)
+    pub kp_factor_pos: u16,
+
+    /// # 0x8014:03
+    /// Kp control factor of the velocity controller (unit: 0.1 mA / (rad/s))
+    ///
+    /// default: `0x00000032` (50dec)
+    pub kp_factor_velo: u32,
+
+    /// # 0x8014:04
+    /// Time constant Tn of the velocity controller (unit: 0.01 ms)
+    ///
+    /// default: `0xC350` (50000dec) = 500 ms
+    pub tn_velo: u16,
+}
+
+impl Default for StmControllerSettings3Configuration {
+    fn default() -> Self {
+        Self {
+            feed_forward_pos: 100_000,
+            kp_factor_pos: 500,
+            kp_factor_velo: 50,
+            tn_velo: 50_000,
+        }
+    }
+}
+
+impl StmControllerSettings3Configuration {
+    pub fn write_config(
+        &self,
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
+    ) -> Result<(), anyhow::Error> {
+        ecat_channel.sdo_write(device_address, 0x8014, 0x01, self.feed_forward_pos)?;
+        ecat_channel.sdo_write(device_address, 0x8014, 0x02, self.kp_factor_pos)?;
+        ecat_channel.sdo_write(device_address, 0x8014, 0x03, self.kp_factor_velo)?;
+        ecat_channel.sdo_write(device_address, 0x8014, 0x04, self.tn_velo)?;
+        Ok(())
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // EL70x7 Info Data
 // ────────────────────────────────────────────────────────────────────────────
 

@@ -415,6 +415,8 @@ impl TxPdoObject for PosStatus {
         self.accelerate = bits[5];
         // Offset 0.6
         self.decelerate = bits[6];
+        // Offset 0.7
+        self.ready_to_execute = bits[7];
         // Offset 2.0
         self.actual_position = bits[16..16 + 32].load_le();
         // Offset 6.0
