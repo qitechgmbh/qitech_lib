@@ -61,6 +61,13 @@ fn main() {
     // config.pos_configuration.velocity_max = 1000;
     config.stm_features.feedback_type = EL7037FeedbackType::Encoder;
 
+    // The HAL writes the position loop (0x8014) with the terminal's documented
+    // Kp (pos.) of 500. Measured on this axis that gain is unstable - moves run
+    // 3-4.7x too far - so pin it to the value that actually converges here, the
+    // same one el7037_move_steps uses. CoE is persistent, so an example that
+    // left 500 behind would destabilise the next run of any other example too.
+    config.stm_controller_3.kp_factor_pos = 5;
+
     for subdevice in eth_control.controller.get_subdevices() {
         if subdevice.vendor == BECKHOFF_VENDOR_ID && subdevice.product_id == EL7037_PRODUCT_ID {
             el7037
@@ -110,7 +117,11 @@ fn main() {
 
         let enc_status = el7037.txpdo.enc_status.as_mut().expect("No Encoder Status");
         let stm_status = el7037.txpdo.stm_status.as_mut().expect("No STM Status");
-        let position_lag = el7037.txpdo.pos_actual_position_lag.as_mut().expect("No Position Lag");
+        let position_lag = el7037
+            .txpdo
+            .pos_actual_position_lag
+            .as_mut()
+            .expect("No Position Lag");
         let stm_control = el7037.rxpdo.stm_control.as_mut().expect("No STM Control");
         let stm_position = el7037.rxpdo.stm_position.as_mut().expect("No STM Position");
         let stm_external_position = el7037
