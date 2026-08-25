@@ -88,8 +88,7 @@ impl Wago750_554 {
             return Err(anyhow::anyhow!("port {} doesnt exist on Wago750_554", port));
         }
         let ma = current.get::<milliampere>();
-        let normalized =
-            (ma - WAGO_750_554_MIN_MA) / (WAGO_750_554_MAX_MA - WAGO_750_554_MIN_MA);
+        let normalized = (ma - WAGO_750_554_MIN_MA) / (WAGO_750_554_MAX_MA - WAGO_750_554_MIN_MA);
         self.set_output(port, AnalogOutputOutput(normalized as f32));
         Ok(())
     }
@@ -97,8 +96,7 @@ impl Wago750_554 {
     /// Currently written output of the given port as an absolute current.
     pub fn get_current(&self, port: usize) -> Result<ElectricCurrent, anyhow::Error> {
         let normalized = Self::raw_to_normalized(self.get_raw(port)?) as f64;
-        let ma = WAGO_750_554_MIN_MA
-            + normalized * (WAGO_750_554_MAX_MA - WAGO_750_554_MIN_MA);
+        let ma = WAGO_750_554_MIN_MA + normalized * (WAGO_750_554_MAX_MA - WAGO_750_554_MIN_MA);
         Ok(ElectricCurrent::new::<milliampere>(ma))
     }
 }
