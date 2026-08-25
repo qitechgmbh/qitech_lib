@@ -11,7 +11,7 @@ fn main() {
         .expect("Channel was not ready");
 
     loop {
-        let val = eth_control.controller.get_state();
+        let val = eth_control.app_handle.get_state();
         match val {
             EtherCATState::PreOp => break,
             _ => std::thread::sleep(Duration::from_millis(10)),
@@ -23,13 +23,18 @@ fn main() {
         .read_device_identifications()
         .expect("Failed to read indents!");
 
-    for (index, subdevice) in eth_control.controller.get_subdevices().iter().enumerate() {
+    let subdevices = eth_control
+        .app_handle
+        .try_get_subdevices_vec_sync()
+        .expect("Failed to read subdevices!");
+
+    for (index, subdevice) in subdevices.iter().enumerate() {
         let ident = idents
             .iter()
             .find(|info| info.device_address == subdevice.device_address);
         let name = subdevice.get_name().expect("Failed to read name!");
 
-        let (trunk, branch) = if index == eth_control.controller.get_subdevice_count() - 1 {
+        let (trunk, branch) = if index == subdevices.len() - 1 {
             (" ", "└")
         } else {
             ("│", "├")

@@ -4,7 +4,7 @@ use ethercat_hal::{
     coe::ConfigurableDevice,
     devices::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
-        el7037::{
+        beckhoff_modules::el7037::{
             EL7037, EL7037_PRODUCT_ID, coe::EL7037Configuration, pdo::EL7037PredefinedPdoAssignment,
         },
     },
@@ -36,7 +36,7 @@ fn main() {
         .request_state_change(EtherCATState::PreOp)
         .expect("Channel was not ready");
     loop {
-        match eth_control.controller.get_state() {
+        match eth_control.app_handle.get_state() {
             EtherCATState::PreOp => break,
             _ => std::thread::sleep(Duration::from_millis(10)),
         }
@@ -68,7 +68,12 @@ fn main() {
     // left 500 behind would destabilise the next run of any other example too.
     config.stm_controller_3.kp_factor_pos = 5;
 
-    for subdevice in eth_control.controller.get_subdevices() {
+    let subdevices = eth_control
+        .app_handle
+        .try_get_subdevices_vec_sync()
+        .expect("Failed to read subdevices!");
+
+    for subdevice in &subdevices {
         if subdevice.vendor == BECKHOFF_VENDOR_ID && subdevice.product_id == EL7037_PRODUCT_ID {
             el7037
                 .write_config(
@@ -91,18 +96,25 @@ fn main() {
         .request_state_change(EtherCATState::Op)
         .expect("Channel was not ready");
     loop {
-        match eth_control.controller.get_state() {
+        match eth_control.app_handle.get_state() {
             EtherCATState::Op => break,
             _ => std::thread::sleep(Duration::from_millis(10)),
         }
     }
+
+    // The PDO offsets are assigned during the Op transition, so the copy taken
+    // in PreOp above is stale for the process data loop below.
+    let subdevices = eth_control
+        .app_handle
+        .try_get_subdevices_vec_sync()
+        .expect("Failed to read subdevices!");
 
     let mut state = State::Reset;
 
     loop {
         // --- Read inputs (TxPDO: encoder + motor status from device) ---
         if let Some(input) = eth_control.app_handle.get_inputs() {
-            for subdevice in eth_control.controller.get_subdevices() {
+            for subdevice in &subdevices {
                 if subdevice.vendor == BECKHOFF_VENDOR_ID
                     && subdevice.product_id == EL7037_PRODUCT_ID
                 {
@@ -204,7 +216,7 @@ fn main() {
         let _ = el7037.output_pre_process();
 
         if let Some(output) = eth_control.app_handle.write_outputs() {
-            for subdevice in eth_control.controller.get_subdevices() {
+            for subdevice in &subdevices {
                 if subdevice.vendor == BECKHOFF_VENDOR_ID
                     && subdevice.product_id == EL7037_PRODUCT_ID
                 {

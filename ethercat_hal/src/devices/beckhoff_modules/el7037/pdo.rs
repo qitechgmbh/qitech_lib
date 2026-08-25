@@ -1,6 +1,9 @@
 use crate::pdo::PredefinedPdoAssignment;
 use crate::pdo::el70x7::{
-    EncControl, EncControlCompact, EncStatus, EncStatusCompact, EncTimestampCompact, PosActualPositionLag, PosControl, PosControl2, PosControlCompact, PosStatus, PosStatusCompact, StmControl, StmExternalPosition, StmInternalPosition, StmPosition, StmStatus, StmSynchronInfoData, StmVelocity
+    EncControl, EncControlCompact, EncStatus, EncStatusCompact, EncTimestampCompact,
+    PosActualPositionLag, PosControl, PosControl2, PosControlCompact, PosStatus, PosStatusCompact,
+    StmControl, StmExternalPosition, StmInternalPosition, StmPosition, StmStatus,
+    StmSynchronInfoData, StmVelocity,
 };
 use ethercat_hal_derive::{RxPdo, TxPdo};
 
@@ -24,7 +27,6 @@ pub struct EL7037TxPdo {
     // TODO:
     // #[pdo_object_index(0x1A05)]
     // pub stm_motor_load: Option<StmMotorLoad>,
-
     #[pdo_object_index(0x1A06)]
     pub pos_status_compact: Option<PosStatusCompact>,
 

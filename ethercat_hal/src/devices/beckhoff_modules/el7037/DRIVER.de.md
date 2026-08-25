@@ -39,7 +39,7 @@ Die **EL7037** ist eine kompakte Schrittmotor-Endklemme von Beckhoff:
 ## 2. Dateistruktur des Treibers
 
 ```
-ethercat_hal/src/devices/el7037/
+ethercat_hal/src/devices/beckhoff_modules/el7037/
 ├── mod.rs       — Gerätestruct, Trait-Implementierungen, Identitätskonstanten
 ├── coe.rs       — Azyklische Konfiguration (CoE-SDO-Writes vor dem Betrieb)
 └── pdo.rs       — Zyklische Prozessdaten (PDO-Objekte, Betriebsmodus-Auswahl)
@@ -494,9 +494,9 @@ Weiterführende Skills im `control`-Repo:
 
 | Datei | Zweck |
 |---|---|
-| `devices/el7037/mod.rs` | Gerätestruct, alle Trait-Impls, Identitätskonstanten |
-| `devices/el7037/coe.rs` | Azyklische Konfiguration, CoE-Objekthierarchie |
-| `devices/el7037/pdo.rs` | Zyklische PDO-Structs, Betriebsmodus-Enum, Tests |
+| `devices/beckhoff_modules/el7037/mod.rs` | Gerätestruct, alle Trait-Impls, Identitätskonstanten |
+| `devices/beckhoff_modules/el7037/coe.rs` | Azyklische Konfiguration, CoE-Objekthierarchie |
+| `devices/beckhoff_modules/el7037/pdo.rs` | Zyklische PDO-Structs, Betriebsmodus-Enum, Tests |
 | `devices/mod.rs` | Globale Registrierung (Match auf Identitätstupel) |
 | `ethercat_hal_derive/src/lib.rs` | Derive-Makros `EthercatDevice`, `TxPdo`, `RxPdo`, `PdoObject` |
 | `shared_config/el70x7.rs` | EL7037-spezifische Sub-Configs (0x8010–0x8012) |

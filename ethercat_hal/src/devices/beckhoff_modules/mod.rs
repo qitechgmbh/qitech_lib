@@ -22,6 +22,7 @@ pub mod el5152;
 pub mod el6021;
 pub mod el7031;
 pub mod el7031_0030;
+pub mod el7037;
 pub mod el7041_0052;
 pub(crate) mod el9505;
 pub mod ep2339_0021;
