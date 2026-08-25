@@ -73,16 +73,18 @@ fn main() {
         .slot_devices
         .iter()
         .position(|s| {
-            s.as_ref()
-                .map_or(false, |d| d.as_any().downcast_ref::<Wago750_554>().is_some())
+            s.as_ref().map_or(false, |d| {
+                d.as_any().downcast_ref::<Wago750_554>().is_some()
+            })
         })
         .expect("No Wago 750-554 found: is it registered in init_slot_modules?");
     let ai_slot = coupler
         .slot_devices
         .iter()
         .position(|s| {
-            s.as_ref()
-                .map_or(false, |d| d.as_any().downcast_ref::<Wago750_455>().is_some())
+            s.as_ref().map_or(false, |d| {
+                d.as_any().downcast_ref::<Wago750_455>().is_some()
+            })
         })
         .expect("No Wago 750-455 found: is it registered in init_slot_modules?");
 
