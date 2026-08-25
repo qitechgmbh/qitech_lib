@@ -4,7 +4,7 @@ use ethercat_hal::{
     coe::ConfigurableDevice,
     devices::{
         EthercatDevice, NewEthercatDevice,
-        el7037::{
+        beckhoff_modules::el7037::{
             EL7037, EL7037_PRODUCT_ID, coe::EL7037Configuration, pdo::EL7037PredefinedPdoAssignment,
         },
     },
@@ -52,7 +52,7 @@ fn main() {
         .request_state_change(EtherCATState::PreOp)
         .expect("Channel was not ready");
     loop {
-        match eth_control.controller.get_state() {
+        match eth_control.app_handle.get_state() {
             EtherCATState::PreOp => break,
             _ => std::thread::sleep(Duration::from_millis(10)),
         }
@@ -157,12 +157,16 @@ fn main() {
     config.pos_configuration.velocity_min = env_num("EL7037_VMIN", 100) as i16;
     config.pos_features.start_type = StartType::Relative;
 
-    // `get_subdevices()` is not always populated the instant PreOp is reached.
+    // The subdevice list is not always populated the instant PreOp is reached.
     // Configuring nothing here is silent, and only shows up much later as a
     // missing PDO object, so wait for the terminal to actually appear.
     let mut configured = 0;
     for attempt in 0..50 {
-        for subdevice in eth_control.controller.get_subdevices() {
+        let subdevices = eth_control
+            .app_handle
+            .try_get_subdevices_vec_sync()
+            .expect("Failed to read subdevices!");
+        for subdevice in &subdevices {
             if subdevice.vendor == BECKHOFF_VENDOR_ID && subdevice.product_id == EL7037_PRODUCT_ID {
                 el7037
                     .write_config(
@@ -189,11 +193,18 @@ fn main() {
         .request_state_change(EtherCATState::Op)
         .expect("Channel was not ready");
     loop {
-        match eth_control.controller.get_state() {
+        match eth_control.app_handle.get_state() {
             EtherCATState::Op => break,
             _ => std::thread::sleep(Duration::from_millis(10)),
         }
     }
+
+    // The PDO offsets are assigned during the Op transition, so the copies taken
+    // in PreOp above are stale for the process data loop below.
+    let subdevices = eth_control
+        .app_handle
+        .try_get_subdevices_vec_sync()
+        .expect("Failed to read subdevices!");
 
     // Static header, the panel below it is the part that refreshes in place
     println!("\nEL7037 move-steps · interface {interface} · positioning interface");
@@ -226,7 +237,7 @@ fn main() {
     loop {
         // --- Read inputs (TxPDO: encoder, motor status, positioning status) ---
         if let Some(input) = eth_control.app_handle.get_inputs() {
-            for subdevice in eth_control.controller.get_subdevices() {
+            for subdevice in &subdevices {
                 if subdevice.vendor == BECKHOFF_VENDOR_ID
                     && subdevice.product_id == EL7037_PRODUCT_ID
                 {
@@ -303,7 +314,7 @@ fn main() {
         pos_control.deceleration = RAMP_MS;
 
         if let Some(output) = eth_control.app_handle.write_outputs() {
-            for subdevice in eth_control.controller.get_subdevices() {
+            for subdevice in &subdevices {
                 if subdevice.vendor == BECKHOFF_VENDOR_ID
                     && subdevice.product_id == EL7037_PRODUCT_ID
                 {

@@ -1,5 +1,6 @@
 use ethercat_hal::{
-    BECKHOFF_VENDOR_ID, EtherCATState, devices::el7037::EL7037_PRODUCT_ID, init_ethercat,
+    BECKHOFF_VENDOR_ID, EtherCATState, devices::beckhoff_modules::el7037::EL7037_PRODUCT_ID,
+    init_ethercat,
 };
 use std::{env, time::Duration};
 
@@ -25,7 +26,7 @@ fn main() {
         .request_state_change(EtherCATState::PreOp)
         .expect("Channel was not ready");
     loop {
-        match eth_control.controller.get_state() {
+        match eth_control.app_handle.get_state() {
             EtherCATState::PreOp => break,
             _ => std::thread::sleep(Duration::from_millis(10)),
         }
@@ -33,7 +34,11 @@ fn main() {
 
     let mut address = None;
     for _ in 0..50 {
-        for subdevice in eth_control.controller.get_subdevices() {
+        let subdevices = eth_control
+            .app_handle
+            .try_get_subdevices_vec_sync()
+            .expect("Failed to read subdevices!");
+        for subdevice in &subdevices {
             if subdevice.vendor == BECKHOFF_VENDOR_ID && subdevice.product_id == EL7037_PRODUCT_ID {
                 address = Some(subdevice.device_address);
             }
