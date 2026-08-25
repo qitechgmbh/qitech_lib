@@ -150,16 +150,21 @@ impl ModbusDevice for LaserDevice {
                 }
             };
 
-            debug_assert!(words.len() == 3);
-            self.measurement = Some(Measurement {
-                diameter: words[0],
-                x_axis: words[1],
-                y_axis: words[2],
-            });
+            self.measurement = Some(parse_measurement(&words)?);
         }
 
         Ok(())
     }
+}
+
+fn parse_measurement(words: &[u16]) -> Result<Measurement, anyhow::Error> {
+    Ok(Measurement {
+        diameter: *words
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("Laser returned no input registers"))?,
+        x_axis: words.get(1).copied(),
+        y_axis: words.get(2).copied(),
+    })
 }
 
 #[derive(Debug)]
@@ -225,6 +230,6 @@ async fn run_modbus_actor(mut rx: mpsc::Receiver<ActorMessage>, mut ctx: Context
 #[derive(Debug, Clone)]
 pub struct Measurement {
     pub diameter: u16,
-    pub x_axis: u16,
-    pub y_axis: u16,
+    pub x_axis: Option<u16>,
+    pub y_axis: Option<u16>,
 }
