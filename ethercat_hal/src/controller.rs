@@ -104,7 +104,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                         if let Some(irq_core) = opt.pin_irq_core {
                                             let res = set_irq_affinity(&interface, irq_core as u32);
                                             if res.is_err() {
-                                                eprintln!("set_irq_affinity failed performance may be degraded");
+                                                tracing::warn!("set_irq_affinity failed performance may be degraded");
                                             }
                                         }
                                     }

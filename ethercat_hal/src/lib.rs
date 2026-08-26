@@ -595,10 +595,12 @@ pub fn set_current_thread_rt_priority(priority: i32) {
 
         if result != 0 {
             let err = std::io::Error::last_os_error();
-            eprintln!(
-                "Failed to set RT priority: {}. (Are you root / using sudo?)",
-                err
-            );
+            // eprintln!(
+            //     "Failed to set RT priority: {}. (Are you root / using sudo?)",
+            //     err
+            // );
+
+            tracing::error!("Failed to set RT priority: {err}. (Are you root / using sudo?)");
         }
     }
 }

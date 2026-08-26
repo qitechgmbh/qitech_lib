@@ -36,7 +36,7 @@ impl Drop for LaserDevice {
         // Dropping the `tx` channel will cause the background actor's channel to close.
         // The background task will break out of its loop, run `ctx.disconnect().await`,
         // and gracefully clean up the serial connection.
-        println!("drop is called");
+        // > println!("drop is called");
         self.handle.abort();
     }
 }
@@ -224,7 +224,7 @@ async fn run_modbus_actor(mut rx: mpsc::Receiver<ActorMessage>, mut ctx: Context
 
     // When the loop ends (LaserDevice dropped), cleanly disconnect the serial resource
     let _ = ctx.disconnect().await;
-    println!("LaserDevice background actor shut down cleanly.");
+    // > println!("LaserDevice background actor shut down cleanly.");
 }
 
 #[derive(Debug, Clone)]

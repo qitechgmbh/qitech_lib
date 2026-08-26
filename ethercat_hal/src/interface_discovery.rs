@@ -45,7 +45,7 @@ pub fn list_ethernet_interfaces() -> Result<Vec<Interface>, anyhow::Error> {
     // getifaddrs populates a linked list of interface structures.
     unsafe {
         if getifaddrs(&mut ifaddr) == -1 {
-            eprintln!("Error calling getifaddrs");
+            // eprintln!("Error calling getifaddrs");
             return Err(anyhow::anyhow!("Error calling getifaddrs"));
         }
         let mut vec: Vec<Interface> = vec![];

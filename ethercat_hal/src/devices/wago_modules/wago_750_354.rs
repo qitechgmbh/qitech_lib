@@ -311,10 +311,10 @@ impl Wago750_354 {
                     module.has_rx = true;
                     module.name = "750-672".to_string();
                 }
-                _ => println!(
+                _ => {} /*println!(
                     "Wago-750-354 found Unknown/Unimplemented Module: {}",
                     ident_iom
-                ),
+                ),*/
             }
             modules.push(module);
         }
@@ -386,12 +386,18 @@ impl Wago750_354 {
                         WAGO_750_672_MODULE_IDENT => Box::new(wago_750_672::Wago750_672::new()),
 
                         _ => {
+                            tracing::error!("{} Missing Implementation for Module Identification: vendor_id: {:?}, module ident: {:?} !",
+                                module_path!(),
+                                m.vendor_id,
+                                m.product_id);
+                            /*
                             println!(
                                 "{} Missing Implementation for Module Identification: vendor_id: {:?}, module ident: {:?} !",
                                 module_path!(),
                                 m.vendor_id,
                                 m.product_id
                             );
+                            */
                             return;
                         }
                     };
