@@ -710,6 +710,16 @@ impl RxPdoObject for PosControl {
 
 /// # `PosControl2`
 /// 112 bits / 14 bytes
+///
+/// NOTE: this does not match the object description. Object `0x7021` has no
+/// `:01`/`:02`; its first entry is `0x7021:03 Enable auto start`, and the PDO
+/// `0x1607` maps that plus `:11`, `:21`, `:22`, `:23`, `:24`. The `execute` and
+/// `emergency_stop` fields below are therefore wrong for this object. Left
+/// as-is deliberately: the exact bit offset of `Enable auto start` is not
+/// stated in the manual and cannot be guessed safely, and only the two
+/// `PositionInterfaceAutoStart*` assignments map this PDO - neither of which is
+/// used anywhere in this repository. Verify against hardware before relying on
+/// it.
 #[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
 #[pdo_object(bits = 112)]
 pub struct PosControl2 {

@@ -427,7 +427,7 @@ const EXECUTE_TIMEOUT: Duration = Duration::from_millis(500);
 /// A single travel command may not take longer than this
 const MOVE_TIMEOUT: Duration = Duration::from_secs(60);
 
-const CYCLE_TIME: Duration = Duration::from_millis(10);
+const CYCLE_TIME: Duration = Duration::from_nanos(250_000); // 250 us, matching the terminal's own internal cycle
 
 /// Redraw every 20th cycle, ~5 frames per second
 const REFRESH_EVERY: u32 = 20;

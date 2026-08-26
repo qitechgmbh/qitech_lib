@@ -3,6 +3,7 @@ pub mod el70xx_velocity_converter;
 pub mod ethercrab_types;
 pub mod minas_a6_subdevice_wrapper;
 pub mod signing_converter_u16;
+pub mod velocity_position_loop;
 
 use ethercrab::{SubDevice, SubDeviceRef};
 // This is the Codeword for disabling EEPROM writes on sdo writes

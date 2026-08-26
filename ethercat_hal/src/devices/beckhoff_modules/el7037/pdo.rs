@@ -317,7 +317,11 @@ mod tests {
         let txpdo = pdo_assignment.txpdo_assignment();
         let rxpdo = pdo_assignment.rxpdo_assignment();
 
-        assert_eq!(txpdo.size(), 12 * 8);
+        // Beckhoff's own "Position control" assignment is 0x1A01 + 0x1A03 = 12
+        // bytes, but this one additionally maps STM internal position (0x1A08),
+        // STM external position (0x1A09) and POS actual position lag (0x1A0A),
+        // none of which 0x1A01/0x1A03 exclude. 10 + 2 + 4 + 4 + 4 = 24.
+        assert_eq!(txpdo.size(), 24 * 8);
         assert_eq!(rxpdo.size(), 12 * 8);
     }
 

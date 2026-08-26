@@ -38,7 +38,7 @@ pub struct StmMotorConfiguration {
     /// # 0x8010:05
     /// Motor countervoltage (unit: 1 mV/(rad/s))
     ///
-    /// default: `0x00C8` (200dec)
+    /// default: `0x0000` (0dec), per the EL70x7 object description
     pub motor_emf: u16,
 
     /// # 0x8010:06
@@ -74,7 +74,7 @@ pub struct StmMotorConfiguration {
     /// # 0x8010:11
     /// Switch-off delay of the driver stage
     ///
-    /// default: `0x0064` (100dec) = 0.1s
+    /// default: `0x0096` (150dec), per the EL70x7 object description
     pub drive_off_delay_time: u16,
 }
 
@@ -86,13 +86,13 @@ impl Default for StmMotorConfiguration {
             reduced_current: 0x02EE,       // 750 mA = 0.75A
             nominal_voltage: 0xC350,       // 50000 mV = 50V
             motor_coil_resistance: 0x0064, // 100 = 1 ohm
-            motor_emf: 0x00C8,             // 200 mV/(rad/s)
+            motor_emf: 0x0000,             // 0 mV/(rad/s), the terminal's default
             motor_full_steps: 0x00C8,      // 200 steps
             encoder_increments: 0x1000,    // 4096 steps / revolution
             start_velocity: 0x0000,        // 0
             motor_coil_inductance: 0x0000, // 0 mH
             drive_on_delay_time: 0x0064,   // 100 ms = 0.1s
-            drive_off_delay_time: 0x0064,  // 100 ms = 0.1s
+            drive_off_delay_time: 0x0096,  // 150 ms, the terminal's default
         }
     }
 }
@@ -140,21 +140,24 @@ pub struct StmControllerConfiguration {
     /// # 0x8011:01
     /// Kp control factor (proportional component) for the current controller (unit: 0.001)
     ///
-    /// default: `0x0190` (400dec) = 0.4
+    /// default: `0x0096` (150dec), per the EL70x7 object description
     pub kp_factor: u16,
 
     /// # 0x8011:02
     /// Ki control factor (integral component) for the current controller (unit: 0.001)
     ///
-    /// default: `0x0004` (4dec) = 0.004
+    /// default: `0x000A` (10dec), per the EL70x7 object description
     pub ki_factor: u16,
 }
 
 impl Default for StmControllerConfiguration {
     fn default() -> Self {
+        // The terminal's own documented defaults (0x8011:01/:02). The previous
+        // values here (400/4) shipped a P term ~3x too stiff with a weakened
+        // integrator on every run.
         Self {
-            kp_factor: 0x0190, // 400
-            ki_factor: 0x0004, // 4
+            kp_factor: 0x0096, // 150
+            ki_factor: 0x000A, // 10
         }
     }
 }
@@ -452,9 +455,11 @@ impl StmFeatures {
     ) -> Result<(), anyhow::Error> {
         ecat_channel.sdo_write(device_address, 0x8012, 0x01, u8::from(self.operation_mode))?;
         ecat_channel.sdo_write(device_address, 0x8012, 0x05, u8::from(self.speed_range))?;
-        if matches!(self.feedback_type, EL7037FeedbackType::Encoder) {
-            ecat_channel.sdo_write(device_address, 0x8012, 0x08, false)?;
-        }
+        // 0 = Encoder, 1 = Internal counter. Always written: CoE persists in the
+        // terminal, so skipping the write leaves whatever an earlier session left
+        // behind instead of the value asked for here.
+        let internal_counter = matches!(self.feedback_type, EL7037FeedbackType::InternalCounter);
+        ecat_channel.sdo_write(device_address, 0x8012, 0x08, internal_counter)?;
         ecat_channel.sdo_write(device_address, 0x8012, 0x09, self.invert_motor_polarity)?;
         ecat_channel.sdo_write(
             device_address,

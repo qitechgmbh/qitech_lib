@@ -12,6 +12,11 @@ pub struct CounterWrapperU16U128 {
     last_counter_underflow: bool,
     last_counter_overflow: bool,
     set_counter: Option<i128>,
+    /// Raw value a popped override is waiting for the device to adopt.
+    pending_override: Option<u16>,
+    /// Cycles spent waiting, so a device that never reports the value exactly
+    /// cannot freeze the counter forever.
+    pending_cycles: u16,
 }
 
 impl Default for CounterWrapperU16U128 {
@@ -28,10 +33,35 @@ impl CounterWrapperU16U128 {
             last_counter_underflow: false,
             last_counter_overflow: false,
             set_counter: None,
+            pending_override: None,
+            pending_cycles: 0,
         }
     }
 
+    /// How many cycles to wait for a device to adopt an override before giving
+    /// up and resynchronising to whatever it is reporting.
+    const OVERRIDE_TIMEOUT_CYCLES: u16 = 200;
+
     pub const fn update(&mut self, counter: u16, counter_underflow: bool, counter_overflow: bool) {
+        // While an override is in flight the raw value is about to jump to the
+        // value we asked for. That jump is not motion, so track the raw counter
+        // without accumulating it - otherwise the widened counter picks up the
+        // whole difference between the old and new raw values as travel.
+        match self.pending_override {
+            Some(pending) => {
+                self.last_counter = counter;
+                self.last_counter_underflow = counter_underflow;
+                self.last_counter_overflow = counter_overflow;
+                self.pending_cycles += 1;
+                if counter == pending || self.pending_cycles >= Self::OVERRIDE_TIMEOUT_CYCLES {
+                    self.pending_override = None;
+                    self.pending_cycles = 0;
+                }
+                return;
+            }
+            None => {}
+        }
+
         // Only process rising edges of the underflow and overflow flags
         let counter_underflow_rising = counter_underflow && !self.last_counter_underflow;
         let counter_overflow_rising = counter_overflow && !self.last_counter_overflow;
@@ -63,7 +93,7 @@ impl CounterWrapperU16U128 {
     pub const fn pop_override(&mut self) -> Option<u16> {
         match self.set_counter {
             Some(counter) => {
-                // set our coutner to the new value
+                // set our counter to the new value
                 self.counter = counter;
 
                 // Convert the i128 counter to u16
@@ -71,6 +101,12 @@ impl CounterWrapperU16U128 {
 
                 // Clear the set counter
                 self.set_counter = None;
+
+                // The device has not adopted this yet. Until it reports the new
+                // raw value back, `update` must not treat the difference as
+                // travel.
+                self.pending_override = Some(u16_counter);
+                self.pending_cycles = 0;
 
                 Some(u16_counter)
             }
@@ -130,6 +166,50 @@ const fn set_counter_u16_to_i128(new_counter: i128) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression: `pop_override` used to set `counter` but leave `last_counter`
+    /// holding the pre-override raw value, so the very next `update` added
+    /// `new_raw - old_raw` as if the axis had travelled it. Homing at raw 1328
+    /// produced a widened position of -1328 instead of 0.
+    #[test]
+    fn test_override_does_not_produce_phantom_travel() {
+        let mut wrapper = CounterWrapperU16U128::new();
+        wrapper.update(1328, false, false);
+        assert_eq!(wrapper.current(), 1328);
+
+        // Ask for 0 and hand the value to the device.
+        wrapper.push_override(0);
+        assert_eq!(wrapper.pop_override(), Some(0));
+        assert_eq!(wrapper.current(), 0);
+
+        // The device has not adopted it yet and still reports the old raw value.
+        wrapper.update(1328, false, false);
+        assert_eq!(wrapper.current(), 0, "stale raw value must not count as travel");
+
+        // Now it adopts the override.
+        wrapper.update(0, false, false);
+        assert_eq!(wrapper.current(), 0);
+
+        // And normal counting resumes from there.
+        wrapper.update(25, false, false);
+        assert_eq!(wrapper.current(), 25);
+    }
+
+    /// A device that never reports the exact override value must not freeze the
+    /// counter permanently.
+    #[test]
+    fn test_override_wait_is_bounded() {
+        let mut wrapper = CounterWrapperU16U128::new();
+        wrapper.push_override(500);
+        assert_eq!(wrapper.pop_override(), Some(500));
+        for _ in 0..CounterWrapperU16U128::OVERRIDE_TIMEOUT_CYCLES {
+            wrapper.update(9999, false, false);
+        }
+        assert_eq!(wrapper.current(), 500);
+        // Resynchronised: further motion accumulates again.
+        wrapper.update(10_009, false, false);
+        assert_eq!(wrapper.current(), 510);
+    }
 
     #[test]
     fn test_set_counter_u16_to_i128() {
