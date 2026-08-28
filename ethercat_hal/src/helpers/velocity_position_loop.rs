@@ -9,13 +9,13 @@
 //! interprets them.
 //!
 //! For the reasoning behind the default tunables and the control law itself,
-//! see `examples/el7037_velocity_closed_loop.rs` in this repo, which is both
-//! the design writeup and a worked usage example.
+//! see `examples/el7037_velocity_closed_loop.md` in this repo, and
+//! `examples/el7037_velocity_closed_loop.rs` for a worked usage example.
 
 use std::time::{Duration, Instant};
 
 /// Tunables. See [`Default`] for the values measured against a NEMA17 stepper
-/// with a 4000 count/rev encoder (`examples/el7037_velocity_closed_loop.rs`) -
+/// with a 4000 count/rev encoder (`examples/el7037_velocity_closed_loop.md`) -
 /// treat those as a starting point, not a universal default.
 #[derive(Debug, Clone, Copy)]
 pub struct VelocityPositionLoopConfig {

@@ -1,62 +1,3 @@
-//! Minimal linear traverse on an EL7037 stepper terminal.
-//!
-//! A single axis that can be referenced against a home switch, taught a start
-//! and an end point, and then driven to any position between them - in
-//! millimetres, not encoder counts - while reporting how far along the move it
-//! is, and while it can be paused and continued at any moment.
-//!
-//! ## What it demonstrates
-//!
-//! * software start/end points, used both as the interpolation endpoints and as
-//!   the travel limits,
-//! * a digital input used as a home switch, and a move aborted when it closes,
-//! * a three-phase homing routine that defines the zero point,
-//! * teaching the current position as the start or the end point,
-//! * fractional positioning: `0` -> start, `1` -> end, `0.5` -> the midpoint,
-//! * absolute positioning in real length units (the workspace `units` crate),
-//! * a status report: unreferenced / homing / idle / moving(%) / paused(%) /
-//!   disabled / error,
-//! * pause and continue, with a progress percentage that survives the pause,
-//! * cutting the current so the carriage can be pushed by hand, without losing
-//!   the position: the encoder input is a separate block from the motor driver,
-//!   so a disabled axis keeps counting and stays referenced. That is the easy
-//!   way to teach the start and end points - push the carriage there and say
-//!   `start` or `end`.
-//!
-//! ## How it works
-//!
-//! The terminal runs in `DirectVelocity` mode: it only ever applies the speed we
-//! give it, and reports the encoder position back. The position loop is closed
-//! here in Rust by [`VelocityPositionLoop`]. That helper is deliberately dumb -
-//! it knows about a target, a position and a speed, and nothing else. Everything
-//! this example adds (referencing, limits, units, pause/continue) sits on top of
-//! it in [`Traverse`], which is likewise pure state: no device handle, no I/O.
-//! `main` owns the EtherCAT cycle, feeds `Traverse` its feedback, and writes back
-//! the speed it asks for.
-//!
-//! For the control law, the tunables and why they are what they are, see
-//! `examples/el7037_velocity_closed_loop.rs`.
-//!
-//! ## Mechanical convention
-//!
-//! The home switch sits at the **negative** end of travel and defines position
-//! `0`. Positive positions move away from it. If your machine is the other way
-//! round, set `config.encoder.reversion_of_rotation` in [`axis_config`].
-//!
-//! ## Wiring
-//!
-//! * Motor + encoder on the EL7037 as usual.
-//! * Home switch on **digital input 1**. It is configured as a plain input, so
-//!   the terminal itself ignores it and this program decides what to do.
-//!
-//! ## Usage
-//!
-//! ```text
-//! cargo run --example el7037_linear_traverse -- <interface>
-//! ```
-//!
-//! Then type `?` for the command list.
-
 use bitvec::{order::Lsb0, slice::BitSlice};
 use ethercat_hal::{
     BECKHOFF_VENDOR_ID, EtherCATState,
@@ -154,12 +95,7 @@ const DRIVE_ERROR_GRACE: Duration = Duration::from_millis(250);
 
 // ── Device configuration ────────────────────────────────────────────────────
 
-/// CoE configuration written while the bus is in PreOp.
-///
-/// The motor values are for the igus NEMA 17 on the reference rig - replace them
-/// with your own motor's datasheet figures. The controller gains and the
-/// `reversion_of_rotation` flag were measured on that rig; see
-/// `examples/el7037_velocity_closed_loop.rs`.
+/// CoE configuration
 fn axis_config() -> EL7037Configuration {
     let mut config = EL7037Configuration::default();
 
@@ -242,11 +178,6 @@ enum TraverseState {
 }
 
 /// The homing routine, one state per phase.
-///
-/// Two approaches rather than one: the first is fast so that homing does not
-/// take forever from the far end of the axis, the second is slow so that the
-/// point at which the switch trips - which is what becomes zero - does not
-/// depend on how fast the carriage was moving when it got there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HomingPhase {
     /// Driving at the switch quickly.
@@ -334,11 +265,6 @@ struct Traverse {
     /// The closed position loop doing the actual regulating.
     axis: VelocityPositionLoop,
     state: TraverseState,
-
-    /// Whether the driver stage should be energised. Orthogonal to `state`: the
-    /// encoder input of the EL7037 is a separate block from the motor driver, so
-    /// cutting the current does not stop the position from being tracked. That is
-    /// what makes teaching a point by pushing the carriage there possible.
     enabled: bool,
 
     /// Software travel limits, and the two endpoints that `f <x>` interpolates
