@@ -7,6 +7,7 @@ use crate::MetaSubdevice;
 use crate::TypeErasedValue;
 use crate::devices::beckhoff_modules::el1124::{EL1124, EL1124_IDENTITY_A};
 use crate::devices::beckhoff_modules::el1259::{EL1259, EL1259_IDENTITY_A};
+use crate::devices::beckhoff_modules::el4008::{EL4008, EL4008_IDENTITY_A};
 use crate::devices::beckhoff_modules::el9505::{EL9505, EL9505_IDENTITY_A};
 
 use crate::devices::beckhoff_modules::el1008::EL1008;
@@ -176,6 +177,7 @@ pub fn device_from_subdevice_identity(
         EL3024_IDENTITY_A => Ok(Box::new(el3024::EL3024::new())),
         EL3062_0030_IDENTITY_A => Ok(Box::new(el3062_0030::EL3062_0030::new())),
         EL4002_IDENTITY_A => Ok(Box::new(EL4002::new())),
+        EL4008_IDENTITY_A => Ok(Box::new(EL4008::new())),
         EL5152_IDENTITY_A => Ok(Box::new(EL5152::new())),
         EL6021_IDENTITY_A | EL6021_IDENTITY_B | EL6021_IDENTITY_C | EL6021_IDENTITY_D => {
             Ok(Box::new(el6021::EL6021::new()))
@@ -223,6 +225,7 @@ pub fn device_from_subdevice_identity_rc(
         EL3024_IDENTITY_A => Ok(Rc::new(RefCell::new(el3024::EL3024::new()))),
         EL3062_0030_IDENTITY_A => Ok(Rc::new(RefCell::new(el3062_0030::EL3062_0030::new()))),
         EL4002_IDENTITY_A => Ok(Rc::new(RefCell::new(EL4002::new()))),
+        EL4008_IDENTITY_A => Ok(Rc::new(RefCell::new(EL4008::new()))),
         EL5152_IDENTITY_A => Ok(Rc::new(RefCell::new(EL5152::new()))),
         EL6021_IDENTITY_A | EL6021_IDENTITY_B | EL6021_IDENTITY_C | EL6021_IDENTITY_D => {
             Ok(Rc::new(RefCell::new(el6021::EL6021::new())))

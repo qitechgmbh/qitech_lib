@@ -8,14 +8,30 @@ use ethercat_hal_derive::PdoObject;
 #[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
 #[pdo_object(bits = 16)]
 pub struct AnalogOutput {
-    /// Output value (-32768-32767 typically corresponds to -10V to +10V)
+    /// Output value (-32768-32767 typically corresponds to -10V to +10V).
+    /// This depends on the configuration of the device and the value has to be converted to i16 with custom logic.
+    /// The 16 bit analog value is signed here but devices could interpret its value with different signing strategies.
     pub value: i16,
 }
 
 impl RxPdoObject for AnalogOutput {
     fn write(&self, bits: &mut BitSlice<u8, Lsb0>) {
-        // Write the output value to bits 0-15
         bits[0..16].store_le(self.value as u16);
+    }
+}
+
+impl AnalogOutput {
+    /// Stores the given value.
+    ///
+    /// Allowed range is [-1, 1] if the device supports outputting negative values,
+    /// As such, -1.0 outputs the minimum possible value (negative),
+    /// 0.0 outputs 0 and 1.0 outputs the maximum possible value (positive).
+    ///
+    /// Allowed range is [0, 1] if the device only supports positve values.
+    /// As such, 0.0 outputs 0 and 1.0 outputs the maximum possible value.
+    pub fn set_f64(&mut self, value: f64) {
+        let clamped_value = value.clamp(-1.0, 1.0);
+        self.value = (clamped_value * 32767.0).round() as i16;
     }
 }
 
