@@ -13,14 +13,13 @@ fn main() {
 
                 let res = test_interface(&interface.name);
                 match res {
-                    Ok(_) => println!("{} is ethercat", &interface.name),
-                    Err(_) => println!("{} is not ethercat", &interface.name),
+                    Ok(_) => println!("{} is ethercat", interface.name),
+                    Err(_) => println!("{} is not ethercat", interface.name),
                 }
             }
         }
         Err(_) => {
             println!("no interfaces found");
-            return;
         }
     }
 }
