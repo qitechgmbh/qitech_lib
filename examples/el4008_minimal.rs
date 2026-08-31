@@ -60,7 +60,7 @@ fn main() {
         for port in 0..el4008.get_port_count() {
             let jumps = 16;
             let value = (iter % jumps) as f64 / (jumps as f64);
-            el4008.set_output(port, value);
+            el4008.set_output_relative(port, value);
         }
 
         // We ONLY have outputs so no need to call get_inputs
