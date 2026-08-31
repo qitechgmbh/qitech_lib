@@ -31,10 +31,10 @@ impl DigitalOutputDevice for EL2004 {
     fn set_output(&mut self, port: usize, value: bool) {
         let expect_text = "All channels should be Some(_)";
         match port {
-            0 => self.rxpdo.channel1.as_mut().expect(expect_text).value = value.into(),
-            1 => self.rxpdo.channel2.as_mut().expect(expect_text).value = value.into(),
-            2 => self.rxpdo.channel3.as_mut().expect(expect_text).value = value.into(),
-            3 => self.rxpdo.channel4.as_mut().expect(expect_text).value = value.into(),
+            0 => self.rxpdo.channel1.as_mut().expect(expect_text).value = value,
+            1 => self.rxpdo.channel2.as_mut().expect(expect_text).value = value,
+            2 => self.rxpdo.channel3.as_mut().expect(expect_text).value = value,
+            3 => self.rxpdo.channel4.as_mut().expect(expect_text).value = value,
             _ => (),
         }
     }
