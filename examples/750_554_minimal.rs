@@ -10,10 +10,7 @@ use ethercat_hal::{
         },
     },
     init_ethercat,
-    io::{
-        analog_input::AnalogInputDevice,
-        analog_output::{AnalogOutputDevice, AnalogOutputOutput},
-    },
+    io::{analog_input::AnalogInputDevice, analog_output::AnalogCurrentOutputDevice},
 };
 use std::{env, time::Duration};
 
@@ -112,8 +109,8 @@ fn main() {
 
     // Main loop: ramp AO 1 up and AO 2 down over 16 steps, read back via the 455
     let ramp_steps: u32 = 16;
-    for step in 0.. {
-        let normalized = (step % ramp_steps) as f32 / (ramp_steps - 1) as f32;
+    for step in 0..=u32::MAX {
+        let normalized = (step % ramp_steps) as f64 / (ramp_steps - 1) as f64;
 
         // Set the analog outputs
         {
@@ -124,8 +121,8 @@ fn main() {
                 .as_any_mut()
                 .downcast_mut::<Wago750_554>()
                 .expect("AO slot is not a Wago 750-554");
-            ao.set_output(0, AnalogOutputOutput(normalized));
-            ao.set_output(1, AnalogOutputOutput(1.0 - normalized));
+            ao.set_output_relative(0, normalized);
+            ao.set_output_relative(1, 1.0 - normalized);
         }
 
         // Write outputs to the EtherCAT bus
