@@ -1,4 +1,7 @@
-use units::{ElectricPotential, electric_potential::volt, ratio::ratio};
+use units::{
+    ElectricCurrent, ElectricPotential, electric_current::ampere, electric_potential::volt,
+    ratio::ratio,
+};
 
 pub trait AnalogVoltageOutputDevice {
     /// Get the minimum voltage this device can output on a single port
@@ -20,7 +23,43 @@ pub trait AnalogVoltageOutputDevice {
         let supports_negative = self.get_minimum_output().get::<volt>() < 0.0;
 
         // in [0, 1]
-        let value = (voltage - self.get_minimum_output()) / (self.get_maximum_output() - self.get_minimum_output());
+        let value = (voltage - self.get_minimum_output())
+            / (self.get_maximum_output() - self.get_minimum_output());
+        let mut value = value.get::<ratio>();
+
+        if supports_negative {
+            // in [-1, 1]
+            value = 2.0 * value - 1.0;
+        }
+
+        self.set_output_relative(port, value);
+    }
+
+    fn get_port_count(&self) -> usize;
+}
+
+pub trait AnalogCurrentOutputDevice {
+    /// Get the minimum current this device can output on a single port
+    fn get_minimum_output(&self) -> ElectricCurrent;
+    /// Get the maximum current this device can output on a single port
+    fn get_maximum_output(&self) -> ElectricCurrent;
+
+    /// Set a specific output relative to the minimum and maximum value.
+    ///
+    /// The given `value` must be in the interval `[-1, 1]` for devices that support negative
+    /// output values and in the interval `[0, 1]` for devices with only positive output values.
+    /// The value is interpolated between the minimum and maximum values of the device.
+    fn set_output_relative(&mut self, port: usize, value: f64);
+
+    /// Set a specific output to the given `current`.
+    ///
+    /// The current must be inside the interval `[get_minimum_output(), get_maximum_output()]`.
+    fn set_output(&mut self, port: usize, current: ElectricCurrent) {
+        let supports_negative = self.get_minimum_output().get::<ampere>() < 0.0;
+
+        // in [0, 1]
+        let value = (current - self.get_minimum_output())
+            / (self.get_maximum_output() - self.get_minimum_output());
         let mut value = value.get::<ratio>();
 
         if supports_negative {
