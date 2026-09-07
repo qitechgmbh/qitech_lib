@@ -38,15 +38,15 @@ impl AnalogCurrentOutputDevice for Wago750_554 {
         2
     }
 
-    fn get_minimum_output(&self) -> ElectricCurrent {
+    fn get_minimum_current(&self) -> ElectricCurrent {
         ElectricCurrent::new::<milliampere>(4.0)
     }
 
-    fn get_maximum_output(&self) -> ElectricCurrent {
+    fn get_maximum_current(&self) -> ElectricCurrent {
         ElectricCurrent::new::<milliampere>(20.0)
     }
 
-    fn set_output_relative(&mut self, port: usize, value: f64) {
+    fn set_current_relative(&mut self, port: usize, value: f64) {
         let value = value.clamp(0.0, 1.0);
         let raw = (value * Self::MAX_RAW as f64).round() as u16 & Self::VALUE_MASK;
         match port {

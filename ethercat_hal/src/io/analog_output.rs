@@ -1,38 +1,30 @@
 use units::{
     ElectricCurrent, ElectricPotential, electric_current::ampere, electric_potential::volt,
-    ratio::ratio,
 };
 
 pub trait AnalogVoltageOutputDevice {
     /// Get the minimum voltage this device can output on a single port
-    fn get_minimum_output(&self) -> ElectricPotential;
+    fn get_minimum_voltage(&self) -> ElectricPotential;
     /// Get the maximum voltage this device can output on a single port
-    fn get_maximum_output(&self) -> ElectricPotential;
+    fn get_maximum_voltage(&self) -> ElectricPotential;
 
     /// Set a specific output relative to the minimum and maximum value.
     ///
     /// The given `value` must be in the interval `[-1, 1]` for devices that support negative
     /// output values and in the interval `[0, 1]` for devices with only positive output values.
     /// The value is interpolated between the minimum and maximum values of the device.
-    fn set_output_relative(&mut self, port: usize, value: f64);
+    fn set_voltage_relative(&mut self, port: usize, value: f64);
 
     /// Set a specific output to the given `voltage`.
     ///
-    /// The voltage must be inside the interval `[get_minimum_output(), get_maximum_output()]`.
-    fn set_output(&mut self, port: usize, voltage: ElectricPotential) {
-        let supports_negative = self.get_minimum_output().get::<volt>() < 0.0;
-
-        // in [0, 1]
-        let value = (voltage - self.get_minimum_output())
-            / (self.get_maximum_output() - self.get_minimum_output());
-        let mut value = value.get::<ratio>();
-
-        if supports_negative {
-            // in [-1, 1]
-            value = 2.0 * value - 1.0;
-        }
-
-        self.set_output_relative(port, value);
+    /// The voltage must be inside the interval `[get_minimum_voltage(), get_maximum_voltage()]`.
+    fn set_voltage(&mut self, port: usize, voltage: ElectricPotential) {
+        let value = to_relative(
+            voltage.get::<volt>(),
+            self.get_minimum_voltage().get::<volt>(),
+            self.get_maximum_voltage().get::<volt>(),
+        );
+        self.set_voltage_relative(port, value);
     }
 
     fn get_port_count(&self) -> usize;
@@ -40,37 +32,44 @@ pub trait AnalogVoltageOutputDevice {
 
 pub trait AnalogCurrentOutputDevice {
     /// Get the minimum current this device can output on a single port
-    fn get_minimum_output(&self) -> ElectricCurrent;
+    fn get_minimum_current(&self) -> ElectricCurrent;
     /// Get the maximum current this device can output on a single port
-    fn get_maximum_output(&self) -> ElectricCurrent;
+    fn get_maximum_current(&self) -> ElectricCurrent;
 
     /// Set a specific output relative to the minimum and maximum value.
     ///
     /// The given `value` must be in the interval `[-1, 1]` for devices that support negative
     /// output values and in the interval `[0, 1]` for devices with only positive output values.
     /// The value is interpolated between the minimum and maximum values of the device.
-    fn set_output_relative(&mut self, port: usize, value: f64);
+    fn set_current_relative(&mut self, port: usize, value: f64);
 
     /// Set a specific output to the given `current`.
     ///
-    /// The current must be inside the interval `[get_minimum_output(), get_maximum_output()]`.
+    /// The current must be inside the interval `[get_minimum_current(), get_maximum_current()]`.
     fn set_output(&mut self, port: usize, current: ElectricCurrent) {
-        let supports_negative = self.get_minimum_output().get::<ampere>() < 0.0;
-
-        // in [0, 1]
-        let value = (current - self.get_minimum_output())
-            / (self.get_maximum_output() - self.get_minimum_output());
-        let mut value = value.get::<ratio>();
-
-        if supports_negative {
-            // in [-1, 1]
-            value = 2.0 * value - 1.0;
-        }
-
-        self.set_output_relative(port, value);
+        let value = to_relative(
+            current.get::<ampere>(),
+            self.get_minimum_current().get::<ampere>(),
+            self.get_maximum_current().get::<ampere>(),
+        );
+        self.set_current_relative(port, value);
     }
 
     fn get_port_count(&self) -> usize;
+}
+
+fn to_relative(value: f64, min: f64, max: f64) -> f64 {
+    let supports_negative = min < 0.0;
+
+    // in [0, 1]
+    let mut value = (value - min) / (max - min);
+
+    if supports_negative {
+        // in [-1, 1]
+        value = 2.0 * value - 1.0;
+    }
+
+    value
 }
 
 #[derive(Debug, Clone)]
@@ -99,6 +98,6 @@ impl<T: AnalogVoltageOutputDevice> AnalogOutputDevice for T {
     }
 
     fn set_output(&mut self, port: usize, value: AnalogOutputOutput) {
-        self.set_output_relative(port, f32::from(value) as f64);
+        self.set_voltage_relative(port, f32::from(value) as f64);
     }
 }
