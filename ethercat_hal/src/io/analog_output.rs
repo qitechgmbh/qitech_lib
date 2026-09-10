@@ -20,7 +20,8 @@ pub trait AnalogVoltageOutputDevice {
         let supports_negative = self.get_minimum_output().get::<volt>() < 0.0;
 
         // in [0, 1]
-        let value = (voltage - self.get_minimum_output()) / (self.get_maximum_output() - self.get_minimum_output());
+        let value = (voltage - self.get_minimum_output())
+            / (self.get_maximum_output() - self.get_minimum_output());
         let mut value = value.get::<ratio>();
 
         if supports_negative {
