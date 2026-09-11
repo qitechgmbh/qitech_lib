@@ -664,10 +664,7 @@ pub fn set_current_thread_rt_priority_with_cycle_time(priority: i32, cycle_time_
     // reservation, every other thread gets the highest QoS.
     if priority < 90 {
         unsafe {
-            libc::pthread_set_qos_class_self_np(
-                libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE,
-                0,
-            );
+            libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE, 0);
         }
         return;
     }
