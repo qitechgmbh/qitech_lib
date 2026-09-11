@@ -10,7 +10,7 @@ use crate::{
     machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
 };
-use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority};
+use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority_with_cycle_time};
 use anyhow::bail;
 #[cfg(target_os = "linux")]
 use common::set_irq_affinity;
@@ -87,6 +87,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         let pdu_rx = rx;
                         let interface = self.interface.clone().unwrap();
                         let opt = self.current_config.realtime_optimizations.clone();
+                        let cycle_time_us = self.current_config.target_cycle_time_us as u64;
 
                         _ethercat_tx_rx_handle = std::thread::Builder::new()
                             .name("EthercatTxRxThread".to_owned())
@@ -96,8 +97,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                         let id = core_affinity::CoreId {
                                             id: opt.ethercat_io_thread_core,
                                         };
-                                        set_current_thread_rt_priority(
+                                        set_current_thread_rt_priority_with_cycle_time(
                                             opt.ethercat_io_thread_priority as i32,
+                                            cycle_time_us,
                                         );
                                         // Pin to the last core (e.g., Core 3 on a 4-core system)
                                         core_affinity::set_for_current(id);
@@ -520,8 +522,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 let id = core_affinity::CoreId {
                                     id: opt.ethercat_loop_thread_core,
                                 };
-                                set_current_thread_rt_priority(
+                                set_current_thread_rt_priority_with_cycle_time(
                                     opt.ethercat_loop_thread_priority as i32,
+                                    self.current_config.target_cycle_time_us as u64,
                                 );
                                 core_affinity::set_for_current(id);
                                 if opt.lock_memory {

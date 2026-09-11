@@ -648,8 +648,69 @@ pub fn set_current_thread_rt_priority(priority: i32) {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "linux")]
+pub fn set_current_thread_rt_priority_with_cycle_time(priority: i32, _cycle_time_us: u64) {
+    set_current_thread_rt_priority(priority);
+}
+
+#[cfg(target_os = "macos")]
+pub fn set_current_thread_rt_priority(priority: i32) {
+    set_current_thread_rt_priority_with_cycle_time(priority, 1_000);
+}
+
+#[cfg(target_os = "macos")]
+pub fn set_current_thread_rt_priority_with_cycle_time(priority: i32, cycle_time_us: u64) {
+    // QoS and a time-constraint reservation are mutually exclusive: the cyclic loop gets the
+    // reservation, every other thread gets the highest QoS.
+    if priority < 90 {
+        unsafe {
+            libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE, 0);
+        }
+        return;
+    }
+
+    let mut tb = mach2::mach_time::mach_timebase_info::default();
+    if unsafe { mach2::mach_time::mach_timebase_info(&mut tb) } != mach2::kern_return::KERN_SUCCESS
+        || tb.numer == 0
+    {
+        return;
+    }
+
+    let abs = |ns: u64| -> u32 {
+        let ticks = ns * tb.denom as u64 / tb.numer as u64;
+        ticks.min(u32::MAX as u64) as u32
+    };
+
+    let cycle_ns = cycle_time_us.saturating_mul(1_000).max(1);
+    let policy = mach2::thread_policy::thread_time_constraint_policy {
+        period: abs(cycle_ns),
+        computation: abs(cycle_ns * 3 / 5),
+        constraint: abs(cycle_ns * 9 / 10),
+        preemptible: 1,
+    };
+
+    let result = unsafe {
+        mach2::thread_policy::thread_policy_set(
+            mach2::mach_init::mach_thread_self(),
+            mach2::thread_policy::THREAD_TIME_CONSTRAINT_POLICY,
+            &policy as *const _ as libc::thread_policy_t,
+            mach2::thread_policy::THREAD_TIME_CONSTRAINT_POLICY_COUNT,
+        )
+    };
+    if result != mach2::kern_return::KERN_SUCCESS {
+        eprintln!("thread_policy_set(TIME_CONSTRAINT) failed: kern_return {result}");
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub fn set_current_thread_rt_priority(_priority: i32) {
+    eprintln!(
+        "set_current_thread_rt_priority: real-time scheduling is not available on this platform"
+    );
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+pub fn set_current_thread_rt_priority_with_cycle_time(_priority: i32, _cycle_time_us: u64) {
     eprintln!(
         "set_current_thread_rt_priority: real-time scheduling is not available on this platform"
     );
