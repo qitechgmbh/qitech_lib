@@ -18,6 +18,7 @@ ta = "0.5.0"
 triple_buffer = "9.0.0"
 core_affinity = "0.8.3"
 libc = "0.2.186"
+mach2 = "0.4.3"
 spin_sleep = "1.3.3"
 futures = "0.3.32"
 

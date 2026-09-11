@@ -507,6 +507,7 @@ dependencies = [
  "ethercrab",
  "futures",
  "libc",
+ "mach2",
  "rand",
  "smol",
  "spin_sleep",
