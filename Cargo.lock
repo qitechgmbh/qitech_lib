@@ -941,6 +941,7 @@ dependencies = [
  "tokio",
  "tokio-modbus",
  "tokio-serial",
+ "tracing",
 ]
 
 [[package]]

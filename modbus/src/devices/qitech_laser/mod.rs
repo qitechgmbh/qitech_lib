@@ -221,11 +221,11 @@ async fn run_modbus_actor(
             Ok(Ok(Ok(response))) => Ok(response),
             Ok(Ok(Err(modbus_err))) => Err(LaserError::ModbusException(modbus_err)),
             Ok(Err(io_err)) => {
-                eprintln!("laser modbus io error: {io_err:?}, reconnecting");
+                tracing::error!("laser modbus io error: {:?}, reconnecting", io_err);
                 match create_modbus_device_context(&meta) {
                     Ok(new_ctx) => ctx = new_ctx,
                     Err(reconnect_err) => {
-                        eprintln!("laser modbus reconnect failed: {reconnect_err:?}")
+                        tracing::error!("laser modbus reconnect failed: {:?}", reconnect_err);
                     }
                 }
                 Err(LaserError::IoErr())
