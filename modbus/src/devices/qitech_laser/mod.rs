@@ -110,7 +110,7 @@ impl ModbusDevice for LaserDevice {
         // Create an bounded command channel for our actor
         let (tx, rx) = mpsc::channel::<ActorMessage>(1);
         // Spawn the long-running async worker thread immediately
-        let handle = rt.spawn(run_modbus_actor(rx, ctx));
+        let handle = rt.spawn(run_modbus_actor(rx, ctx, meta));
 
         Ok(Self {
             measurement: None,
@@ -206,7 +206,11 @@ impl std::error::Error for LaserError {
 
 /// The long-running asynchronous worker loop.
 /// This completely owns and keeps the `Context` alive.
-async fn run_modbus_actor(mut rx: mpsc::Receiver<ActorMessage>, mut ctx: Context) {
+async fn run_modbus_actor(
+    mut rx: mpsc::Receiver<ActorMessage>,
+    mut ctx: Context,
+    meta: SerialDeviceMeta,
+) {
     let timeout_duration = Duration::from_secs(2);
 
     // Loop until the LaserDevice front-end is dropped (closing the mpsc channel)
@@ -216,7 +220,16 @@ async fn run_modbus_actor(mut rx: mpsc::Receiver<ActorMessage>, mut ctx: Context
         let process_result = match response_result {
             Ok(Ok(Ok(response))) => Ok(response),
             Ok(Ok(Err(modbus_err))) => Err(LaserError::ModbusException(modbus_err)),
-            Ok(Err(_io_err)) => Err(LaserError::IoErr()),
+            Ok(Err(io_err)) => {
+                eprintln!("laser modbus io error: {io_err:?}, reconnecting");
+                match create_modbus_device_context(&meta) {
+                    Ok(new_ctx) => ctx = new_ctx,
+                    Err(reconnect_err) => {
+                        eprintln!("laser modbus reconnect failed: {reconnect_err:?}")
+                    }
+                }
+                Err(LaserError::IoErr())
+            }
             Err(_timeout_err) => Err(LaserError::RequestTimeOut),
         };
         let _ = msg.reply_tx.send(process_result);
