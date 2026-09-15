@@ -116,7 +116,7 @@ impl ModbusDevice for LaserDevice {
             measurement: None,
             tx,
             pending_response: None,
-            handle: handle,
+            handle,
         })
     }
 
@@ -170,20 +170,20 @@ fn parse_measurement(words: &[u16]) -> Result<Measurement, anyhow::Error> {
 #[derive(Debug)]
 pub enum LaserError {
     ModbusError(tokio_modbus::Error),
-    TaskDied(),
+    TaskDied,
     ModbusException(ExceptionCode),
-    IoErr(),
-    RequestTimeOut,
+    IoErr(tokio_modbus::Error),
+    RequestTimeout,
 }
 
 impl fmt::Display for LaserError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LaserError::ModbusError(e) => write!(f, "Modbus error: {}", e),
-            LaserError::TaskDied() => write!(f, "Internal driver task died"),
+            LaserError::TaskDied => write!(f, "Internal driver task died"),
             LaserError::ModbusException(code) => write!(f, "Modbus exception: {:?}", code),
-            LaserError::IoErr() => write!(f, "Hardware I/O error"),
-            LaserError::RequestTimeOut => write!(f, "Request timed out"),
+            LaserError::IoErr(e) => write!(f, "Hardware I/O error: {}", e),
+            LaserError::RequestTimeout => write!(f, "Request timed out"),
         }
     }
 }
@@ -195,11 +195,11 @@ impl std::error::Error for LaserError {
             // These sub-errors implement std::error::Error, so we return them
             LaserError::ModbusError(e) => Some(e),
             LaserError::ModbusException(e) => Some(e),
+            LaserError::IoErr(e) => Some(e),
 
             // These errors do not have an underlying nested error payload
-            LaserError::TaskDied() => None,
-            LaserError::IoErr() => None,
-            LaserError::RequestTimeOut => None,
+            LaserError::TaskDied => None,
+            LaserError::RequestTimeout => None,
         }
     }
 }
@@ -211,33 +211,43 @@ async fn run_modbus_actor(
     mut ctx: Context,
     meta: SerialDeviceMeta,
 ) {
-    let timeout_duration = Duration::from_secs(2);
-
     // Loop until the LaserDevice front-end is dropped (closing the mpsc channel)
     while let Some(msg) = rx.recv().await {
-        let response_result = tokio::time::timeout(timeout_duration, ctx.call(msg.request)).await;
-        // Parse and send the final execution payload back across the oneshot wire
-        let process_result = match response_result {
-            Ok(Ok(Ok(response))) => Ok(response),
-            Ok(Ok(Err(modbus_err))) => Err(LaserError::ModbusException(modbus_err)),
-            Ok(Err(io_err)) => {
-                tracing::error!("laser modbus io error: {:?}, reconnecting", io_err);
-                match create_modbus_device_context(&meta) {
-                    Ok(new_ctx) => ctx = new_ctx,
-                    Err(reconnect_err) => {
-                        tracing::error!("laser modbus reconnect failed: {:?}", reconnect_err);
-                    }
+        let mut res = modbus_act_msg(msg.request.clone(), &mut ctx).await;
+
+        if let Err(LaserError::IoErr(io_err)) = &res {
+            tracing::error!("laser modbus io error: {:?}, reconnecting", io_err);
+
+            match create_modbus_device_context(&meta) {
+                Ok(new_ctx) => {
+                    tracing::debug!("Successfully reconnected");
+                    ctx = new_ctx;
+                    res = modbus_act_msg(msg.request, &mut ctx).await
                 }
-                Err(LaserError::IoErr())
-            }
-            Err(_timeout_err) => Err(LaserError::RequestTimeOut),
-        };
-        let _ = msg.reply_tx.send(process_result);
+                Err(err) => {
+                    tracing::error!("Laser modbus reconnect failed: {:?}", err);
+                }
+            };
+        }
+
+        let _ = msg.reply_tx.send(res);
     }
 
     // When the loop ends (LaserDevice dropped), cleanly disconnect the serial resource
     let _ = ctx.disconnect().await;
-    println!("LaserDevice background actor shut down cleanly.");
+    tracing::debug!("LaserDevice background actor shut down cleanly.");
+}
+
+async fn modbus_act_msg(request: ModbusRequest, ctx: &mut Context) -> Result<Response, LaserError> {
+    let timeout_duration = Duration::from_secs(2);
+
+    let io_responce = tokio::time::timeout(timeout_duration, ctx.call(request))
+        .await
+        .map_err(|_| LaserError::RequestTimeout)?;
+
+    let process_responce = io_responce.map_err(LaserError::IoErr)?;
+
+    process_responce.map_err(LaserError::ModbusException)
 }
 
 #[derive(Debug, Clone)]
