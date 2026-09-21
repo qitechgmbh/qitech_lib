@@ -5,7 +5,6 @@ use ethercat_hal::{
         EthercatDevice, NewEthercatDevice,
         wago_modules::{
             wago_750_354::{WAGO_750_354_IDENTITY_A, Wago750_354},
-            wago_750_455::Wago750_455,
             wago_750_554::Wago750_554,
         },
     },
@@ -74,16 +73,9 @@ fn main() {
                 .is_some_and(|d| d.as_any().downcast_ref::<Wago750_554>().is_some())
         })
         .expect("No Wago 750-554 found: is it registered in init_slot_modules?");
-    let ai_slot = coupler
-        .slot_devices
-        .iter()
-        .position(|s| {
-            s.as_ref()
-                .is_some_and(|d| d.as_any().downcast_ref::<Wago750_455>().is_some())
-        })
-        .expect("No Wago 750-455 found: is it registered in init_slot_modules?");
+   
 
-    println!("750-554 in slot {ao_slot}, 750-455 in slot {ai_slot}, starting ramp...");
+    println!("750-554 in slot {ao_slot}, starting ramp...");
 
     // Transition to Op
     eth_control
@@ -141,30 +133,6 @@ fn main() {
             coupler
                 .input(BitSlice::<u8, Lsb0>::from_slice(subdevice_inputs))
                 .expect("Failed to read Tx PDO");
-        }
-
-        // Read back the measured current from the 455
-        let slot_dev = coupler.slot_devices[ai_slot]
-            .as_ref()
-            .expect("No device in AI slot");
-        let ai = slot_dev
-            .as_any()
-            .downcast_ref::<Wago750_455>()
-            .expect("AI slot is not a Wago 750-455");
-
-        let cmd1 = 4.0 + normalized * 16.0;
-        let cmd2 = 4.0 + (1.0 - normalized) * 16.0;
-
-        match (ai.get_input(0), ai.get_input(1)) {
-            (Ok(a), Ok(b)) => {
-                let m1 = 4.0 + a.normalized * 16.0;
-                let m2 = 4.0 + b.normalized * 16.0;
-                println!(
-                    "step {:3}: AO1 {:.1} mA -> AI1 {:.1} mA | AO2 {:.1} mA -> AI2 {:.1} mA",
-                    step, cmd1, m1, cmd2, m2
-                );
-            }
-            _ => println!("step {:3}: read error", step),
         }
     }
 }
