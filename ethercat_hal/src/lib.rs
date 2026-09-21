@@ -402,11 +402,13 @@ pub struct MetaSubdevice {
     pub initialized: bool,
 }
 
-
 impl std::fmt::Debug for MetaSubdevice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MetaSubdevice")
-            .field("name", &self.get_name().unwrap_or("<non-uft8-name>".to_string()))
+            .field(
+                "name",
+                &self.get_name().unwrap_or("<non-uft8-name>".to_string()),
+            )
             .field("product_id", &self.product_id)
             .field("revision", &self.revision)
             .field("vendor", &self.vendor)
