@@ -9,10 +9,10 @@ use ethercat_hal::{
         },
     },
     init_ethercat,
-    io::{analog_input::AnalogInputDevice, analog_output::AnalogCurrentOutputDevice},
+    io::analog_output::AnalogCurrentOutputDevice,
 };
-use units::electric_current::milliampere;
 use std::{env, time::Duration};
+use units::electric_current::milliampere;
 
 fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
@@ -74,7 +74,6 @@ fn main() {
                 .is_some_and(|d| d.as_any().downcast_ref::<Wago750_554>().is_some())
         })
         .expect("No Wago 750-554 found: is it registered in init_slot_modules?");
-   
 
     println!("750-554 in slot {ao_slot}, starting ramp...");
 
@@ -101,7 +100,6 @@ fn main() {
     // Main loop: ramp AO 1 up and AO 2 down over 16 steps, read back via the 455
     let step_count: u32 = 32;
     for step in 0..=u32::MAX {
-
         // Set the analog outputs
         {
             let slot_dev = coupler.slot_devices[ao_slot]
@@ -111,16 +109,20 @@ fn main() {
                 .as_any_mut()
                 .downcast_mut::<Wago750_554>()
                 .expect("AO slot is not a Wago 750-554");
-            
+
             let min = ao.get_minimum_current();
             let max = ao.get_maximum_current();
-            let step_size = (max - min ) / step_count as f64;
+            let step_size = (max - min) / step_count as f64;
             let delta = step_size * (step % step_count) as f64;
-            let current  = min + delta;
+            let current = min + delta;
             let current_inv = max - delta;
-            println!("AO-0: {:.02}mA AO-1: {:.02}mA",current.get::<milliampere>() ,current_inv.get::<milliampere>() );
-            ao.set_output(0, current);
-            ao.set_output(1,current_inv);
+            println!(
+                "AO-0: {:.02}mA AO-1: {:.02}mA",
+                current.get::<milliampere>(),
+                current_inv.get::<milliampere>()
+            );
+            ao.set_current(0, current);
+            ao.set_current(1, current_inv);
         }
 
         // Write outputs to the EtherCAT bus
@@ -142,6 +144,5 @@ fn main() {
                 .input(BitSlice::<u8, Lsb0>::from_slice(subdevice_inputs))
                 .expect("Failed to read Tx PDO");
         }
-
     }
 }

@@ -46,7 +46,7 @@ pub trait AnalogCurrentOutputDevice {
     /// Set a specific output to the given `current`.
     ///
     /// The current must be inside the interval `[get_minimum_current(), get_maximum_current()]`.
-    fn set_output(&mut self, port: usize, current: ElectricCurrent) {
+    fn set_current(&mut self, port: usize, current: ElectricCurrent) {
         let value = to_relative(
             current.get::<ampere>(),
             self.get_minimum_current().get::<ampere>(),
