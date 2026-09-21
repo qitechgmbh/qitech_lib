@@ -384,8 +384,8 @@ pub type StdEcatHandle = EtherCATAppHandle<TripleBufConsumer, Arc<Mailbox>>;
 pub type MockEcatHandle = EtherCATAppHandle<MockConsumer, MockProducer>;
 pub type StdEcatController = EtherCATController<Arc<Mailbox>, TripleBufProducer>;
 
-/*Metadata for a Subdevice Contains start and end of the given subdevices pdu*/
-#[derive(Clone, Copy, Debug)]
+/// Metadata for a Subdevice Contains start and end of the given subdevices pdu
+#[derive(Clone, Copy)]
 pub struct MetaSubdevice {
     pub name: [u8; 128],
     pub product_id: u32,
@@ -400,6 +400,26 @@ pub struct MetaSubdevice {
     // Device address first one would be 0x1000, so 4096
     pub device_address: u16,
     pub initialized: bool,
+}
+
+impl std::fmt::Debug for MetaSubdevice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MetaSubdevice")
+            .field(
+                "name",
+                &self.get_name().unwrap_or("<non-uft8-name>".to_string()),
+            )
+            .field("product_id", &self.product_id)
+            .field("revision", &self.revision)
+            .field("vendor", &self.vendor)
+            .field("start_tx", &self.start_tx)
+            .field("end_tx", &self.end_tx)
+            .field("start_rx", &self.start_rx)
+            .field("end_rx", &self.end_rx)
+            .field("device_address", &self.device_address)
+            .field("initialized", &self.initialized)
+            .finish()
+    }
 }
 
 impl MetaSubdevice {
