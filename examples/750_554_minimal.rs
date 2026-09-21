@@ -70,18 +70,16 @@ fn main() {
         .slot_devices
         .iter()
         .position(|s| {
-            s.as_ref().map_or(false, |d| {
-                d.as_any().downcast_ref::<Wago750_554>().is_some()
-            })
+            s.as_ref()
+                .is_some_and(|d| d.as_any().downcast_ref::<Wago750_554>().is_some())
         })
         .expect("No Wago 750-554 found: is it registered in init_slot_modules?");
     let ai_slot = coupler
         .slot_devices
         .iter()
         .position(|s| {
-            s.as_ref().map_or(false, |d| {
-                d.as_any().downcast_ref::<Wago750_455>().is_some()
-            })
+            s.as_ref()
+                .is_some_and(|d| d.as_any().downcast_ref::<Wago750_455>().is_some())
         })
         .expect("No Wago 750-455 found: is it registered in init_slot_modules?");
 
@@ -121,8 +119,8 @@ fn main() {
                 .as_any_mut()
                 .downcast_mut::<Wago750_554>()
                 .expect("AO slot is not a Wago 750-554");
-            ao.set_output_relative(0, normalized);
-            ao.set_output_relative(1, 1.0 - normalized);
+            ao.set_current_relative(0, normalized);
+            ao.set_current_relative(1, 1.0 - normalized);
         }
 
         // Write outputs to the EtherCAT bus

@@ -1,15 +1,18 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use ethercat_hal::{
-    EtherCATState, devices::{
+    EtherCATState,
+    devices::{
         EthercatDevice, NewEthercatDevice,
         wago_modules::{
             wago_750_354::{WAGO_750_354_IDENTITY_A, Wago750_354},
             wago_750_455::Wago750_455,
         },
-    }, init_ethercat, io::{analog_input::AnalogCurrentInputDevice, analog_output::AnalogCurrentOutputDevice},
+    },
+    init_ethercat,
+    io::analog_input::AnalogCurrentInputDevice,
 };
-use units::electric_current::milliampere;
 use std::{env, time::Duration};
+use units::electric_current::milliampere;
 
 fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
@@ -97,7 +100,6 @@ fn main() {
 
     // Main loop: ramp AO 1 up and AO 2 down over 16 steps, read back via the 455
     loop {
-
         // Write outputs to the EtherCAT bus
         if let Some(outputs) = eth_handle.write_outputs() {
             let subdevice_outputs = &mut outputs[coupler_subdev.start_rx..coupler_subdev.end_rx];
