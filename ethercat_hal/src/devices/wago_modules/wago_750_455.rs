@@ -1,42 +1,43 @@
 use bitvec::field::BitField;
+use bitvec::order::Lsb0;
+use bitvec::slice::BitSlice;
+use ethercat_hal_derive::PdoObject;
 
 use crate::devices::{
     DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed,
     EthercatDynamicPDO, Module, NewEthercatDevice, SubDeviceProductTuple,
 };
-use crate::io::analog_input::physical::AnalogInputRange;
-use crate::io::analog_input::{AnalogInputDevice, AnalogInputInput};
+use crate::io::analog_input::AnalogCurrentInputDevice;
+use crate::pdo::TxPdoObject;
 use units::electric_current::milliampere;
 use units::f64::ElectricCurrent;
 
-#[derive(Clone, Debug)]
-pub enum Wago750_455Port {
-    AI1,
-    AI2,
-    AI3,
-    AI4,
+#[derive(Debug, Default, PdoObject)]
+#[pdo_object(bits = 16)]
+struct AnalogInput {
+    pub value: f64,
+    pub error: bool,
 }
 
-impl From<Wago750_455Port> for usize {
-    fn from(value: Wago750_455Port) -> Self {
-        match value {
-            Wago750_455Port::AI1 => 0,
-            Wago750_455Port::AI2 => 16,
-            Wago750_455Port::AI3 => 32,
-            Wago750_455Port::AI4 => 48,
-        }
+impl TxPdoObject for AnalogInput {
+    fn read(&mut self, bits: &BitSlice<u8, Lsb0>) {
+        let raw: u16 = bits.load_le();
+        let value = raw >> 4;
+        let max_value = 0x7ff;
+
+        self.error = (raw & 0x0003) == 0x0003;
+        self.value = value as f64 / max_value as f64;
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct Wago750_455TxPdo {
-    pub ai1: u16,
-    pub ai2: u16,
-    pub ai3: u16,
-    pub ai4: u16,
+    ai1: AnalogInput,
+    ai2: AnalogInput,
+    ai3: AnalogInput,
+    ai4: AnalogInput,
 }
 
-#[derive(Clone)]
 pub struct Wago750_455 {
     is_used: bool,
     tx_bit_offset: usize,
@@ -45,32 +46,25 @@ pub struct Wago750_455 {
     tx_pdo: Wago750_455TxPdo,
 }
 
-impl AnalogInputDevice for Wago750_455 {
-    fn get_input(&self, port: usize) -> Result<AnalogInputInput, anyhow::Error> {
-        let raw = match port {
-            0 => self.tx_pdo.ai1,
-            1 => self.tx_pdo.ai2,
-            2 => self.tx_pdo.ai3,
-            3 => self.tx_pdo.ai4,
-            _ => return Err(anyhow::anyhow!("port {} doesnt exist on Wago750_455", port)),
-        };
-        let wiring_error = (raw & 0x0003) == 0x0003;
-        let raw_value = (raw & 0x7FF0) as i16;
-        let normalized = self.analog_input_range().raw_to_normalized(raw_value) as f32;
-
-        Ok(AnalogInputInput {
-            normalized,
-            wiring_error,
-        })
+impl AnalogCurrentInputDevice for Wago750_455 {
+    fn get_minimum_current(&self) -> ElectricCurrent {
+        ElectricCurrent::new::<milliampere>(4.0)
     }
 
-    fn analog_input_range(&self) -> AnalogInputRange {
-        AnalogInputRange::Current {
-            min: ElectricCurrent::new::<milliampere>(4.0),
-            max: ElectricCurrent::new::<milliampere>(20.0),
-            min_raw: 0,
-            max_raw: 0x7FF0,
-        }
+    fn get_maximum_current(&self) -> ElectricCurrent {
+        ElectricCurrent::new::<milliampere>(20.0)
+    }
+
+    fn get_current_relative(&self, port: usize) -> Option<f64> {
+        let input = match port {
+            0 => &self.tx_pdo.ai1,
+            1 => &self.tx_pdo.ai2,
+            2 => &self.tx_pdo.ai3,
+            3 => &self.tx_pdo.ai4,
+            _ => panic!("Port index out of range [0, 3]!"),
+        };
+
+        if input.error { None } else { Some(input.value) }
     }
 
     fn get_port_count(&self) -> usize {
@@ -112,20 +106,14 @@ impl EthercatDevice for Wago750_455 {
     fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
-    fn input(
-        &mut self,
-        input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    fn input(&mut self, input: &BitSlice<u8, Lsb0>) -> Result<(), anyhow::Error> {
         let base = self.tx_bit_offset;
-        let ai1 = input[base..(base + 16)].load_le::<u16>();
-        let ai2 = input[(base + 16)..(base + 32)].load_le::<u16>();
-        let ai3 = input[(base + 32)..(base + 48)].load_le::<u16>();
-        let ai4 = input[(base + 48)..(base + 64)].load_le::<u16>();
 
-        self.tx_pdo.ai1 = ai1;
-        self.tx_pdo.ai2 = ai2;
-        self.tx_pdo.ai3 = ai3;
-        self.tx_pdo.ai4 = ai4;
+        self.tx_pdo.ai1.read(&input[base..(base + 16)]);
+        self.tx_pdo.ai2.read(&input[base + 16..base + 32]);
+        self.tx_pdo.ai3.read(&input[base + 32..base + 48]);
+        self.tx_pdo.ai4.read(&input[base + 48..base + 64]);
+
         Ok(())
     }
 
