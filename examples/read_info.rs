@@ -57,7 +57,7 @@ fn main() {
         if let Some(ident) = ident {
             println!(
                 "{}   └──Machine Identification: machine_vendor: {}, machine_id: {}, machine_serial: {}, role: {}",
-                trunk, ident.machine_vendor, ident.machine_id, ident.role, ident.machine_serial
+                trunk, ident.machine_vendor, ident.machine_id, ident.machine_serial, ident.role,
             );
         }
     }
