@@ -1,3 +1,5 @@
+use crate::ChannelRequest;
+use crate::RtOptimizationConfig;
 use crate::TripleBufProducer;
 use crate::ethercat_helpers::configure_oversampling;
 use crate::ethercat_helpers::enable_dc_sync01;
@@ -14,9 +16,9 @@ use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority};
 use anyhow::bail;
 #[cfg(target_os = "linux")]
 use common::set_irq_affinity;
+use ethercrab::std::ethercat_now;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
-    std::ethercat_now,
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
 };
 use libc::{MCL_CURRENT, MCL_FUTURE, mlockall};
@@ -28,6 +30,240 @@ use std::{
     time::{Duration, Instant},
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
+
+
+
+type PreopGroup = SubDeviceGroup<
+        MAX_SUBDEVICES,
+        PDI_LEN,
+        ethercrab::DefaultLock,
+        PreOpPdi,
+        NoDc,>;
+
+fn setup_tx_rx_thread(
+    interface: String,
+    opt: Option<RtOptimizationConfig>,
+) -> Option<MainDevice<'static>> {
+    let (tx, rx, pdu) = PDU_STORAGE.try_split().expect("can only split once");
+    let pdu_tx = tx;
+    let pdu_rx = rx;
+
+    let _ethercat_tx_rx_handle = std::thread::Builder::new()
+        .name("EthercatTxRxThread".to_owned())
+        .spawn(move || {
+            match opt {
+                Some(opt) => {
+                    let id = core_affinity::CoreId {
+                        id: opt.ethercat_io_thread_core,
+                    };
+                    set_current_thread_rt_priority(opt.ethercat_io_thread_priority as i32);
+                    // Pin to the last core (e.g., Core 3 on a 4-core system)
+                    core_affinity::set_for_current(id);
+                    #[cfg(target_os = "linux")]
+                    if let Some(irq_core) = opt.pin_irq_core {
+                        let res = set_irq_affinity(&interface, irq_core as u32);
+                        if res.is_err() {
+                            eprintln!("set_irq_affinity failed performance may be degraded");
+                        }
+                    }
+                }
+                None => (),
+            };
+
+            #[cfg(not(target_os = "linux"))]
+            use ethercrab::std::tx_rx_task;
+            #[cfg(target_os = "linux")]
+            use ethercrab::std::tx_rx_task_io_uring;
+
+            #[cfg(target_os = "linux")]
+            tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
+                .expect("Failed to run TX/RX task (io_uring)");
+            #[cfg(not(target_os = "linux"))]
+            get_async_runtime().block_on(async {
+                match tx_rx_task(&interface, pdu_tx, pdu_rx) {
+                    Ok(task) => {
+                        task.await.expect("TX/RX task failed");
+                    }
+                    Err(e) => panic!("Failed to create TX/RX task: {e}"),
+                }
+            });
+        });
+
+    let maindevice = Some(MainDevice::new(
+        pdu,
+        Timeouts {
+            state_transition: Duration::from_millis(20000),
+            pdu: Duration::from_micros(30_000),
+            eeprom: Duration::from_millis(100),
+            wait_loop_delay: Duration::from_millis(0),
+            mailbox_echo: Duration::from_millis(100),
+            mailbox_response: Duration::from_millis(1000),
+        },
+        MainDeviceConfig {
+            retry_behaviour: RetryBehaviour::Count(0),
+            dc_static_sync_iterations: 10_000,
+        },
+    ));
+    return maindevice;
+}
+
+/*
+    if ecat OP state
+*/
+fn handle_channel_requests(
+    msg: ChannelRequest,
+    maindev: &MainDevice<'_>,
+    mut preop_group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>,
+) -> bool {
+    match msg.channel_request {
+        ChannelRequests::ChangeState(ether_catstate) => {
+            return match ether_catstate {
+                EtherCATState::NoInterface => {
+                    //self.state.store(ether_catstate.into(), Relaxed);
+                    send_response(msg.response_channel, ChannelResponse::ChangeState(Ok(())));
+                    false
+                }
+                EtherCATState::Op => true,
+                _ => false,
+            };
+        }
+        ChannelRequests::Shutdown() => true,
+        ChannelRequests::SdoWriteRequest(request) => {
+            let res = sdo_write(maindev, preop_group, request);
+            send_response(msg.response_channel, ChannelResponse::SdoWriteResponse(res));
+            false
+        }
+        ChannelRequests::SdoReadRequest(request) => {
+            match request.type_flag {
+                SdoType::BOOL => {
+                    let res = sdo_read::<bool>(maindev, preop_group, request);
+                    send_response(msg.response_channel, ChannelResponse::SdoResponseBool(res));
+                }
+                SdoType::U8 => {
+                    let res = sdo_read::<u8>(maindev, preop_group, request);
+                    send_response(msg.response_channel, ChannelResponse::SdoResponseU8(res));
+                }
+                SdoType::U16 => {
+                    let res = sdo_read::<u16>(maindev, preop_group, request);
+                    send_response(msg.response_channel, ChannelResponse::SdoResponseU16(res));
+                }
+                SdoType::U32 => {
+                    let res = sdo_read::<u32>(maindev, preop_group, request);
+                    send_response(msg.response_channel, ChannelResponse::SdoResponseU32(res));
+                }
+                SdoType::I16 => {
+                    let res = sdo_read::<i16>(maindev, preop_group, request);
+                    send_response(msg.response_channel, ChannelResponse::SdoResponseI16(res));
+                }
+                SdoType::I32 => {
+                    let res = sdo_read::<i32>(maindev, preop_group, request);
+                    send_response(msg.response_channel, ChannelResponse::SdoResponseI32(res));
+                }
+            }
+
+            false
+        }
+        ChannelRequests::ReadMachineIdent() => {
+            let res = read_device_identifications(preop_group, maindev);
+            send_response(
+                msg.response_channel,
+                ChannelResponse::MachineDeviceInfoResponse(res),
+            );
+            false
+        }
+        ChannelRequests::WriteMachineIdent(identifications) => {
+            let res = write_device_identifications(preop_group, maindev, &identifications);
+            send_response(
+                msg.response_channel,
+                ChannelResponse::WriteMachineInfoResponse(res),
+            );
+            false
+        }
+        ChannelRequests::EnableDCSync0(device_address) => {
+            let res = enable_dc_sync(&mut preop_group, maindev, device_address);
+            send_response(
+                msg.response_channel,
+                ChannelResponse::EnableDCSync0Response(res),
+            );
+            false
+        }
+        ChannelRequests::EnableDCSync01(device_address, sync1_period) => {
+            let res = enable_dc_sync01(&mut preop_group, maindev, device_address, sync1_period);
+            send_response(
+                msg.response_channel,
+                ChannelResponse::EnableDCSync01Response(res),
+            );
+            false
+        }
+        ChannelRequests::ConfigureOversampling(device_address, oversampling_settings) => {
+            let res = configure_oversampling(
+                &mut preop_group,
+                maindev,
+                device_address,
+                &oversampling_settings,
+            );
+            send_response(
+                msg.response_channel,
+                ChannelResponse::ConfigureOversamplingResponse(res),
+            );
+            false
+        }
+    }
+}
+
+fn dc_static_sync(
+    main_device : MainDevice<'static>,
+    group_preop_pdi: PreopGroup,
+    cycle_time : u64,
+) -> PreopGroup {
+    let rt = get_async_runtime();
+    let mut now = Instant::now();
+    let mut averages = Vec::new();
+
+    for _ in 0..group_preop_pdi.len() {        
+        averages.push(ExponentialMovingAverage::new(64).unwrap());
+    }
+    
+    loop {
+        let deadline =
+            Instant::now() + Duration::from_micros(cycle_time);
+        rt.block_on(            
+            group_preop_pdi.tx_rx_sync_system_time(&main_device)
+        );
+        if now.elapsed() >= Duration::from_millis(25) {
+            now = Instant::now();
+            let mut max_deviation = 0;
+            for (s1, ema) in group_preop_pdi
+                .iter(&main_device)
+                .zip(averages.iter_mut())
+            {
+                let diff = match rt
+                    .block_on(s1.register_read::<u32>(RegisterAddress::DcSystemTimeDifference))
+                {
+                    Ok(value) => {
+                        let flag = 0b1u32 << 31;
+                        if value >= flag {
+                            // Strip off negative flag bit and negate value as normal
+                            -((value & !flag) as i32)
+                        } else {
+                            value as i32
+                        }
+                    }
+                    Err(ethercrab::error::Error::WorkingCounter { .. }) => 0,
+                    Err(_e) => 0,
+                };
+
+                let ema_next = ema.next(diff as f64);
+                max_deviation = max_deviation.max(ema_next.abs() as u32);
+            }
+            if max_deviation < 300 {
+                break;
+            }
+        }
+        spinner.sleep_until(deadline);
+    }
+    return group_preop_pdi;
+}
 
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
     pub fn ethercat_state_machine(&mut self) -> Result<(), anyhow::Error> {
@@ -77,77 +313,20 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         _ => continue,
                     }
 
-                    #[cfg(not(target_os = "linux"))]
-                    use ethercrab::std::tx_rx_task;
-                    #[cfg(target_os = "linux")]
-                    use ethercrab::std::tx_rx_task_io_uring;
                     if self.interface.is_some() {
-                        let (tx, rx, pdu) = PDU_STORAGE.try_split().expect("can only split once");
-                        let pdu_tx = tx;
-                        let pdu_rx = rx;
-                        let interface = self.interface.clone().unwrap();
-                        let opt = self.current_config.realtime_optimizations.clone();
-
-                        _ethercat_tx_rx_handle = std::thread::Builder::new()
-                            .name("EthercatTxRxThread".to_owned())
-                            .spawn(move || {
-                                match opt {
-                                    Some(opt) => {
-                                        let id = core_affinity::CoreId {
-                                            id: opt.ethercat_io_thread_core,
-                                        };
-                                        set_current_thread_rt_priority(
-                                            opt.ethercat_io_thread_priority as i32,
-                                        );
-                                        // Pin to the last core (e.g., Core 3 on a 4-core system)
-                                        core_affinity::set_for_current(id);
-                                        #[cfg(target_os = "linux")]
-                                        if let Some(irq_core) = opt.pin_irq_core {
-                                            let res = set_irq_affinity(&interface, irq_core as u32);
-                                            if res.is_err() {
-                                                eprintln!("set_irq_affinity failed performance may be degraded");
-                                            }
-                                        }
-                                    }
-                                    None => (),
-                                };
-                                #[cfg(target_os = "linux")]
-                                tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
-                                    .expect("Failed to run TX/RX task (io_uring)");
-                                #[cfg(not(target_os = "linux"))]
-                                get_async_runtime().block_on(async {
-                                    match tx_rx_task(&interface, pdu_tx, pdu_rx) {
-                                        Ok(task) => {
-                                            task.await.expect("TX/RX task failed");
-                                        }
-                                        Err(e) => panic!("Failed to create TX/RX task: {e}"),
-                                    }
-                                });
-                            });
-
-                        maindevice = Some(MainDevice::new(
-                            pdu,
-                            Timeouts {
-                                state_transition: Duration::from_millis(20000),
-                                pdu: Duration::from_micros(30_000),
-                                eeprom: Duration::from_millis(100),
-                                wait_loop_delay: Duration::from_millis(0),
-                                mailbox_echo: Duration::from_millis(100),
-                                mailbox_response: Duration::from_millis(1000),
-                            },
-                            MainDeviceConfig {
-                                retry_behaviour: RetryBehaviour::Count(0),
-                                dc_static_sync_iterations: 10_000,
-                            },
-                        ));
-
+                        maindevice = setup_tx_rx_thread(
+                            self.interface.clone().expect("Should be some"),
+                            self.current_config.realtime_optimizations.clone(),
+                        );
                         let rt = get_async_runtime();
                         let maindev = maindevice.as_ref().unwrap();
+
                         let res = rt.block_on(self.transition(
                             EtherCATTransition::InitGroup,
                             maindev,
                             maindev.init_single_group::<MAX_SUBDEVICES, PDI_LEN>(ethercat_now),
                         ));
+
                         group = Some(match res {
                             Ok(group) => group,
                             Err(err) => {
@@ -161,15 +340,14 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         });
                         self.state.store(EtherCATState::PreOp.into(), Relaxed);
                         send_response(msg.response_channel, ChannelResponse::ChangeState(Ok(())));
-                    };
+                    }
                 }
                 EtherCATState::PreOp => {
                     let mut i = 0;
                     let maindev = maindevice.as_ref().unwrap();
-                    let mut preop_group = group.as_mut().unwrap();
                     let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
 
-                    for subdevice in preop_group.iter(&maindev) {
+                    for subdevice in group.as_ref().unwrap().iter(&maindev) {
                         let bytes = subdevice.name().as_bytes();
                         let len = std::cmp::min(bytes.len(), 127);
                         // Copy the slice into the array
@@ -191,143 +369,13 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         Err(_e) => continue,
                     };
 
-                    match msg.channel_request {
-                        ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {
-                            EtherCATState::NoInterface => {
-                                self.state.store(ether_catstate.into(), Relaxed);
-                                send_response(
-                                    msg.response_channel,
-                                    ChannelResponse::ChangeState(Ok(())),
-                                );
-                                continue; // end the loop here -> go back to NoInterface state
-                            }
-                            EtherCATState::PreOp => continue,
-                            EtherCATState::Op => (),
-                            _ => continue,
-                        },
-                        ChannelRequests::Shutdown() => return Ok(()),
-                        ChannelRequests::SdoWriteRequest(request) => {
-                            let res = sdo_write(maindev, preop_group, request);
-                            send_response(
-                                msg.response_channel,
-                                ChannelResponse::SdoWriteResponse(res),
-                            );
-                            continue;
-                        }
-                        ChannelRequests::SdoReadRequest(request) => {
-                            match request.type_flag {
-                                SdoType::BOOL => {
-                                    let res = sdo_read::<bool>(maindev, preop_group, request);
-                                    send_response(
-                                        msg.response_channel,
-                                        ChannelResponse::SdoResponseBool(res),
-                                    );
-                                }
-                                SdoType::U8 => {
-                                    let res = sdo_read::<u8>(maindev, preop_group, request);
-                                    send_response(
-                                        msg.response_channel,
-                                        ChannelResponse::SdoResponseU8(res),
-                                    );
-                                }
-                                SdoType::U16 => {
-                                    let res = sdo_read::<u16>(maindev, preop_group, request);
-                                    send_response(
-                                        msg.response_channel,
-                                        ChannelResponse::SdoResponseU16(res),
-                                    );
-                                }
-                                SdoType::U32 => {
-                                    let res = sdo_read::<u32>(maindev, preop_group, request);
-                                    send_response(
-                                        msg.response_channel,
-                                        ChannelResponse::SdoResponseU32(res),
-                                    );
-                                }
-                                SdoType::I16 => {
-                                    let res = sdo_read::<i16>(maindev, preop_group, request);
-                                    send_response(
-                                        msg.response_channel,
-                                        ChannelResponse::SdoResponseI16(res),
-                                    );
-                                }
-                                SdoType::I32 => {
-                                    let res = sdo_read::<i32>(maindev, preop_group, request);
-                                    send_response(
-                                        msg.response_channel,
-                                        ChannelResponse::SdoResponseI32(res),
-                                    );
-                                }
-                            }
+                    let should_not_restart_loop =
+                        handle_channel_requests(msg, maindev, group.as_mut().unwrap());
+                    match should_not_restart_loop {
+                        true => (),
+                        false => continue,
+                    };
 
-                            continue;
-                        }
-                        ChannelRequests::ReadMachineIdent() => {
-                            let res = read_device_identifications(preop_group, maindev);
-                            send_response(
-                                msg.response_channel,
-                                ChannelResponse::MachineDeviceInfoResponse(res),
-                            );
-                            continue;
-                        }
-                        ChannelRequests::WriteMachineIdent(identifications) => {
-                            let res = write_device_identifications(
-                                preop_group,
-                                maindev,
-                                &identifications,
-                            );
-                            send_response(
-                                msg.response_channel,
-                                ChannelResponse::WriteMachineInfoResponse(res),
-                            );
-                            continue;
-                        }
-                        ChannelRequests::EnableDCSync0(device_address) => {
-                            let res = enable_dc_sync(&mut preop_group, maindev, device_address);
-                            send_response(
-                                msg.response_channel,
-                                ChannelResponse::EnableDCSync0Response(res),
-                            );
-                            continue;
-                        }
-                        ChannelRequests::EnableDCSync01(device_address, sync1_period) => {
-                            let res = enable_dc_sync01(
-                                &mut preop_group,
-                                maindev,
-                                device_address,
-                                sync1_period,
-                            );
-                            send_response(
-                                msg.response_channel,
-                                ChannelResponse::EnableDCSync01Response(res),
-                            );
-                            continue;
-                        }
-                        ChannelRequests::ConfigureOversampling(
-                            device_address,
-                            oversampling_settings,
-                        ) => {
-                            let res = configure_oversampling(
-                                &mut preop_group,
-                                maindev,
-                                device_address,
-                                &oversampling_settings,
-                            );
-                            send_response(
-                                msg.response_channel,
-                                ChannelResponse::ConfigureOversamplingResponse(res),
-                            );
-                            continue;
-                        }
-                    }
-                    let mut now = Instant::now();
-                    let mut averages = Vec::new();
-
-                    if let Some(group_ref) = group.as_ref() {
-                        for _ in 0..group_ref.len() {
-                            averages.push(ExponentialMovingAverage::new(64).unwrap());
-                        }
-                    }
 
                     let group_to_transition = group.take().expect("Group missing in PreOp");
                     let device_ref = maindevice.as_ref().expect("MainDevice missing");
@@ -338,51 +386,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         device_ref,
                         group_to_transition.into_pre_op_pdi(device_ref),
                     ))?;
-
-                    loop {
-                        let deadline = Instant::now()
-                            + Duration::from_micros(
-                                self.current_config.target_cycle_time_us as u64,
-                            );
-                        rt.block_on(self.guard(
-                            EtherCATTransition::TxRx(EtherCATState::PreOp),
-                            device_ref,
-                            group_preop_pdi.tx_rx_sync_system_time(device_ref),
-                        ))?;
-
-                        if now.elapsed() >= Duration::from_millis(25) {
-                            now = Instant::now();
-                            let mut max_deviation = 0;
-                            for (s1, ema) in group_preop_pdi
-                                .iter(&maindevice.as_ref().unwrap())
-                                .zip(averages.iter_mut())
-                            {
-                                let diff =
-                                    match rt.block_on(s1.register_read::<u32>(
-                                        RegisterAddress::DcSystemTimeDifference,
-                                    )) {
-                                        Ok(value) => {
-                                            let flag = 0b1u32 << 31;
-                                            if value >= flag {
-                                                // Strip off negative flag bit and negate value as normal
-                                                -((value & !flag) as i32)
-                                            } else {
-                                                value as i32
-                                            }
-                                        }
-                                        Err(ethercrab::error::Error::WorkingCounter { .. }) => 0,
-                                        Err(_e) => 0,
-                                    };
-
-                                let ema_next = ema.next(diff as f64);
-                                max_deviation = max_deviation.max(ema_next.abs() as u32);
-                            }
-                            if max_deviation < 300 {
-                                break;
-                            }
-                        }
-                        spinner.sleep_until(deadline);
-                    }
+                    group_preop_pdi = dc_static_sync(group_preop_pdi,self.current_config.target_cycle_time_us as u64);
                     let device = maindevice.as_ref().unwrap();
                     // A bad DC config shows up as InvalidDcSyncConfiguration (0x0030).
                     group_preop_pdi_dc = Some(rt.block_on(self.transition(
@@ -397,6 +401,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             },
                         ),
                     ))?);
+                    // static_sync here
                     self.state.store(EtherCATState::PreopPdi.into(), Relaxed);
                 }
                 EtherCATState::PreopPdi => {
