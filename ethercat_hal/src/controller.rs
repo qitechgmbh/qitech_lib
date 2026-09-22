@@ -31,14 +31,9 @@ use std::{
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
 
-
-
-type PreopGroup = SubDeviceGroup<
-        MAX_SUBDEVICES,
-        PDI_LEN,
-        ethercrab::DefaultLock,
-        PreOpPdi,
-        NoDc,>;
+type PreopGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>;
+type PreopPdiNoDcGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, NoDc>;
+type PreopPdiDcGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, HasDc>;
 
 fn setup_tx_rx_thread(
     interface: String,
@@ -212,32 +207,26 @@ fn handle_channel_requests(
 }
 
 fn dc_static_sync(
-    main_device : &MainDevice<'static>,
-    group_preop_pdi: PreopGroup,
-    cycle_time : u64,
-    spinner : SpinSleeper
-) -> PreopGroup {
+    main_device: &MainDevice<'_>,
+    group_preop_pdi: PreopPdiNoDcGroup,
+    cycle_time: u64,
+    spinner: SpinSleeper,
+) -> PreopPdiNoDcGroup {
     let rt = get_async_runtime();
     let mut now = Instant::now();
     let mut averages = Vec::new();
 
-    for _ in 0..group_preop_pdi.len() {        
+    for _ in 0..group_preop_pdi.len() {
         averages.push(ExponentialMovingAverage::new(64).unwrap());
     }
-    
+
     loop {
-        let deadline =
-            Instant::now() + Duration::from_micros(cycle_time);
-        let _res = rt.block_on(            
-            group_preop_pdi.tx_rx_sync_system_time(main_device)
-        );
+        let deadline = Instant::now() + Duration::from_micros(cycle_time);
+        let _res = rt.block_on(group_preop_pdi.tx_rx_sync_system_time(main_device));
         if now.elapsed() >= Duration::from_millis(25) {
             now = Instant::now();
             let mut max_deviation = 0;
-            for (s1, ema) in group_preop_pdi
-                .iter(&main_device)
-                .zip(averages.iter_mut())
-            {
+            for (s1, ema) in group_preop_pdi.iter(&main_device).zip(averages.iter_mut()) {
                 let diff = match rt
                     .block_on(s1.register_read::<u32>(RegisterAddress::DcSystemTimeDifference))
                 {
@@ -265,19 +254,80 @@ fn dc_static_sync(
     }
     return group_preop_pdi;
 }
+enum PreopResult {
+    Preop(PreopGroup),
+    PreopPdiDc(PreopPdiDcGroup),
+}
 
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
+    fn handle_preop(&self,group_opt : Option<PreopGroup>, maindevice : &MainDevice<'_>,spinner: SpinSleeper) -> PreopResult {
+        let mut i = 0;
+        let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
+        let rt = get_async_runtime();
+        let mut group = group_opt.unwrap();
+        for subdevice in group.iter(maindevice) {
+            let bytes = subdevice.name().as_bytes();
+            let len = std::cmp::min(bytes.len(), 127);
+            // Copy the slice into the array 
+            subdevice_guard[i].name[..len].copy_from_slice(&bytes[..len]);
+            subdevice_guard[i].product_id = subdevice.identity().product_id;
+            subdevice_guard[i].revision = subdevice.identity().revision;
+            subdevice_guard[i].vendor = subdevice.identity().vendor_id;
+            subdevice_guard[i].device_address = subdevice.configured_address();
+            i += 1;
+        } 
+        drop(subdevice_guard);
+        self.subdevice_count.store(i as u64, Relaxed);
+        get_async_runtime().block_on(self.service_diagnostic_request(maindevice));
+
+        let msg = match self.rx_channel.try_recv() {
+            Ok(value) => value,
+            Err(_e) => return PreopResult::Preop( group ),
+        };
+
+        let should_not_restart_loop =
+            handle_channel_requests(msg, maindevice, &mut group);
+        
+        match should_not_restart_loop {
+            true => (),
+            false => return PreopResult::Preop( group ),
+        };        
+
+        let mut group_preop_pdi : PreopPdiNoDcGroup = rt.block_on(self.transition(
+            EtherCATTransition::PreOpToPreOpPdi,
+            maindevice,
+            group.into_pre_op_pdi(maindevice),
+        )).expect("msg");
+
+        group_preop_pdi = dc_static_sync(
+            maindevice,
+            group_preop_pdi,
+            self.current_config.target_cycle_time_us as u64,
+            spinner,
+        );
+
+        
+        // A bad DC config shows up as InvalidDcSyncConfiguration (0x0030).
+        let group_preop_pdi_dc = rt.block_on(self.transition(
+            EtherCATTransition::ConfigureDcSync,
+            maindevice,
+            group_preop_pdi.configure_dc_sync(
+                maindevice,
+                DcConfiguration {
+                    start_delay: self.current_config.dc_config.start_delay,
+                    sync0_period: self.current_config.dc_config.sync0_period,
+                    sync0_shift: self.current_config.dc_config.sync0_shift,
+                },
+            ),
+        )).expect("msg");
+        self.state.store(EtherCATState::PreopPdi.into(), Relaxed);
+        return PreopResult::PreopPdiDc( group_preop_pdi_dc )
+    }
+
     pub fn ethercat_state_machine(&mut self) -> Result<(), anyhow::Error> {
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> =
             None;
-        let mut group_preop_pdi: SubDeviceGroup<
-            MAX_SUBDEVICES,
-            PDI_LEN,
-            ethercrab::DefaultLock,
-            PreOpPdi,
-            NoDc,
-        >;
         let mut group_preop_pdi_dc: Option<
             SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, HasDc>,
         > = None;
@@ -344,66 +394,14 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     }
                 }
                 EtherCATState::PreOp => {
-                    let mut i = 0;
-                    let maindev = maindevice.as_ref().unwrap();
-                    let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
-
-                    for subdevice in group.as_ref().unwrap().iter(&maindev) {
-                        let bytes = subdevice.name().as_bytes();
-                        let len = std::cmp::min(bytes.len(), 127);
-                        // Copy the slice into the array
-                        subdevice_guard[i].name[..len].copy_from_slice(&bytes[..len]);
-                        subdevice_guard[i].product_id = subdevice.identity().product_id;
-                        subdevice_guard[i].revision = subdevice.identity().revision;
-                        subdevice_guard[i].vendor = subdevice.identity().vendor_id;
-                        subdevice_guard[i].device_address = subdevice.configured_address();
-                        i += 1;
+                    let res = self.handle_preop(group,maindevice.as_ref().unwrap(),spinner);
+                    match res {
+                        PreopResult::Preop(preop_group) => group = Some(preop_group),
+                        PreopResult::PreopPdiDc(preop_pdi_dc) => {
+                            group = None;
+                            group_preop_pdi_dc = Some(preop_pdi_dc);
+                        },
                     }
-
-                    drop(subdevice_guard);
-                    self.subdevice_count.store(i as u64, Relaxed);
-
-                    get_async_runtime().block_on(self.service_diagnostic_request(maindev));
-
-                    let msg = match self.rx_channel.try_recv() {
-                        Ok(value) => value,
-                        Err(_e) => continue,
-                    };
-
-                    let should_not_restart_loop =
-                        handle_channel_requests(msg, maindev, group.as_mut().unwrap());
-                    match should_not_restart_loop {
-                        true => (),
-                        false => continue,
-                    };
-
-
-                    let group_to_transition = group.take().expect("Group missing in PreOp");
-                    let device_ref = maindevice.as_ref().expect("MainDevice missing");
-                    let rt = get_async_runtime();
-
-                    group_preop_pdi = rt.block_on(self.transition(
-                        EtherCATTransition::PreOpToPreOpPdi,
-                        device_ref,
-                        group_to_transition.into_pre_op_pdi(device_ref),
-                    ))?;
-                    group_preop_pdi = dc_static_sync(device_ref,group_preop_pdi,self.current_config.target_cycle_time_us as u64,spinner);
-                    let device = maindevice.as_ref().unwrap();
-                    // A bad DC config shows up as InvalidDcSyncConfiguration (0x0030).
-                    group_preop_pdi_dc = Some(rt.block_on(self.transition(
-                        EtherCATTransition::ConfigureDcSync,
-                        device,
-                        group_preop_pdi.configure_dc_sync(
-                            device,
-                            DcConfiguration {
-                                start_delay: self.current_config.dc_config.start_delay,
-                                sync0_period: self.current_config.dc_config.sync0_period,
-                                sync0_shift: self.current_config.dc_config.sync0_shift,
-                            },
-                        ),
-                    ))?);
-                    // static_sync here
-                    self.state.store(EtherCATState::PreopPdi.into(), Relaxed);
                 }
                 EtherCATState::PreopPdi => {
                     // State machine to handle transition to SafeOp with process data
@@ -434,6 +432,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
                     let mut tick = 0;
                     let rt = get_async_runtime();
+
                     let group_safe_op = loop {
                         if let Some(device) = maindevice.as_ref() {
                             rt.block_on(self.service_diagnostic_request(device));
@@ -442,12 +441,13 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         match group_container.take().unwrap() {
                             GroupState::PreOp(group) => {
                                 let device = maindevice.as_ref().unwrap();
-                                let now = Instant::now(); // Moved inside
+                                let now = Instant::now();
                                 let res = rt.block_on(self.guard(
                                     EtherCATTransition::TxRx(EtherCATState::PreopPdi),
                                     device,
                                     group.tx_rx_dc(device),
                                 ))?;
+
                                 if tick <= self.current_config.dc_config.target_dc_tick {
                                     spinner.sleep_until(now + res.extra.next_cycle_wait);
                                 }
