@@ -416,7 +416,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         group_opt: Option<OpGroup>,
         maindevice: &MainDevice<'_>,
         spinner: SpinSleeper,
-    ) -> Result<(),anyhow::Error> {
+    ) -> Result<(), anyhow::Error> {
         let mut is_all_op = false;
         let mut not_all_op_cycles: u32 = 0;
         let ramp_started = Instant::now();
@@ -665,7 +665,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             }
                             None => (),
                         };
-                        return self.handle_op(group_op,maindevice,spinner).await
+                        return self.handle_op(group_op, maindevice, spinner).await;
                     });
                 }
             }
