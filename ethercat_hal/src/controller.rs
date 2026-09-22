@@ -32,9 +32,11 @@ use std::{
 use ta::{Next, indicators::ExponentialMovingAverage};
 
 type PreopGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>;
-type PreopPdiNoDcGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, NoDc>;
-type PreopPdiDcGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, HasDc>;
-
+type PreopPdiNoDcGroup =
+    SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, NoDc>;
+type PreopPdiDcGroup =
+    SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, HasDc>;
+type OpGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, Op, HasDc>;
 fn setup_tx_rx_thread(
     interface: String,
     opt: Option<RtOptimizationConfig>,
@@ -259,8 +261,19 @@ enum PreopResult {
     PreopPdiDc(PreopPdiDcGroup),
 }
 
+enum PreopPdiResult {
+    PreopPdiDc(PreopPdiDcGroup),
+    SafeOp(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, SafeOp, HasDc>),
+    Op(OpGroup),
+}
+
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
-    fn handle_preop(&self,group_opt : Option<PreopGroup>, maindevice : &MainDevice<'_>,spinner: SpinSleeper) -> PreopResult {
+    fn handle_preop(
+        &self,
+        group_opt: Option<PreopGroup>,
+        maindevice: &MainDevice<'_>,
+        spinner: SpinSleeper,
+    ) -> PreopResult {
         let mut i = 0;
         let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
         let rt = get_async_runtime();
@@ -268,36 +281,37 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         for subdevice in group.iter(maindevice) {
             let bytes = subdevice.name().as_bytes();
             let len = std::cmp::min(bytes.len(), 127);
-            // Copy the slice into the array 
+            // Copy the slice into the array
             subdevice_guard[i].name[..len].copy_from_slice(&bytes[..len]);
             subdevice_guard[i].product_id = subdevice.identity().product_id;
             subdevice_guard[i].revision = subdevice.identity().revision;
             subdevice_guard[i].vendor = subdevice.identity().vendor_id;
             subdevice_guard[i].device_address = subdevice.configured_address();
             i += 1;
-        } 
+        }
         drop(subdevice_guard);
         self.subdevice_count.store(i as u64, Relaxed);
         get_async_runtime().block_on(self.service_diagnostic_request(maindevice));
 
         let msg = match self.rx_channel.try_recv() {
             Ok(value) => value,
-            Err(_e) => return PreopResult::Preop( group ),
+            Err(_e) => return PreopResult::Preop(group),
         };
 
-        let should_not_restart_loop =
-            handle_channel_requests(msg, maindevice, &mut group);
-        
+        let should_not_restart_loop = handle_channel_requests(msg, maindevice, &mut group);
+
         match should_not_restart_loop {
             true => (),
-            false => return PreopResult::Preop( group ),
-        };        
+            false => return PreopResult::Preop(group),
+        };
 
-        let mut group_preop_pdi : PreopPdiNoDcGroup = rt.block_on(self.transition(
-            EtherCATTransition::PreOpToPreOpPdi,
-            maindevice,
-            group.into_pre_op_pdi(maindevice),
-        )).expect("msg");
+        let mut group_preop_pdi: PreopPdiNoDcGroup = rt
+            .block_on(self.transition(
+                EtherCATTransition::PreOpToPreOpPdi,
+                maindevice,
+                group.into_pre_op_pdi(maindevice),
+            ))
+            .expect("msg");
 
         group_preop_pdi = dc_static_sync(
             maindevice,
@@ -306,22 +320,93 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
             spinner,
         );
 
-        
         // A bad DC config shows up as InvalidDcSyncConfiguration (0x0030).
-        let group_preop_pdi_dc = rt.block_on(self.transition(
-            EtherCATTransition::ConfigureDcSync,
-            maindevice,
-            group_preop_pdi.configure_dc_sync(
+        let group_preop_pdi_dc = rt
+            .block_on(self.transition(
+                EtherCATTransition::ConfigureDcSync,
                 maindevice,
-                DcConfiguration {
-                    start_delay: self.current_config.dc_config.start_delay,
-                    sync0_period: self.current_config.dc_config.sync0_period,
-                    sync0_shift: self.current_config.dc_config.sync0_shift,
-                },
-            ),
-        )).expect("msg");
+                group_preop_pdi.configure_dc_sync(
+                    maindevice,
+                    DcConfiguration {
+                        start_delay: self.current_config.dc_config.start_delay,
+                        sync0_period: self.current_config.dc_config.sync0_period,
+                        sync0_shift: self.current_config.dc_config.sync0_shift,
+                    },
+                ),
+            ))
+            .expect("msg");
         self.state.store(EtherCATState::PreopPdi.into(), Relaxed);
-        return PreopResult::PreopPdiDc( group_preop_pdi_dc )
+        return PreopResult::PreopPdiDc(group_preop_pdi_dc);
+    }
+
+    fn handle_preop_pdi(
+        &self,
+        group_opt: Option<PreopPdiDcGroup>,
+        maindevice: &MainDevice<'_>,
+        spinner: SpinSleeper,
+    ) -> PreopPdiResult {
+        let rt = get_async_runtime();
+        let group = group_opt.unwrap();
+        // Needs to run atleast once
+        let res = rt
+            .block_on(self.guard(
+                EtherCATTransition::TxRx(EtherCATState::PreopPdi),
+                maindevice,
+                group.tx_rx_dc(maindevice),
+            ))
+            .unwrap();
+        spinner.sleep_until(Instant::now() + res.extra.next_cycle_wait);
+
+        let group = rt
+            .block_on(self.transition(
+                EtherCATTransition::PreOpPdiToSafeOp,
+                maindevice,
+                group.into_safe_op(maindevice),
+            ))
+            .expect("msg");
+
+        // Apply the same logic here
+        let now = Instant::now();
+        let res = rt
+            .block_on(self.guard(
+                EtherCATTransition::TxRx(EtherCATState::PreopPdi),
+                maindevice,
+                group.tx_rx_dc(maindevice),
+            ))
+            .expect("msg");
+        let is_all_safe = res.is_in_state(ethercrab::SubDeviceState::SafeOp);
+        if !is_all_safe {
+            spinner.sleep_until(now + res.extra.next_cycle_wait);
+        }
+
+        if is_all_safe {
+            let mut rx_offset = 0;
+            let mut tx_offset = 0;
+            let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
+            for (i, subdevice) in group.iter(maindevice).enumerate() {
+                let length_tx = subdevice.io_raw().inputs().len();
+                let length_rx = subdevice.io_raw().outputs().len();
+
+                subdevice_guard[i].start_tx = tx_offset;
+                subdevice_guard[i].end_tx = tx_offset + length_tx;
+
+                subdevice_guard[i].start_rx = rx_offset;
+                subdevice_guard[i].end_rx = rx_offset + length_rx;
+
+                rx_offset += length_rx;
+                tx_offset += length_tx;
+            }
+        };
+
+        let group_op = rt
+            .block_on(self.transition(
+                EtherCATTransition::SafeOpToOpRequest,
+                maindevice,
+                group.request_into_op(maindevice),
+            ))
+            .expect("msg");
+        self.state.store(EtherCATState::Op.into(), Relaxed);
+        return PreopPdiResult::Op(group_op);
     }
 
     pub fn ethercat_state_machine(&mut self) -> Result<(), anyhow::Error> {
@@ -394,127 +479,31 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     }
                 }
                 EtherCATState::PreOp => {
-                    let res = self.handle_preop(group,maindevice.as_ref().unwrap(),spinner);
+                    let res = self.handle_preop(group, maindevice.as_ref().unwrap(), spinner);
                     match res {
                         PreopResult::Preop(preop_group) => group = Some(preop_group),
                         PreopResult::PreopPdiDc(preop_pdi_dc) => {
                             group = None;
                             group_preop_pdi_dc = Some(preop_pdi_dc);
-                        },
+                        }
                     }
                 }
                 EtherCATState::PreopPdi => {
-                    // State machine to handle transition to SafeOp with process data
-                    enum GroupState {
-                        PreOp(
-                            SubDeviceGroup<
-                                MAX_SUBDEVICES,
-                                PDI_LEN,
-                                ethercrab::DefaultLock,
-                                PreOpPdi,
-                                HasDc,
-                            >,
-                        ),
-                        SafeOp(
-                            SubDeviceGroup<
-                                MAX_SUBDEVICES,
-                                PDI_LEN,
-                                ethercrab::DefaultLock,
-                                SafeOp,
-                                HasDc,
-                            >,
-                        ),
+                    let res = self.handle_preop_pdi(group_preop_pdi_dc, maindevice.as_ref().unwrap(), spinner);
+                    match res {
+                        PreopPdiResult::Op(group_operational) =>{
+                            group_op = Some(group_operational);
+                            group_preop_pdi_dc = None;
+                        },
+                        PreopPdiResult::PreopPdiDc(preop_pdi_dc) => {
+                            group_op = None;
+                            group_preop_pdi_dc = Some(preop_pdi_dc);
+                        }
+                        PreopPdiResult::SafeOp(_) => {
+                            group_op = None;
+                            group_preop_pdi_dc = None;
+                        }
                     }
-
-                    let mut group_container = Some(GroupState::PreOp(
-                        group_preop_pdi_dc.take().expect("PDI Group missing"),
-                    ));
-
-                    let mut tick = 0;
-                    let rt = get_async_runtime();
-
-                    let group_safe_op = loop {
-                        if let Some(device) = maindevice.as_ref() {
-                            rt.block_on(self.service_diagnostic_request(device));
-                        }
-
-                        match group_container.take().unwrap() {
-                            GroupState::PreOp(group) => {
-                                let device = maindevice.as_ref().unwrap();
-                                let now = Instant::now();
-                                let res = rt.block_on(self.guard(
-                                    EtherCATTransition::TxRx(EtherCATState::PreopPdi),
-                                    device,
-                                    group.tx_rx_dc(device),
-                                ))?;
-
-                                if tick <= self.current_config.dc_config.target_dc_tick {
-                                    spinner.sleep_until(now + res.extra.next_cycle_wait);
-                                }
-
-                                if tick > self.current_config.dc_config.target_dc_tick {
-                                    let group = rt.block_on(self.transition(
-                                        EtherCATTransition::PreOpPdiToSafeOp,
-                                        device,
-                                        group.into_safe_op(device),
-                                    ))?;
-                                    group_container = Some(GroupState::SafeOp(group));
-                                } else {
-                                    group_container = Some(GroupState::PreOp(group));
-                                }
-                            }
-                            GroupState::SafeOp(group) => {
-                                let device = maindevice.as_ref().unwrap();
-                                // Apply the same logic here
-                                let now = Instant::now();
-                                let res = rt.block_on(self.guard(
-                                    EtherCATTransition::TxRx(EtherCATState::PreopPdi),
-                                    device,
-                                    group.tx_rx_dc(device),
-                                ))?;
-                                let is_all_safe =
-                                    res.is_in_state(ethercrab::SubDeviceState::SafeOp);
-                                if !is_all_safe {
-                                    spinner.sleep_until(now + res.extra.next_cycle_wait);
-                                }
-
-                                if is_all_safe {
-                                    let mut rx_offset = 0;
-                                    let mut tx_offset = 0;
-                                    let mut subdevice_guard =
-                                        get_async_runtime().block_on(self.subdevices.lock());
-                                    for (i, subdevice) in group.iter(device).enumerate() {
-                                        let length_tx = subdevice.io_raw().inputs().len();
-                                        let length_rx = subdevice.io_raw().outputs().len();
-
-                                        subdevice_guard[i].start_tx = tx_offset;
-                                        subdevice_guard[i].end_tx = tx_offset + length_tx;
-
-                                        subdevice_guard[i].start_rx = rx_offset;
-                                        subdevice_guard[i].end_rx = rx_offset + length_rx;
-
-                                        rx_offset += length_rx;
-                                        tx_offset += length_tx;
-                                    }
-                                    drop(subdevice_guard);
-                                    break group;
-                                } else {
-                                    group_container = Some(GroupState::SafeOp(group));
-                                }
-                            }
-                        }
-                        tick += 1;
-                    };
-
-                    // Consumes the group, so no retry is possible. The Err ends the thread
-                    // cleanly and the supervisor (systemd) restarts the process.
-                    let device = maindevice.as_ref().unwrap();
-                    group_op = Some(rt.block_on(self.transition(
-                        EtherCATTransition::SafeOpToOpRequest,
-                        device,
-                        group_safe_op.request_into_op(device),
-                    ))?);
-                    self.state.store(EtherCATState::Op.into(), Relaxed);
                 }
 
                 EtherCATState::Op => {
