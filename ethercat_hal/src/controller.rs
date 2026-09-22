@@ -37,6 +37,18 @@ type PreopPdiNoDcGroup =
 type PreopPdiDcGroup =
     SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, HasDc>;
 type OpGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, Op, HasDc>;
+
+enum PreopResult {
+    Preop(PreopGroup),
+    PreopPdiDc(PreopPdiDcGroup),
+}
+
+enum PreopPdiResult {
+    PreopPdiDc(PreopPdiDcGroup),
+    SafeOp(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, SafeOp, HasDc>),
+    Op(OpGroup),
+}
+
 fn setup_tx_rx_thread(
     interface: String,
     opt: Option<RtOptimizationConfig>,
@@ -256,16 +268,6 @@ fn dc_static_sync(
     }
     return group_preop_pdi;
 }
-enum PreopResult {
-    Preop(PreopGroup),
-    PreopPdiDc(PreopPdiDcGroup),
-}
-
-enum PreopPdiResult {
-    PreopPdiDc(PreopPdiDcGroup),
-    SafeOp(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, SafeOp, HasDc>),
-    Op(OpGroup),
-}
 
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
     fn handle_preop(
@@ -409,6 +411,137 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         return PreopPdiResult::Op(group_op);
     }
 
+    async fn handle_op(
+        &mut self,
+        group_opt: Option<OpGroup>,
+        maindevice: &MainDevice<'_>,
+        spinner: SpinSleeper,
+    ) -> Result<(),anyhow::Error> {
+        let mut is_all_op = false;
+        let mut not_all_op_cycles: u32 = 0;
+        let ramp_started = Instant::now();
+        let cycle_time_ns = self.current_config.target_cycle_time_us as i64 * 1000;
+        let mut integral: i64 = 0;
+        let mut error: i64;
+        let mut delta: i64;
+        // TODO Make these configurable?
+        let pgain = 0.01 as f64;
+        let igain = 0.00002 as f64;
+        // sync_offset_ns is 50% of macro cycle time(Sync1 FULL period)
+        // This essentially means we send the frame 50% into the sync1 period
+        let sync_offset_ns: u64 = (self.current_config.target_cycle_time_us as u64 * 1000) / 2;
+        let group = group_opt.unwrap();
+
+        loop {
+            // Instant::now() on Almost any modern linux pc compiles down to one instruction if pc is not older than 2006 or so
+            let cycle_start = Instant::now();
+            let res = self
+                .guard(
+                    EtherCATTransition::TxRx(EtherCATState::Op),
+                    maindevice,
+                    group.tx_rx_dc(maindevice),
+                )
+                .await?;
+            delta = (res.extra.dc_system_time - sync_offset_ns) as i64 % cycle_time_ns;
+            if delta > (cycle_time_ns / 2) {
+                delta = delta - cycle_time_ns
+            }
+            error = -delta;
+            // Not sure what to clamp to, if at all Clamping seemed to have a negative effect? so just keep it as is
+            integral = integral + error;
+            // Maybe instead it makes sense to clamp offsettime?
+            let offsettime = ((error as f64 * pgain) + (integral as f64 * igain)) as i64;
+            self.dc_system_time_ns
+                .store(res.extra.dc_system_time, Relaxed);
+            self.next_cycle = cycle_start
+                + Duration::from_nanos(
+                    (cycle_time_ns + offsettime.clamp(cycle_time_ns * -1, cycle_time_ns)) as u64,
+                );
+
+            if !is_all_op {
+                if res.all_op() {
+                    let mut subdevice_guard = self.subdevices.lock().await;
+                    for i in 0..self.subdevice_count.load(Relaxed) {
+                        subdevice_guard[i as usize].initialized = true;
+                    }
+                    self.all_subdevices_operational.store(true, Relaxed);
+                    drop(subdevice_guard);
+                    not_all_op_cycles = 0;
+                    is_all_op = true;
+                } else {
+                    spinner.sleep_until(self.next_cycle);
+                    self.cycle_time_us
+                        .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
+                    not_all_op_cycles += 1;
+
+                    if not_all_op_cycles >= self.current_config.op_ramp_grace_cycles {
+                        self.record(
+                            EtherCATTransition::OpRamp,
+                            maindevice,
+                            ramp_started,
+                            Err::<(), _>(format!(
+                                "not all subdevices reached OP within \
+                                                 {not_all_op_cycles} cycles"
+                            )),
+                        )
+                        .await?;
+                    }
+                    continue;
+                }
+            }
+
+            match self.input_producer.input_buffer_mut() {
+                Some(buffer) => {
+                    // We get a mutable slice to the whole buffer to make sub-slicing easier
+                    let mut current_offset = 0;
+                    for subdevice in group.iter(&maindevice) {
+                        let len = subdevice.io_raw().inputs().len();
+                        if current_offset + len <= ETHERCAT_TX_RX_SIZE {
+                            buffer[current_offset..current_offset + len]
+                                .copy_from_slice(subdevice.io_raw().inputs());
+                            current_offset += len;
+                        } else {
+                            break;
+                        }
+                    }
+                    self.input_producer.publish();
+                }
+                None => {}
+            }
+            self.inputs_ready.store(true, Relaxed);
+
+            // Inside the window already reserved for the client side, so a
+            // register read costs the cycle nothing it was going to use.
+            self.service_diagnostic_request(maindevice).await;
+
+            // This gives the client side time to look at the inputs and write outputs
+            // Might be a bit too tight if running < 125us but at that point it isnt really stable anyways
+            spinner.sleep_until(self.next_cycle - Duration::from_nanos(10000));
+            match self.output_consumer.read() {
+                Some(full_buffer) => {
+                    let mut current_offset = 0;
+                    for subdevice in group.iter(&maindevice) {
+                        let mut output = subdevice.outputs_raw_mut();
+                        let len = output.len();
+                        output.copy_from_slice(&full_buffer[current_offset..current_offset + len]);
+                        current_offset += len;
+                    }
+                    self.output_consumer.finish_read();
+                }
+                None => {}
+            };
+            spinner.sleep_until(self.next_cycle);
+            self.cycle_time_us
+                .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
+            if self.cycle.load(Relaxed) == u64::MAX {
+                self.cycle.store(0, Relaxed);
+            } else {
+                self.cycle.fetch_add(1, Relaxed);
+            }
+            self.inputs_ready.store(false, Relaxed);
+        }
+    }
+
     pub fn ethercat_state_machine(&mut self) -> Result<(), anyhow::Error> {
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> =
@@ -489,12 +622,16 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     }
                 }
                 EtherCATState::PreopPdi => {
-                    let res = self.handle_preop_pdi(group_preop_pdi_dc, maindevice.as_ref().unwrap(), spinner);
+                    let res = self.handle_preop_pdi(
+                        group_preop_pdi_dc,
+                        maindevice.as_ref().unwrap(),
+                        spinner,
+                    );
                     match res {
-                        PreopPdiResult::Op(group_operational) =>{
+                        PreopPdiResult::Op(group_operational) => {
                             group_op = Some(group_operational);
                             group_preop_pdi_dc = None;
-                        },
+                        }
                         PreopPdiResult::PreopPdiDc(preop_pdi_dc) => {
                             group_op = None;
                             group_preop_pdi_dc = Some(preop_pdi_dc);
@@ -507,7 +644,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                 }
 
                 EtherCATState::Op => {
-                    let group = group_op.as_ref().unwrap();
                     let maindevice = maindevice.as_ref().unwrap();
                     return futures::executor::block_on(async {
                         match &self.current_config.realtime_optimizations {
@@ -529,136 +665,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             }
                             None => (),
                         };
-
-                        let mut is_all_op = false;
-                        let mut not_all_op_cycles: u32 = 0;
-                        let ramp_started = Instant::now();
-                        let cycle_time_ns = self.current_config.target_cycle_time_us as i64 * 1000;
-                        let mut integral: i64 = 0;
-                        let mut error: i64;
-                        let mut delta: i64;
-                        // TODO Make these configurable?
-                        let pgain = 0.01 as f64;
-                        let igain = 0.00002 as f64;
-                        // sync_offset_ns is 50% of macro cycle time(Sync1 FULL period)
-                        // This essentially means we send the frame 50% into the sync1 period
-                        let sync_offset_ns: u64 =
-                            (self.current_config.target_cycle_time_us as u64 * 1000) / 2;
-
-                        loop {
-                            let cycle_start = Instant::now();
-                            let res = self
-                                .guard(
-                                    EtherCATTransition::TxRx(EtherCATState::Op),
-                                    maindevice,
-                                    group.tx_rx_dc(maindevice),
-                                )
-                                .await?;
-                            delta =
-                                (res.extra.dc_system_time - sync_offset_ns) as i64 % cycle_time_ns;
-                            if delta > (cycle_time_ns / 2) {
-                                delta = delta - cycle_time_ns
-                            }
-                            error = -delta;
-                            // Not sure what to clamp to, if at all Clamping seemed to have a negative effect? so just keep it as is
-                            integral = integral + error; //.clamp(sync_offset_ns as i64*-1 * 10, sync_offset_ns as i64 * 10);
-                            // Maybe instead it makes sense to clamp offsettime?
-                            let offsettime =
-                                ((error as f64 * pgain) + (integral as f64 * igain)) as i64;
-                            self.dc_system_time_ns
-                                .store(res.extra.dc_system_time, Relaxed);
-                            self.next_cycle = cycle_start
-                                + Duration::from_nanos(
-                                    (cycle_time_ns
-                                        + offsettime.clamp(cycle_time_ns * -1, cycle_time_ns))
-                                        as u64,
-                                );
-
-                            if !is_all_op {
-                                if res.all_op() {
-                                    let mut subdevice_guard = self.subdevices.lock().await;
-                                    for i in 0..self.subdevice_count.load(Relaxed) {
-                                        subdevice_guard[i as usize].initialized = true;
-                                    }
-                                    self.all_subdevices_operational.store(true, Relaxed);
-                                    drop(subdevice_guard);
-                                    not_all_op_cycles = 0;
-                                    is_all_op = true;
-                                } else {
-                                    spinner.sleep_until(self.next_cycle);
-                                    self.cycle_time_us
-                                        .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
-                                    not_all_op_cycles += 1;
-
-                                    if not_all_op_cycles >= self.current_config.op_ramp_grace_cycles
-                                    {
-                                        self.record(
-                                            EtherCATTransition::OpRamp,
-                                            maindevice,
-                                            ramp_started,
-                                            Err::<(), _>(format!(
-                                                "not all subdevices reached OP within \
-                                                 {not_all_op_cycles} cycles"
-                                            )),
-                                        )
-                                        .await?;
-                                    }
-                                    continue;
-                                }
-                            }
-
-                            match self.input_producer.input_buffer_mut() {
-                                Some(buffer) => {
-                                    // We get a mutable slice to the whole buffer to make sub-slicing easier
-                                    let mut current_offset = 0;
-                                    for subdevice in group.iter(&maindevice) {
-                                        let len = subdevice.io_raw().inputs().len();
-                                        if current_offset + len <= ETHERCAT_TX_RX_SIZE {
-                                            buffer[current_offset..current_offset + len]
-                                                .copy_from_slice(subdevice.io_raw().inputs());
-                                            current_offset += len;
-                                        } else {
-                                            break;
-                                        }
-                                    }
-                                    self.input_producer.publish();
-                                }
-                                None => {}
-                            }
-                            self.inputs_ready.store(true, Relaxed);
-
-                            // Inside the window already reserved for the client side, so a
-                            // register read costs the cycle nothing it was going to use.
-                            self.service_diagnostic_request(maindevice).await;
-
-                            // This gives the client side time to look at the inputs and write outputs
-                            // Might be a bit too tight if running < 125us but at that point it isnt really stable anyways
-                            spinner.sleep_until(self.next_cycle - Duration::from_nanos(10000));
-                            match self.output_consumer.read() {
-                                Some(full_buffer) => {
-                                    let mut current_offset = 0;
-                                    for subdevice in group.iter(&maindevice) {
-                                        let mut output = subdevice.outputs_raw_mut();
-                                        let len = output.len();
-                                        output.copy_from_slice(
-                                            &full_buffer[current_offset..current_offset + len],
-                                        );
-                                        current_offset += len;
-                                    }
-                                    self.output_consumer.finish_read();
-                                }
-                                None => {}
-                            };
-                            spinner.sleep_until(self.next_cycle);
-                            self.cycle_time_us
-                                .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
-                            if self.cycle.load(Relaxed) == u64::MAX {
-                                self.cycle.store(0, Relaxed);
-                            } else {
-                                self.cycle.fetch_add(1, Relaxed);
-                            }
-                            self.inputs_ready.store(false, Relaxed);
-                        }
+                        return self.handle_op(group_op,maindevice,spinner).await
                     });
                 }
             }
