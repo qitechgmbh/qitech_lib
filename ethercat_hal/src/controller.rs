@@ -212,9 +212,10 @@ fn handle_channel_requests(
 }
 
 fn dc_static_sync(
-    main_device : MainDevice<'static>,
+    main_device : &MainDevice<'static>,
     group_preop_pdi: PreopGroup,
     cycle_time : u64,
+    spinner : SpinSleeper
 ) -> PreopGroup {
     let rt = get_async_runtime();
     let mut now = Instant::now();
@@ -227,8 +228,8 @@ fn dc_static_sync(
     loop {
         let deadline =
             Instant::now() + Duration::from_micros(cycle_time);
-        rt.block_on(            
-            group_preop_pdi.tx_rx_sync_system_time(&main_device)
+        let _res = rt.block_on(            
+            group_preop_pdi.tx_rx_sync_system_time(main_device)
         );
         if now.elapsed() >= Duration::from_millis(25) {
             now = Instant::now();
@@ -386,7 +387,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         device_ref,
                         group_to_transition.into_pre_op_pdi(device_ref),
                     ))?;
-                    group_preop_pdi = dc_static_sync(group_preop_pdi,self.current_config.target_cycle_time_us as u64);
+                    group_preop_pdi = dc_static_sync(device_ref,group_preop_pdi,self.current_config.target_cycle_time_us as u64,spinner);
                     let device = maindevice.as_ref().unwrap();
                     // A bad DC config shows up as InvalidDcSyncConfiguration (0x0030).
                     group_preop_pdi_dc = Some(rt.block_on(self.transition(
