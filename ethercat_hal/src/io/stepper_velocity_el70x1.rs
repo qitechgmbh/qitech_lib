@@ -55,7 +55,7 @@ pub trait StepperVelocityEL70x1Device: EthercatDevice {
     /// Set the speed in steps per second
     fn set_speed(&mut self, port: usize, steps_per_second: f64) -> Result<(), Error> {
         // Get current state to preserve other output values
-        let mut output = self.get_output(port).unwrap();
+        let mut output = self.get_output(port)?;
 
         // Get speed range from device to convert steps to velocity
         let speed_range = self.get_speed_range(port);
@@ -69,20 +69,21 @@ pub trait StepperVelocityEL70x1Device: EthercatDevice {
     }
 
     /// Get the speed in steps per second
-    fn get_speed(&self, port: usize) -> i32 {
-        let output = self.get_output(port).unwrap();
+    fn get_speed(&self, port: usize) -> Result<i32, Error> {
+        let output = self.get_output(port)?;
         let speed_range = self.get_speed_range(port);
         let converter = EL70x1VelocityConverter::new(&speed_range);
-        converter.velocity_to_steps(output.velocity, true) as i32
+        Ok(converter.velocity_to_steps(output.velocity, true) as i32)
     }
 
     fn get_port_count(&self) -> usize;
     fn is_enabled(&self, port: usize) -> bool;
 
-    fn set_enabled(&mut self, port: usize, enabled: bool) {
-        let mut output = self.get_output(port).unwrap();
+    fn set_enabled(&mut self, port: usize, enabled: bool) -> Result<(), Error> {
+        let mut output = self.get_output(port)?;
         output.enable = enabled;
-        let _ = self.set_output(port, output);
+        self.set_output(port, output)?;
+        Ok(())
     }
 
     fn get_position(&self, port: usize) -> i128;
