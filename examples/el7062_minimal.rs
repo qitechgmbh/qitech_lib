@@ -122,11 +122,11 @@ fn main() {
         match read_dmc_drive_status(&eth_control.channel, device_address, port) {
             Ok(status) => {
                 tracing::info!(
-                    "EL7062 ch{port} DMC DriveStatus snapshot: ready_to_enable={} ready={} warning={} error={}",
-                    status.ready_to_enable,
-                    status.ready,
-                    status.warning,
-                    status.error
+                    "EL7062 ch{port} DMC DriveStatus snapshot (PreOp): ready_to_enable={} ready={} warn={} err={}",
+                    status.ready_to_enable as u8,
+                    status.ready as u8,
+                    status.warning as u8,
+                    status.error as u8
                 );
                 dmc_snapshot[port] = Some(status);
             }
@@ -144,23 +144,6 @@ fn main() {
     // The PreOp value is representative anyway: a channel cannot be enabled
     // until `ready_to_enable` is 1, and without motor-supply detection the
     // EL7062 refuses to leave ReadyToSwitchOn in the first place.
-    let mut dmc_snapshot = [DmcDriveStatus::default(); 2];
-    for port in 0..2 {
-        match read_dmc_drive_status(&eth_control.channel, device_address, port) {
-            Ok(status) => {
-                tracing::info!(
-                    "EL7062 ch{port} DMC DriveStatus snapshot (PreOp): ready_to_enable={} ready={} warn={} err={}",
-                    status.ready_to_enable as u8,
-                    status.ready as u8,
-                    status.warning as u8,
-                    status.error as u8
-                );
-                dmc_snapshot[port] = status;
-            }
-            Err(e) => tracing::warn!("EL7062 ch{port} DMC DriveStatus snapshot failed: {e}"),
-        }
-    }
-
     eth_control
         .channel
         .request_state_change(EtherCATState::Op)
