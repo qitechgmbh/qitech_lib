@@ -4,7 +4,7 @@
 //!   - `input()`: unpack raw bytes from a `BitSlice` via `load_le` into a `TxPdo` struct.
 //!   - `output()`: pack a `RxPdo` struct into raw bytes and write them via `store_le`.
 
-use crate::EncoderResolution;
+use crate::types::EncoderResolution;
 use crate::devices::{
     EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed, EthercatDynamicPDO, Module,
     NewEthercatDevice, SubDeviceIdentityTuple,

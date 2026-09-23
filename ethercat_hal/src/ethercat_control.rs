@@ -7,9 +7,10 @@ use crate::al_diagnostics::{SubDeviceAlStatus, TransitionReport};
 use crate::ethercat_helpers::{EthercatResponseTypedResult, EthercatSdoBytes};
 use crate::machine_ident_read::MachineDeviceInfo;
 use crate::mailbox::Mailbox;
+use crate::types::{Consumer, Producer};
 use crate::{
-    Consumer, ETHERCAT_TX_RX_SIZE, EtherCATAppHandle, EtherCATState, EtherCATThreadChannel,
-    MetaSubdevice, Producer, TripleBufConsumer,
+    ETHERCAT_TX_RX_SIZE, EtherCATAppHandle, EtherCATState, EtherCATThreadChannel,
+    MetaSubdevice, TripleBufConsumer,
 };
 
 pub struct EtherCATControl<C, P>

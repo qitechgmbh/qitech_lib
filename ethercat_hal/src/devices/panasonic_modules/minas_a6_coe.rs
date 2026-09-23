@@ -1,4 +1,4 @@
-use crate::EncoderResolution;
+use crate::types::EncoderResolution;
 use crate::devices::panasonic_modules::minas_a6::{
     GET_DATA_MAPPING, MinasA6BMotor, MotorHomingConfig, Reg, SET_DATA_MAPPING,
 };

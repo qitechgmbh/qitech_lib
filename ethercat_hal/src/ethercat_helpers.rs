@@ -1,11 +1,15 @@
 #[cfg(not(feature = "mock"))]
-use crate::{ChannelRequest, ChannelResponse, EtherCATThreadResponseChannel};
-#[cfg(not(feature = "mock"))]
-use crate::{DiagnosticRequest, DiagnosticResponse};
 use crate::{
-    EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest,
-    SdoType, al_diagnostics::SubDeviceAlStatus, get_async_runtime,
-    machine_ident_read::MachineDeviceInfo,
+    ChannelResponse, EtherCATThreadResponseChannel,
+    types::{
+        ChannelRequest, ChannelRequests, DiagnosticRequest, DiagnosticResponse, SdoReadRequest,
+        SdoRequest,
+    },
+};
+use crate::{
+    EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN,
+    al_diagnostics::SubDeviceAlStatus, get_async_runtime, machine_ident_read::MachineDeviceInfo,
+    types::SdoType,
 };
 use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
@@ -276,7 +280,7 @@ impl EtherCATThreadChannel {
             type_flag: sdo_type,
         };
         let req: ChannelRequest = ChannelRequest {
-            channel_request: crate::ChannelRequests::SdoReadRequest(sdo_request),
+            channel_request: ChannelRequests::SdoReadRequest(sdo_request),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
 
@@ -350,7 +354,7 @@ impl EtherCATThreadChannel {
     pub fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, anyhow::Error> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
-            channel_request: crate::ChannelRequests::ReadMachineIdent(),
+            channel_request: ChannelRequests::ReadMachineIdent(),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
 
@@ -377,8 +381,6 @@ impl EtherCATThreadChannel {
         &self,
         info: Vec<MachineDeviceInfo>,
     ) -> Result<(), anyhow::Error> {
-        use crate::ChannelRequests;
-
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: ChannelRequests::WriteMachineIdent(info),
@@ -423,7 +425,7 @@ impl EtherCATThreadChannel {
         };
 
         let req: ChannelRequest = ChannelRequest {
-            channel_request: crate::ChannelRequests::SdoWriteRequest(sdo_request),
+            channel_request: ChannelRequests::SdoWriteRequest(sdo_request),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
 
@@ -447,7 +449,7 @@ impl EtherCATThreadChannel {
     pub fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error> {
         let (tx, _rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
-            channel_request: crate::ChannelRequests::ChangeState(state),
+            channel_request: ChannelRequests::ChangeState(state),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
         let _res = self.0.send(req);
@@ -457,7 +459,7 @@ impl EtherCATThreadChannel {
     pub fn enable_dc_sync0(&self, device_address: u16) -> Result<(), anyhow::Error> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
-            channel_request: crate::ChannelRequests::EnableDCSync0(device_address.into()),
+            channel_request: ChannelRequests::EnableDCSync0(device_address.into()),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
 
@@ -486,10 +488,7 @@ impl EtherCATThreadChannel {
     ) -> Result<(), anyhow::Error> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
-            channel_request: crate::ChannelRequests::EnableDCSync01(
-                device_address.into(),
-                sync1_period,
-            ),
+            channel_request: ChannelRequests::EnableDCSync01(device_address.into(), sync1_period),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
 
@@ -517,7 +516,7 @@ impl EtherCATThreadChannel {
     ) -> Result<(), anyhow::Error> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req = ChannelRequest {
-            channel_request: crate::ChannelRequests::ConfigureOversampling(
+            channel_request: ChannelRequests::ConfigureOversampling(
                 device_address.into(),
                 oversampling_settings,
             ),

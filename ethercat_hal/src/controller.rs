@@ -1,7 +1,3 @@
-use crate::ChannelRequest;
-use crate::DiagnosticRequest;
-use crate::DiagnosticResponse;
-use crate::EthercatErr;
 use crate::MasterConfiguration;
 use crate::MetaSubdevice;
 use crate::RtOptimizationConfig;
@@ -12,9 +8,17 @@ use crate::al_diagnostics::fallback_addresses;
 use crate::al_diagnostics::read_al_statuses;
 use crate::ethercat_helpers::configure_oversampling;
 use crate::ethercat_helpers::enable_dc_sync01;
+use crate::types::ChannelRequest;
+use crate::types::ChannelRequests;
+use crate::types::Consumer;
+use crate::types::DiagnosticRequest;
+use crate::types::DiagnosticResponse;
+use crate::types::EthercatErr;
+use crate::types::Producer;
+use crate::types::SdoType;
 use crate::{
-    ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES,
-    PDI_LEN, PDU_STORAGE, Producer, SdoType,
+    ChannelResponse, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES,
+    PDI_LEN, PDU_STORAGE,
     al_diagnostics::EtherCATTransition,
     ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
     get_async_runtime,
