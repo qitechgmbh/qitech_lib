@@ -10,21 +10,32 @@ pub mod io;
 pub mod pdo;
 pub mod shared_config;
 //#[cfg(feature = "legacy_code")]
+mod app_handle;
+mod ethercat_control;
 pub mod machine_ident_read;
-use al_diagnostics::{TransitionLog, TransitionReport};
+mod mailbox;
+use crate::app_handle::EtherCATAppHandle;
+#[cfg(not(feature = "mock"))]
+use crate::controller::EtherCATController;
+#[cfg(not(feature = "mock"))]
+use crate::ethercat_control::EtherCATControl;
+use crate::mailbox::Mailbox;
+use al_diagnostics::TransitionLog;
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
-use std::cell::UnsafeCell;
 use std::fmt;
-use std::sync::atomic::Ordering::Relaxed;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::mpsc::{self};
 use std::sync::{Arc, OnceLock, mpsc::Sender};
-use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Mutex;
 use triple_buffer::{Input, Output};
+
+#[derive(Clone)]
+pub struct EtherCATThreadResponseChannel(pub Sender<ChannelResponse>);
+pub type StdEcatHandle = EtherCATAppHandle<TripleBufConsumer, Arc<Mailbox>>;
+pub type MockEcatHandle = EtherCATAppHandle<MockConsumer, MockProducer>;
 
 #[derive(Debug)]
 pub enum EthercatErr {
@@ -71,75 +82,6 @@ pub const MAX_FRAMES: usize = 32;
 pub const PDI_LEN: usize = 1024;
 
 static PDU_STORAGE: PduStorage<MAX_FRAMES, MAX_PDU_DATA> = PduStorage::new();
-pub struct EtherCATController<C, P>
-where
-    C: Consumer,
-    P: Producer,
-{
-    cycle: Arc<AtomicU64>,
-    cycle_time_us: Arc<AtomicU64>,
-    subdevice_count: Arc<AtomicU64>, // maybe a Mailbox<Status> or smth like that makes more sense?
-    next_cycle: Instant,
-    interface: Option<String>,
-    subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
-    state: Arc<AtomicU8>,
-    all_subdevices_operational: Arc<AtomicBool>,
-    inputs_ready: Arc<AtomicBool>,
-    dc_system_time_ns: Arc<AtomicU64>,
-    current_config: MasterConfiguration,
-    requested_state: Option<EtherCATState>,
-    rx_channel: Receiver<ChannelRequest>,
-    /// Separate from `rx_channel` so it can be drained in every state without swallowing a
-    /// `ChangeState`/`Shutdown` the current arm cannot honour.
-    diagnostic_channel: Receiver<DiagnosticRequest>,
-    transition_log: TransitionLog,
-    input_producer: P,
-    output_consumer: C,
-}
-
-impl<C, P> EtherCATController<C, P>
-where
-    C: Consumer,
-    P: Producer,
-{
-    pub fn new(
-        input: P,
-        output: C,
-        rx: Receiver<ChannelRequest>,
-        diagnostic_channel: Receiver<DiagnosticRequest>,
-        interface: Option<String>,
-        config: MasterConfiguration,
-        cycle: Arc<AtomicU64>,
-        cycle_time_us: Arc<AtomicU64>,
-        subdevice_count: Arc<AtomicU64>,
-        dc_system_time_ns: Arc<AtomicU64>,
-        state: Arc<AtomicU8>,
-        subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
-        all_subdevices_operational: Arc<AtomicBool>,
-        inputs_ready: Arc<AtomicBool>,
-        transition_log: TransitionLog,
-    ) -> Self {
-        Self {
-            cycle,
-            cycle_time_us,
-            interface,
-            subdevice_count,
-            next_cycle: std::time::Instant::now(),
-            subdevices,
-            state,
-            requested_state: None,
-            rx_channel: rx,
-            diagnostic_channel,
-            transition_log,
-            input_producer: input,
-            output_consumer: output,
-            current_config: config,
-            all_subdevices_operational,
-            dc_system_time_ns,
-            inputs_ready,
-        }
-    }
-}
 
 pub trait Consumer {
     fn read(&mut self) -> Option<&[u8]>;
@@ -176,75 +118,6 @@ impl Consumer for MockConsumer {
     fn finish_read(&mut self) {}
 }
 
-unsafe impl Sync for Mailbox {}
-unsafe impl Send for Mailbox {}
-
-pub struct Mailbox {
-    pub data: UnsafeCell<[u8; ETHERCAT_TX_RX_SIZE]>,
-    pub full: AtomicBool,
-}
-
-impl Consumer for std::sync::Arc<Mailbox> {
-    fn read(&mut self) -> Option<&[u8]> {
-        // Cast the shared Arc pointer to a mutable reference to Mailbox
-        let ptr = std::sync::Arc::as_ptr(self) as *mut Mailbox;
-        unsafe { (&mut *ptr).read() }
-    }
-
-    fn finish_read(&mut self) {
-        let ptr = std::sync::Arc::as_ptr(self) as *mut Mailbox;
-        unsafe {
-            (&mut *ptr).finish_read();
-        }
-    }
-}
-
-impl Producer for std::sync::Arc<Mailbox> {
-    fn input_buffer_mut(&mut self) -> Option<&mut [u8; ETHERCAT_TX_RX_SIZE]> {
-        let ptr = std::sync::Arc::as_ptr(self) as *mut Mailbox;
-        unsafe { (&mut *ptr).input_buffer_mut() }
-    }
-
-    fn publish(&mut self) {
-        let ptr = std::sync::Arc::as_ptr(self) as *mut Mailbox;
-        unsafe {
-            (&mut *ptr).publish();
-        }
-    }
-}
-
-impl Consumer for Mailbox {
-    fn read(&mut self) -> Option<&[u8]> {
-        // Consumer only reads if `full` is true
-        if !self.full.load(Ordering::Acquire) {
-            return None;
-        }
-        unsafe { Some(&*self.data.get()) }
-    }
-
-    fn finish_read(&mut self) {
-        // We are completely done reading.
-        // We store `false` to release the buffer back to the producer.
-        self.full.store(false, Ordering::Release);
-    }
-}
-
-impl Producer for Mailbox {
-    fn input_buffer_mut(&mut self) -> Option<&mut [u8; ETHERCAT_TX_RX_SIZE]> {
-        // Producer only writes if `full` is false
-        if self.full.load(Ordering::Acquire) {
-            return None;
-        }
-        unsafe { Some(&mut *self.data.get()) }
-    }
-
-    fn publish(&mut self) {
-        // We are completely done writing.
-        // We store `true` to release the buffer to the consumer.
-        self.full.store(true, Ordering::Release);
-    }
-}
-
 pub struct TripleBufConsumer {
     pub input_consumer: Output<[u8; ETHERCAT_TX_RX_SIZE]>,
 }
@@ -267,102 +140,6 @@ impl Producer for TripleBufProducer {
 
     fn publish(&mut self) {
         self.output_producer.publish();
-    }
-}
-
-pub struct EtherCATAppHandle<C, P>
-where
-    C: Consumer,
-    P: Producer,
-{
-    pub input_consumer: C,
-    pub output_producer: P,
-    cycle: Arc<AtomicU64>,
-    cycle_time_us: Arc<AtomicU64>,
-    next_cycle_us: Arc<AtomicU64>,
-    subdevice_count: Arc<AtomicU64>,
-    state: Arc<AtomicU8>,
-    subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
-    all_op: Arc<AtomicBool>,
-    dc_sys_time: Arc<AtomicU64>,
-    inputs_ready: Arc<AtomicBool>,
-    transition_log: TransitionLog,
-}
-
-impl<C, P> EtherCATAppHandle<C, P>
-where
-    C: Consumer,
-    P: Producer,
-{
-    pub fn check_all_op(&self) -> bool {
-        self.all_op.load(Relaxed)
-    }
-
-    pub fn get_dc_sys_time_ns(&self) -> u64 {
-        self.dc_sys_time.load(Relaxed)
-    }
-
-    pub fn get_inputs(&mut self) -> Option<&[u8]> {
-        self.input_consumer.read()
-    }
-
-    pub fn finish_read(&mut self) {
-        self.input_consumer.finish_read();
-    }
-
-    pub fn write_outputs(&mut self) -> Option<&mut [u8; ETHERCAT_TX_RX_SIZE]> {
-        self.output_producer.input_buffer_mut()
-    }
-
-    pub fn send_outputs(&mut self) {
-        self.output_producer.publish();
-    }
-
-    pub fn get_current_cycle(&self) -> u64 {
-        self.cycle.load(Relaxed)
-    }
-
-    pub fn get_cycle_time_us(&self) -> u64 {
-        self.cycle_time_us.load(Relaxed)
-    }
-
-    pub fn get_next_cycle_us(&self) -> u64 {
-        self.next_cycle_us.load(Relaxed)
-    }
-
-    pub fn get_subdevice_count(&self) -> u64 {
-        self.subdevice_count.load(Relaxed)
-    }
-
-    pub fn get_state(&self) -> EtherCATState {
-        self.state.load(Relaxed).into()
-    }
-
-    pub fn check_inputs_ready(&self) -> bool {
-        self.inputs_ready.load(Relaxed)
-    }
-
-    pub fn try_get_subdevices_vec_sync(&self) -> Result<Vec<MetaSubdevice>, anyhow::Error> {
-        let unlocked = self.subdevices.blocking_lock();
-        let count = self.get_subdevice_count() as usize;
-        Ok(unlocked.clone()[0..count].to_vec())
-    }
-
-    pub async fn try_get_subdevices_vec(&self) -> Result<Vec<MetaSubdevice>, anyhow::Error> {
-        let unlocked = self.subdevices.lock().await;
-        let count = self.get_subdevice_count() as usize;
-        Ok(unlocked.clone()[0..count].to_vec())
-    }
-
-    /// Every transition attempted so far with the AL status of each subdevice afterwards,
-    /// oldest first. Shared state, so it stays readable after the state-machine thread ends.
-    pub fn get_transition_reports(&self) -> Vec<TransitionReport> {
-        self.transition_log.reports()
-    }
-
-    /// The most recent failed transition — i.e. why the master is not in OP.
-    pub fn get_last_transition_failure(&self) -> Option<TransitionReport> {
-        self.transition_log.last_failure()
     }
 }
 
@@ -391,23 +168,6 @@ pub struct EtherCATThreadChannel {
     pub sdo_map: std::collections::HashMap<SdoIndex, TypeErasedValue>,
     pub machine_device_infos: Vec<MachineDeviceInfo>,
 }
-
-#[derive(Clone)]
-pub struct EtherCATThreadResponseChannel(pub Sender<ChannelResponse>);
-
-pub struct EtherCATControl<C, P>
-where
-    C: Consumer,
-    P: Producer,
-{
-    pub channel: EtherCATThreadChannel,
-    pub app_handle: EtherCATAppHandle<C, P>,
-    pub join_handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
-}
-
-pub type StdEcatHandle = EtherCATAppHandle<TripleBufConsumer, Arc<Mailbox>>;
-pub type MockEcatHandle = EtherCATAppHandle<MockConsumer, MockProducer>;
-pub type StdEcatController = EtherCATController<Arc<Mailbox>, TripleBufProducer>;
 
 /// Metadata for a Subdevice Contains start and end of the given subdevices pdu
 #[derive(Clone, Copy)]
@@ -849,9 +609,9 @@ pub fn init_ethercat(
         ),
     };
 
-    let app_handle = EtherCATAppHandle {
-        input_consumer: TripleBufConsumer { input_consumer },
-        output_producer: mailbox,
+    let app_handle = EtherCATAppHandle::new(
+        TripleBufConsumer { input_consumer },
+        mailbox,
         cycle,
         cycle_time_us,
         next_cycle_us,
@@ -862,7 +622,7 @@ pub fn init_ethercat(
         dc_sys_time,
         inputs_ready,
         transition_log,
-    };
+    );
 
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx, diagnostic_tx);
     let join_handle = std::thread::Builder::new()

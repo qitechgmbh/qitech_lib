@@ -9,24 +9,17 @@ use ethercrab::{
 };
 use std::collections::VecDeque;
 use std::fmt;
-use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::{
-    DiagnosticRequest, DiagnosticResponse, EtherCATController, EtherCATState, EthercatErr,
-    MAX_SUBDEVICES, Mailbox, TripleBufProducer,
-};
+use crate::EtherCATState;
 
 const MAX_REPORTS: usize = 32;
-
 /// With `RetryBehaviour::Count(0)` and a 30 ms PDU timeout, a dead bus would otherwise stall
 /// the state machine for seconds.
 const SNAPSHOT_DEADLINE: Duration = Duration::from_millis(500);
-
 /// First configured station address ethercrab hands out; the rest are contiguous from here.
 const BASE_SUBDEVICE_ADDRESS: u16 = 0x1000;
-
 /// `AlStatus` (0x0130): low nibble is the state, bit 4 is the error flag.
 const AL_STATUS_STATE_MASK: u16 = 0x000F;
 const AL_STATUS_ERROR_FLAG: u16 = 0x0010;
@@ -294,125 +287,6 @@ pub fn fallback_addresses(maindevice: &MainDevice<'_>) -> Vec<(u16, String)> {
             (address, format!("subdevice #{i}"))
         })
         .collect()
-}
-
-impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
-    /// The subdevices to probe, as `(configured_address, name)`. Falls back to reconstructed
-    /// addresses during `init_single_group`, the one transition that runs before enumeration.
-    async fn diagnostic_devices(&self, maindevice: &MainDevice<'_>) -> Vec<(u16, String)> {
-        let count = self
-            .subdevice_count
-            .load(std::sync::atomic::Ordering::Relaxed) as usize;
-        if count == 0 {
-            return fallback_addresses(maindevice);
-        }
-
-        let subdevices = self.subdevices.lock().await;
-        subdevices[..count.min(MAX_SUBDEVICES)]
-            .iter()
-            .map(|meta| {
-                let name = meta
-                    .get_name()
-                    .unwrap_or_else(|_| format!("{:#06x}", meta.device_address));
-                (meta.device_address, name)
-            })
-            .collect()
-    }
-
-    /// File a [`TransitionReport`] with an AL snapshot taken right after `result` was produced.
-    /// On failure the returned error carries the rendered snapshot.
-    ///
-    /// Takes an already-evaluated `Result` so it covers the group-consuming transitions too:
-    /// by now the group may be dropped, and the snapshot needs only `maindevice`.
-    pub(crate) async fn record<T, E: fmt::Debug>(
-        &self,
-        transition: EtherCATTransition,
-        maindevice: &MainDevice<'_>,
-        started: Instant,
-        result: Result<T, E>,
-    ) -> Result<T, EthercatErr> {
-        let error = result.as_ref().err().map(|e| format!("{e:?}"));
-        let succeeded = error.is_none();
-        let devices = self.diagnostic_devices(maindevice).await;
-
-        let report = TransitionReport {
-            transition,
-            succeeded,
-            error,
-            duration: started.elapsed(),
-            statuses: read_al_statuses(maindevice, &devices).await,
-        };
-
-        if succeeded {
-            tracing::debug!("{report}");
-        } else {
-            tracing::error!("{report}");
-        }
-
-        let message = report.to_string();
-        self.transition_log.push(report);
-
-        result.map_err(|_| EthercatErr::Custom(message))
-    }
-
-    /// Run a one-shot state transition, recording it either way. Recording successes gives the
-    /// next failure its "before" state for free, and shows how far startup got.
-    pub(crate) async fn transition<T, E: fmt::Debug>(
-        &self,
-        transition: EtherCATTransition,
-        maindevice: &MainDevice<'_>,
-        op: impl Future<Output = Result<T, E>>,
-    ) -> Result<T, EthercatErr> {
-        let started = Instant::now();
-        let result = op.await;
-        self.record(transition, maindevice, started, result).await
-    }
-
-    /// Run a per-cycle operation, recording it only if it fails. Snapshotting every success
-    /// would put two extra PDUs per subdevice on the wire every cycle.
-    pub(crate) async fn guard<T, E: fmt::Debug>(
-        &self,
-        transition: EtherCATTransition,
-        maindevice: &MainDevice<'_>,
-        op: impl Future<Output = Result<T, E>>,
-    ) -> Result<T, EthercatErr> {
-        let started = Instant::now();
-        match op.await {
-            Ok(value) => Ok(value),
-            Err(e) => {
-                self.record(transition, maindevice, started, Err::<T, E>(e))
-                    .await
-            }
-        }
-    }
-
-    /// Answer at most one pending diagnostic read. Called from every state arm; the one-per-
-    /// iteration cap keeps a busy client from starving the OP loop.
-    pub(crate) async fn service_diagnostic_request(&self, maindevice: &MainDevice<'_>) {
-        let Ok(request) = self.diagnostic_channel.try_recv() else {
-            return;
-        };
-
-        match request {
-            DiagnosticRequest::RegisterRead {
-                device_address,
-                register,
-                response_channel,
-            } => {
-                let result = Command::fprd(device_address, register)
-                    .receive::<u16>(maindevice)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("register read failed: {e:?}"));
-                let _ = response_channel.send(DiagnosticResponse::RegisterReadResponse(result));
-            }
-            DiagnosticRequest::AlStatusSnapshot { response_channel } => {
-                let devices = self.diagnostic_devices(maindevice).await;
-                let statuses = read_al_statuses(maindevice, &devices).await;
-                let _ =
-                    response_channel.send(DiagnosticResponse::AlStatusSnapshotResponse(statuses));
-            }
-        }
-    }
 }
 
 #[cfg(test)]

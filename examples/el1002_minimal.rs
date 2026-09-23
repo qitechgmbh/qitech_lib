@@ -14,17 +14,15 @@ use std::{env, time::Duration};
 fn main() {
     // Initialize EtherCAT Master with the default configuration
     let interface = env::args().nth(1).expect("No Interface-name given");
-    let eth_control = init_ethercat(&interface, None);
-    let mut eth_handle = eth_control.app_handle;
+    let mut eth_control = init_ethercat(&interface, None);
 
     eth_control
-        .channel
         .request_state_change(EtherCATState::PreOp)
         .expect("Channel was not ready");
 
     // Wait for state change
     loop {
-        let val = eth_handle.get_state();
+        let val = eth_control.get_state();
         match val {
             EtherCATState::PreOp => break,
             _ => std::thread::sleep(Duration::from_millis(10)),
@@ -33,23 +31,22 @@ fn main() {
 
     println!(
         "found {:?} ethercat terminals: ",
-        eth_handle.get_subdevice_count()
+        eth_control.get_subdevice_count()
     );
 
     eth_control
-        .channel
         .request_state_change(EtherCATState::Op)
         .expect("Failed to go into OP");
 
     // Wait for state change
     loop {
-        match eth_handle.get_state() {
+        match eth_control.get_state() {
             EtherCATState::Op => break,
             _ => std::thread::sleep(Duration::from_millis(10)),
         }
     }
 
-    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
     for sdev in &subdevices {
         println!(" - {}", sdev.get_name().expect("No utf8 name!"));
     }
@@ -58,7 +55,7 @@ fn main() {
     let mut el1002 = EL1002::new();
     loop {
         // We ONLY have inputs so no need to call write_outputs
-        if let Some(inputs) = eth_handle.get_inputs() {
+        if let Some(inputs) = eth_control.get_inputs() {
             for subdevice in &subdevices {
                 // Loop over the subdevices until the EL2004 is found
                 if subdevice.vendor == BECKHOFF_VENDOR_ID
@@ -94,7 +91,7 @@ fn main() {
         println!("]");
 
         // Send the output through the EtherCAT terminals
-        eth_handle.send_outputs();
+        eth_control.send_outputs();
         std::thread::sleep(Duration::from_millis(50));
     }
 }

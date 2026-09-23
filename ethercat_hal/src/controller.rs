@@ -1,7 +1,15 @@
 use crate::ChannelRequest;
+use crate::DiagnosticRequest;
+use crate::DiagnosticResponse;
 use crate::EthercatErr;
+use crate::MasterConfiguration;
+use crate::MetaSubdevice;
 use crate::RtOptimizationConfig;
 use crate::TripleBufProducer;
+use crate::al_diagnostics::TransitionLog;
+use crate::al_diagnostics::TransitionReport;
+use crate::al_diagnostics::fallback_addresses;
+use crate::al_diagnostics::read_al_statuses;
 use crate::ethercat_helpers::configure_oversampling;
 use crate::ethercat_helpers::enable_dc_sync01;
 use crate::{
@@ -13,10 +21,11 @@ use crate::{
     machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
 };
-use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority};
+use crate::{Mailbox, set_current_thread_rt_priority};
 use anyhow::bail;
 #[cfg(target_os = "linux")]
 use common::set_irq_affinity;
+use ethercrab::Command;
 use ethercrab::std::ethercat_now;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
@@ -24,13 +33,19 @@ use ethercrab::{
 };
 use libc::{MCL_CURRENT, MCL_FUTURE, mlockall};
 use spin_sleep::SpinSleeper;
+use std::fmt;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU8;
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
+use std::sync::mpsc::Receiver;
 use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
 use ta::{Next, indicators::ExponentialMovingAverage};
+use tokio::sync::Mutex;
 
 type PreopGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>;
 type PreopPdiNoDcGroup =
@@ -38,10 +53,198 @@ type PreopPdiNoDcGroup =
 type PreopPdiDcGroup =
     SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, HasDc>;
 type OpGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, Op, HasDc>;
-
 enum PreopResult {
     Preop(PreopGroup),
     PreopPdiDc(PreopPdiDcGroup),
+}
+
+pub struct EtherCATController<C, P>
+where
+    C: Consumer,
+    P: Producer,
+{
+    cycle: Arc<AtomicU64>,
+    cycle_time_us: Arc<AtomicU64>,
+    subdevice_count: Arc<AtomicU64>, // maybe a Mailbox<Status> or smth like that makes more sense?
+    next_cycle: Instant,
+    interface: Option<String>,
+    subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
+    state: Arc<AtomicU8>,
+    all_subdevices_operational: Arc<AtomicBool>,
+    inputs_ready: Arc<AtomicBool>,
+    dc_system_time_ns: Arc<AtomicU64>,
+    current_config: MasterConfiguration,
+    requested_state: Option<EtherCATState>,
+    rx_channel: Receiver<ChannelRequest>,
+    /// Separate from `rx_channel` so it can be drained in every state without swallowing a
+    /// `ChangeState`/`Shutdown` the current arm cannot honour.
+    diagnostic_channel: Receiver<DiagnosticRequest>,
+    transition_log: TransitionLog,
+    input_producer: P,
+    output_consumer: C,
+}
+
+impl<C, P> EtherCATController<C, P>
+where
+    C: Consumer,
+    P: Producer,
+{
+    pub fn new(
+        input: P,
+        output: C,
+        rx: Receiver<ChannelRequest>,
+        diagnostic_channel: Receiver<DiagnosticRequest>,
+        interface: Option<String>,
+        config: MasterConfiguration,
+        cycle: Arc<AtomicU64>,
+        cycle_time_us: Arc<AtomicU64>,
+        subdevice_count: Arc<AtomicU64>,
+        dc_system_time_ns: Arc<AtomicU64>,
+        state: Arc<AtomicU8>,
+        subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
+        all_subdevices_operational: Arc<AtomicBool>,
+        inputs_ready: Arc<AtomicBool>,
+        transition_log: TransitionLog,
+    ) -> Self {
+        Self {
+            cycle,
+            cycle_time_us,
+            interface,
+            subdevice_count,
+            next_cycle: std::time::Instant::now(),
+            subdevices,
+            state,
+            requested_state: None,
+            rx_channel: rx,
+            diagnostic_channel,
+            transition_log,
+            input_producer: input,
+            output_consumer: output,
+            current_config: config,
+            all_subdevices_operational,
+            dc_system_time_ns,
+            inputs_ready,
+        }
+    }
+}
+
+impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
+    /// The subdevices to probe, as `(configured_address, name)`. Falls back to reconstructed
+    /// addresses during `init_single_group`, the one transition that runs before enumeration.
+    async fn diagnostic_devices(&self, maindevice: &MainDevice<'_>) -> Vec<(u16, String)> {
+        let count = self
+            .subdevice_count
+            .load(std::sync::atomic::Ordering::Relaxed) as usize;
+        if count == 0 {
+            return fallback_addresses(maindevice);
+        }
+
+        let subdevices = self.subdevices.lock().await;
+        subdevices[..count.min(MAX_SUBDEVICES)]
+            .iter()
+            .map(|meta| {
+                let name = meta
+                    .get_name()
+                    .unwrap_or_else(|_| format!("{:#06x}", meta.device_address));
+                (meta.device_address, name)
+            })
+            .collect()
+    }
+
+    /// File a [`TransitionReport`] with an AL snapshot taken right after `result` was produced.
+    /// On failure the returned error carries the rendered snapshot.
+    ///
+    /// Takes an already-evaluated `Result` so it covers the group-consuming transitions too:
+    /// by now the group may be dropped, and the snapshot needs only `maindevice`.
+    pub(crate) async fn record<T, E: fmt::Debug>(
+        &self,
+        transition: EtherCATTransition,
+        maindevice: &MainDevice<'_>,
+        started: Instant,
+        result: Result<T, E>,
+    ) -> Result<T, EthercatErr> {
+        let error = result.as_ref().err().map(|e| format!("{e:?}"));
+        let succeeded = error.is_none();
+        let devices = self.diagnostic_devices(maindevice).await;
+
+        let report = TransitionReport {
+            transition,
+            succeeded,
+            error,
+            duration: started.elapsed(),
+            statuses: read_al_statuses(maindevice, &devices).await,
+        };
+
+        if succeeded {
+            tracing::debug!("{report}");
+        } else {
+            tracing::error!("{report}");
+        }
+
+        let message = report.to_string();
+        self.transition_log.push(report);
+
+        result.map_err(|_| EthercatErr::Custom(message))
+    }
+
+    /// Run a one-shot state transition, recording it either way. Recording successes gives the
+    /// next failure its "before" state for free, and shows how far startup got.
+    pub(crate) async fn transition<T, E: fmt::Debug>(
+        &self,
+        transition: EtherCATTransition,
+        maindevice: &MainDevice<'_>,
+        op: impl Future<Output = Result<T, E>>,
+    ) -> Result<T, EthercatErr> {
+        let started = Instant::now();
+        let result = op.await;
+        self.record(transition, maindevice, started, result).await
+    }
+
+    /// Run a per-cycle operation, recording it only if it fails. Snapshotting every success
+    /// would put two extra PDUs per subdevice on the wire every cycle.
+    pub(crate) async fn guard<T, E: fmt::Debug>(
+        &self,
+        transition: EtherCATTransition,
+        maindevice: &MainDevice<'_>,
+        op: impl Future<Output = Result<T, E>>,
+    ) -> Result<T, EthercatErr> {
+        let started = Instant::now();
+        match op.await {
+            Ok(value) => Ok(value),
+            Err(e) => {
+                self.record(transition, maindevice, started, Err::<T, E>(e))
+                    .await
+            }
+        }
+    }
+
+    /// Answer at most one pending diagnostic read. Called from every state arm; the one-per-
+    /// iteration cap keeps a busy client from starving the OP loop.
+    pub(crate) async fn service_diagnostic_request(&self, maindevice: &MainDevice<'_>) {
+        let Ok(request) = self.diagnostic_channel.try_recv() else {
+            return;
+        };
+
+        match request {
+            DiagnosticRequest::RegisterRead {
+                device_address,
+                register,
+                response_channel,
+            } => {
+                let result = Command::fprd(device_address, register)
+                    .receive::<u16>(maindevice)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("register read failed: {e:?}"));
+                let _ = response_channel.send(DiagnosticResponse::RegisterReadResponse(result));
+            }
+            DiagnosticRequest::AlStatusSnapshot { response_channel } => {
+                let devices = self.diagnostic_devices(maindevice).await;
+                let statuses = read_al_statuses(maindevice, &devices).await;
+                let _ =
+                    response_channel.send(DiagnosticResponse::AlStatusSnapshotResponse(statuses));
+            }
+        }
+    }
 }
 
 fn setup_tx_rx_thread(
