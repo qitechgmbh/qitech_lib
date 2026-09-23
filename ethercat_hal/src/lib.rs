@@ -15,6 +15,7 @@ use al_diagnostics::{TransitionLog, TransitionReport};
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
 use std::cell::UnsafeCell;
+use std::fmt;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
@@ -24,6 +25,30 @@ use std::time::{Duration, Instant};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Mutex;
 use triple_buffer::{Input, Output};
+
+#[derive(Debug)]
+pub enum EthercatErr {
+    Custom(String),
+    PreopTransitionFailed,
+    SafeopTransitionFailed,
+    OpTransitionFailed,
+    WorkingCounterErr,
+}
+
+impl fmt::Display for EthercatErr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EthercatErr::Custom(msg) => write!(f, "Ethercat-error: {}", msg),
+            EthercatErr::PreopTransitionFailed => write!(f, "Failed to transition to PREOP state"),
+            EthercatErr::SafeopTransitionFailed => {
+                write!(f, "Failed to transition to SAFEOP state")
+            }
+            EthercatErr::OpTransitionFailed => write!(f, "Failed to transition to OP state"),
+            EthercatErr::WorkingCounterErr => write!(f, "Working counter error (WKC)"),
+        }
+    }
+}
+impl std::error::Error for EthercatErr {}
 
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();

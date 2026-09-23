@@ -1,4 +1,5 @@
 use crate::ChannelRequest;
+use crate::EthercatErr;
 use crate::RtOptimizationConfig;
 use crate::TripleBufProducer;
 use crate::ethercat_helpers::configure_oversampling;
@@ -19,7 +20,7 @@ use common::set_irq_affinity;
 use ethercrab::std::ethercat_now;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
-    subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi, SafeOp},
+    subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi},
 };
 use libc::{MCL_CURRENT, MCL_FUTURE, mlockall};
 use spin_sleep::SpinSleeper;
@@ -41,12 +42,6 @@ type OpGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, O
 enum PreopResult {
     Preop(PreopGroup),
     PreopPdiDc(PreopPdiDcGroup),
-}
-
-enum PreopPdiResult {
-    PreopPdiDc(PreopPdiDcGroup),
-    SafeOp(SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, SafeOp, HasDc>),
-    Op(OpGroup),
 }
 
 fn setup_tx_rx_thread(
@@ -229,9 +224,8 @@ fn dc_static_sync(
     let rt = get_async_runtime();
     let mut now = Instant::now();
     let mut averages = Vec::new();
-
     for _ in 0..group_preop_pdi.len() {
-        averages.push(ExponentialMovingAverage::new(64).unwrap());
+        averages.push(ExponentialMovingAverage::new(64).expect("Should never fail"));
     }
 
     loop {
@@ -270,12 +264,33 @@ fn dc_static_sync(
 }
 
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
+    fn apply_op_optimizations(&self) -> Result<(), anyhow::Error> {
+        match &self.current_config.realtime_optimizations {
+            Some(opt) => {
+                let id = core_affinity::CoreId {
+                    id: opt.ethercat_loop_thread_core,
+                };
+                set_current_thread_rt_priority(opt.ethercat_loop_thread_priority as i32);
+                core_affinity::set_for_current(id);
+                if opt.lock_memory {
+                    let flags = MCL_CURRENT | MCL_FUTURE;
+                    let result = unsafe { mlockall(flags) };
+                    if result != 0 {
+                        bail!("Warning: Memory locking failed! Result: {}", result,);
+                    }
+                }
+            }
+            None => (),
+        };
+        Ok(())
+    }
+
     fn handle_preop(
         &self,
         group_opt: Option<PreopGroup>,
         maindevice: &MainDevice<'_>,
         spinner: SpinSleeper,
-    ) -> PreopResult {
+    ) -> Result<PreopResult, EthercatErr> {
         let mut i = 0;
         let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
         let rt = get_async_runtime();
@@ -297,23 +312,21 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
         let msg = match self.rx_channel.try_recv() {
             Ok(value) => value,
-            Err(_e) => return PreopResult::Preop(group),
+            Err(_e) => return Ok(PreopResult::Preop(group)),
         };
 
         let should_not_restart_loop = handle_channel_requests(msg, maindevice, &mut group);
 
         match should_not_restart_loop {
             true => (),
-            false => return PreopResult::Preop(group),
+            false => return Ok(PreopResult::Preop(group)),
         };
 
-        let mut group_preop_pdi: PreopPdiNoDcGroup = rt
-            .block_on(self.transition(
-                EtherCATTransition::PreOpToPreOpPdi,
-                maindevice,
-                group.into_pre_op_pdi(maindevice),
-            ))
-            .expect("msg");
+        let mut group_preop_pdi: PreopPdiNoDcGroup = rt.block_on(self.transition(
+            EtherCATTransition::PreOpToPreOpPdi,
+            maindevice,
+            group.into_pre_op_pdi(maindevice),
+        ))?;
 
         group_preop_pdi = dc_static_sync(
             maindevice,
@@ -338,7 +351,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
             ))
             .expect("msg");
         self.state.store(EtherCATState::PreopPdi.into(), Relaxed);
-        return PreopResult::PreopPdiDc(group_preop_pdi_dc);
+        return Ok(PreopResult::PreopPdiDc(group_preop_pdi_dc));
     }
 
     fn handle_preop_pdi(
@@ -346,36 +359,30 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         group_opt: Option<PreopPdiDcGroup>,
         maindevice: &MainDevice<'_>,
         spinner: SpinSleeper,
-    ) -> PreopPdiResult {
+    ) -> Result<OpGroup, EthercatErr> {
         let rt = get_async_runtime();
         let group = group_opt.unwrap();
         // Needs to run atleast once
-        let res = rt
-            .block_on(self.guard(
-                EtherCATTransition::TxRx(EtherCATState::PreopPdi),
-                maindevice,
-                group.tx_rx_dc(maindevice),
-            ))
-            .unwrap();
+        let res = rt.block_on(self.guard(
+            EtherCATTransition::TxRx(EtherCATState::PreopPdi),
+            maindevice,
+            group.tx_rx_dc(maindevice),
+        ))?;
         spinner.sleep_until(Instant::now() + res.extra.next_cycle_wait);
-
-        let group = rt
-            .block_on(self.transition(
-                EtherCATTransition::PreOpPdiToSafeOp,
-                maindevice,
-                group.into_safe_op(maindevice),
-            ))
-            .expect("msg");
+        let group = rt.block_on(self.transition(
+            EtherCATTransition::PreOpPdiToSafeOp,
+            maindevice,
+            group.into_safe_op(maindevice),
+        ))?;
 
         // Apply the same logic here
         let now = Instant::now();
-        let res = rt
-            .block_on(self.guard(
-                EtherCATTransition::TxRx(EtherCATState::PreopPdi),
-                maindevice,
-                group.tx_rx_dc(maindevice),
-            ))
-            .expect("msg");
+        let res = rt.block_on(self.guard(
+            EtherCATTransition::TxRx(EtherCATState::PreopPdi),
+            maindevice,
+            group.tx_rx_dc(maindevice),
+        ))?;
+
         let is_all_safe = res.is_in_state(ethercrab::SubDeviceState::SafeOp);
         if !is_all_safe {
             spinner.sleep_until(now + res.extra.next_cycle_wait);
@@ -400,15 +407,13 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
             }
         };
 
-        let group_op = rt
-            .block_on(self.transition(
-                EtherCATTransition::SafeOpToOpRequest,
-                maindevice,
-                group.request_into_op(maindevice),
-            ))
-            .expect("msg");
+        let group_op = rt.block_on(self.transition(
+            EtherCATTransition::SafeOpToOpRequest,
+            maindevice,
+            group.request_into_op(maindevice),
+        ))?;
         self.state.store(EtherCATState::Op.into(), Relaxed);
-        return PreopPdiResult::Op(group_op);
+        return Ok(group_op);
     }
 
     async fn handle_op(
@@ -416,7 +421,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         group_opt: Option<OpGroup>,
         maindevice: &MainDevice<'_>,
         spinner: SpinSleeper,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), EthercatErr> {
         let mut is_all_op = false;
         let mut not_all_op_cycles: u32 = 0;
         let ramp_started = Instant::now();
@@ -602,7 +607,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 self.state.store(EtherCATState::Init.into(), Relaxed);
                                 send_response(
                                     msg.response_channel,
-                                    ChannelResponse::ChangeState(Err(err)),
+                                    ChannelResponse::ChangeState(Err(err.into())),
                                 );
                                 continue;
                             }
@@ -612,7 +617,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     }
                 }
                 EtherCATState::PreOp => {
-                    let res = self.handle_preop(group, maindevice.as_ref().unwrap(), spinner);
+                    let res = self.handle_preop(group, maindevice.as_ref().unwrap(), spinner)?;
                     match res {
                         PreopResult::Preop(preop_group) => group = Some(preop_group),
                         PreopResult::PreopPdiDc(preop_pdi_dc) => {
@@ -622,50 +627,19 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     }
                 }
                 EtherCATState::PreopPdi => {
-                    let res = self.handle_preop_pdi(
+                    group_op = Some(self.handle_preop_pdi(
                         group_preop_pdi_dc,
                         maindevice.as_ref().unwrap(),
                         spinner,
-                    );
-                    match res {
-                        PreopPdiResult::Op(group_operational) => {
-                            group_op = Some(group_operational);
-                            group_preop_pdi_dc = None;
-                        }
-                        PreopPdiResult::PreopPdiDc(preop_pdi_dc) => {
-                            group_op = None;
-                            group_preop_pdi_dc = Some(preop_pdi_dc);
-                        }
-                        PreopPdiResult::SafeOp(_) => {
-                            group_op = None;
-                            group_preop_pdi_dc = None;
-                        }
-                    }
+                    )?);
+                    group_preop_pdi_dc = None;
                 }
 
                 EtherCATState::Op => {
                     let maindevice = maindevice.as_ref().unwrap();
                     return futures::executor::block_on(async {
-                        match &self.current_config.realtime_optimizations {
-                            Some(opt) => {
-                                let id = core_affinity::CoreId {
-                                    id: opt.ethercat_loop_thread_core,
-                                };
-                                set_current_thread_rt_priority(
-                                    opt.ethercat_loop_thread_priority as i32,
-                                );
-                                core_affinity::set_for_current(id);
-                                if opt.lock_memory {
-                                    let flags = MCL_CURRENT | MCL_FUTURE;
-                                    let result = unsafe { mlockall(flags) };
-                                    if result != 0 {
-                                        bail!("Warning: Memory locking failed! Result: {}", result,);
-                                    }
-                                }
-                            }
-                            None => (),
-                        };
-                        return self.handle_op(group_op, maindevice, spinner).await;
+                        self.apply_op_optimizations()?;
+                        return Ok(self.handle_op(group_op, maindevice, spinner).await?);
                     });
                 }
             }
