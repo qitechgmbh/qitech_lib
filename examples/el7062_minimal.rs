@@ -64,53 +64,61 @@ fn dump_dc_registers(channel: &EtherCATThreadChannel, addr: u16) {
     }
 }
 
-/// Human-readable name for a Beckhoff EL7062 DiagCode (see EL7062 docs, 0x10F3).
-fn diag_name(code: u32) -> Option<&'static str> {
-    match code {
-        0x4411 => Some("DC-Link undervoltage (Warning)"),
-        0x4413 => Some("I2T-Model Amplifier overload (Warning)"),
-        0x4414 => Some("I2T-Model Motor overload (Warning)"),
-        0x4416 => Some("Step lost detected (Warning)"),
-        0x4417 => Some("Motor overtemperature (Warning)"),
-        0x8400 => Some("Incorrect drive configuration"),
-        0x8402 => Some("Emergency stop activated"),
-        0x8403 => Some("ADC error (current measurement)"),
-        0x8404 => Some("Overcurrent in phase U/V/W"),
-        0x8406 => Some("DC-Link undervoltage (Error)"),
-        0x8407 => Some("DC-Link overvoltage (Error)"),
-        0x8408 => Some("I2T-Model Amplifier overload (Error)"),
-        0x8409 => Some("I2T-Model Motor overload (Error)"),
+/// Human-readable name for a Beckhoff EL7062 diag TextID. The TextID in the
+/// 0x10F3 record maps directly to the ESI `<DiagMessage>` table (EL7062.xml).
+fn diag_name(text_id: u16) -> Option<&'static str> {
+    match text_id {
+        0x4101 => Some("Amplifier-Overtemperature"),
+        0x4102 => Some("PDO-configuration is incompatible to the selected mode of operation"),
+        0x4103 => Some("Undervoltage Us"),
+        0x4104 => Some("Overvoltage Us"),
+        0x4400 => Some("Calibration data corrupted or missing"),
+        0x4411 => Some("DC-Link undervoltage"),
+        0x4412 => Some("DC-Link overvoltage"),
+        0x8103 => Some("Undervoltage Us"),
+        0x8104 => Some("Amplifier-Overtemperature"),
+        0x8105 => Some("PD-Watchdog"),
+        0x8144 => Some("Hardware fault"),
+        0x817F => Some("Error"),
+        0x8404 => Some("Overcurrent"),
+        0x8406 => Some("Undervoltage DC-Link"),
+        0x8407 => Some("Overvoltage DC-Link"),
         0x840A => Some("Overall current threshold exceeded"),
-        0x8415 => Some("Invalid modulo factor"),
-        0x8416 => Some("Motor overtemperature"),
+        0x840B => Some("Commutation error"),
+        0x840C => Some("Motor not connected"),
+        0x840F => Some("Commutation Type requires an encoder, but feedback is disabled"),
+        0x8415 => Some("Invalid modulo range"),
         0x8417 => Some("Maximum rotating field velocity exceeded"),
-        0x841C => Some("STO while the axis was enabled"),
-        0x8100 => Some("Error bit set in the status word"),
-        0x8104 => Some("Terminal overtemperature"),
-        0x8105 => Some("PD watchdog (communication lost during operation)"),
-        0x8200 => Some("Write access error (SDO)"),
-        0x8300 => Some("Set position error (encoder)"),
-        0x8301 => Some("Encoder increments not configured"),
-        0x8302 => Some("Encoder error"),
-        0x8550 => Some("Zero crossing phase missing"),
+        0x841F => Some("Torque limitation too low"),
+        0x8422 => Some("Drive configuration missing"),
+        0x8423 => Some("Invalid process data format (singleturn+multiturn bits != 32)"),
+        0x8441 => Some("Maximum following error distance exceeded"),
+        0x8442 => Some("Encoder-Resolution insufficient"),
+        0x8443 => Some("Combination of Mode of Operation and Commutation Type is invalid"),
+        0x8452 => Some("Drive error during positioning"),
+        0x8457 => Some("Invalid value for Target velocity"),
+        0x8458 => Some("Invalid value for Target position"),
+        0x8459 => Some("Emergency stop active"),
         _ => None,
     }
 }
 
-/// Dump the EL7062 DiagMessages history (0x10F3) as raw bytes plus the decoded
-/// DiagCode / Flags / TextID, resolving known codes to plain text.
+/// Dump the EL7062 DiagMessages history (0x10F3). Record layout per ETG.1020
+/// (see ethercat_hal::debugging::diagnosis_history): bytes 0..3 DiagCode,
+/// 4..5 Flags, 6..7 TextID, 8..15 timestamp, then P1/P2 data.
 fn dump_diag_messages(channel: &EtherCATThreadChannel, addr: u16) {
+    let new_available = channel.sdo_read::<u8>(addr, 0x10F3, 0x04).unwrap_or(0);
     let count = channel.sdo_read::<u8>(addr, 0x10F3, 0x00).unwrap_or(0);
-    info!("DiagMessages (0x10F3): {} slots (max index 0x{:02X})", count, 0x02 + count);
+    let newest = channel.sdo_read::<u8>(addr, 0x10F3, 0x02).unwrap_or(0);
+    info!(
+        "DiagMessages (0x10F3): slots={} newest_index={} new_available={}",
+        count, newest, new_available
+    );
     if count == 0 {
-        info!("  (no diag slots configured)");
         return;
     }
     let mut shown = 0;
-    for sub in 0x03u8.. {
-        if shown >= count.min(10) && shown >= 4 {
-            break;
-        }
+    for sub in 0x06u8.. {
         if sub as u16 > 0x02 + count as u16 {
             break;
         }
@@ -120,32 +128,47 @@ fn dump_diag_messages(channel: &EtherCATThreadChannel, addr: u16) {
                     continue;
                 }
                 shown += 1;
-                let diag_code = if bytes.len() >= 12 {
-                    u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]])
+                let diag_code = if bytes.len() >= 4 {
+                    u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
                 } else {
                     0
                 };
-                let flags = if bytes.len() >= 14 {
-                    u16::from_le_bytes([bytes[12], bytes[13]])
+                let flags = if bytes.len() >= 6 {
+                    u16::from_le_bytes([bytes[4], bytes[5]])
                 } else {
                     0
                 };
-                let text_id = if bytes.len() >= 16 {
-                    u16::from_le_bytes([bytes[14], bytes[15]])
+                let text_id = if bytes.len() >= 8 {
+                    u16::from_le_bytes([bytes[6], bytes[7]])
                 } else {
                     0
+                };
+                let msg_type = match flags {
+                    0x0000 => "Info",
+                    0x0001 => "Warning",
+                    0x0002 => "Error",
+                    _ => "Unknown",
+                };
+                let raw = if bytes.len() >= 26 {
+                    &bytes[..26]
+                } else {
+                    &bytes[..]
                 };
                 info!(
-                    "  [{}] 0x10F3:0x{:02X} len={} DiagCode=0x{:04X} Flags=0x{:04X} TextID=0x{:04X} raw={:02X?}",
+                    "  [{}] sub=0x{:02X} {} TextID=0x{:04X} DiagCode=0x{:04X} ts=0x{:016X} msg(26B)={:02X?}",
                     shown - 1,
                     sub,
-                    bytes.len(),
-                    diag_code & 0xFFFF,
-                    flags,
+                    msg_type,
                     text_id,
-                    &bytes[8..bytes.len().min(24)],
+                    diag_code & 0xFFFF,
+                    if bytes.len() >= 16 {
+                        u64::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]])
+                    } else {
+                        0
+                    },
+                    raw,
                 );
-                if let Some(name) = diag_name(diag_code) {
+                if let Some(name) = diag_name(text_id) {
                     info!("       -> {name}");
                 }
             }
@@ -784,8 +807,8 @@ fn main() {
     let mut prev_fault = false;
     let mut fault_cooldown_cycles: u32 = 0;
     let mut fault_episodes: u32 = 0;
-    const FAULT_COOLDOWN_CYCLES: u32 = 300;
-    const FAULT_ABORT_AFTER_EPISODES: u32 = 8;
+    const FAULT_COOLDOWN_CYCLES: u32 = 600;
+    const FAULT_ABORT_AFTER_EPISODES: u32 = 3;
     // The DC sync0 cadence is 62.5us, so a new input arrives every ~1ms worth of
     // 16 DC ticks; gate the CSP setpoint update and the per-second log output to
     // the 1ms process cycle instead of printing every tick.
@@ -838,6 +861,11 @@ fn main() {
                     "Fault detected (episode {}/{}): statusword=0x{:04X}",
                     fault_episodes, FAULT_ABORT_AFTER_EPISODES, statusword.as_raw()
                 );
+                if fault_episodes == 1 {
+                    if let Some(addr) = el7062_address {
+                        dump_diag_messages(&eth_control.channel, addr);
+                    }
+                }
                 el7062
                     .set_controlword(
                         EL7062Port::Ch1,
