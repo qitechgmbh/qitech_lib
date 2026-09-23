@@ -496,6 +496,7 @@ pub enum SdoType {
     U32,
     I16,
     I32,
+    Raw,
 }
 
 #[derive(Debug)]
@@ -548,6 +549,7 @@ pub enum ChannelResponse {
     SdoResponseU32(Result<u32, anyhow::Error>),
     SdoResponseI16(Result<i16, anyhow::Error>),
     SdoResponseI32(Result<i32, anyhow::Error>),
+    SdoResponseRaw(Result<Vec<u8>, anyhow::Error>),
     SdoWriteResponse(Result<(), anyhow::Error>),
     ChangeState(Result<(), anyhow::Error>),
     MachineDeviceInfoResponse(Result<Vec<MachineDeviceInfo>, anyhow::Error>),

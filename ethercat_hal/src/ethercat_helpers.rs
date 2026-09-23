@@ -198,6 +198,29 @@ impl EtherCATThreadChannel {
         }
     }
 
+    pub fn sdo_read_raw(
+        &self,
+        device_address: u16,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<Vec<u8>, anyhow::Error> {
+        use crate::SdoIndex;
+        let index = SdoIndex {
+            index: index as u32,
+            sub_index: sub_index as u16,
+        };
+        let res = self.sdo_map.get(&index);
+        match res {
+            Some(r) => Ok(r.value.clone()),
+            None => Err(anyhow::anyhow!(
+                "Sdo Index {}:{} for device {} not found",
+                index.index,
+                index.sub_index,
+                device_address
+            )),
+        }
+    }
+
     pub fn register_read(
         &self,
         _device_address: u16,
@@ -300,6 +323,42 @@ impl EtherCATThreadChannel {
             _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
         };
         return res;
+    }
+
+    /// Read an SDO object as a raw byte blob, for objects whose size is not one
+    /// of the fixed wire types (e.g. long diagnostic records from the EL7062).
+    pub fn sdo_read_raw(
+        &self,
+        device_address: u16,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<Vec<u8>, anyhow::Error> {
+        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
+        let sdo_request: SdoReadRequest = SdoReadRequest {
+            device_address,
+            index,
+            sub_index: sub_index as u16,
+            type_flag: SdoType::Raw,
+        };
+        let req: ChannelRequest = ChannelRequest {
+            channel_request: crate::ChannelRequests::SdoReadRequest(sdo_request),
+            response_channel: EtherCATThreadResponseChannel(tx),
+        };
+
+        match self.0.send(req) {
+            Ok(_) => (),
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+        let res = rx.recv_timeout(Duration::from_millis(500));
+        let response: ChannelResponse = match res {
+            Ok(res) => res,
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+
+        match response {
+            ChannelResponse::SdoResponseRaw(r) => r,
+            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+        }
     }
 
     /// Read a raw ESC register from a subdevice, e.g.
@@ -636,6 +695,11 @@ pub fn sdo_write(
                     let b: bool = request.data[0] == 1;
                     runtime.block_on(device.sdo_write(request.index, request.sub_index as u8, b))
                 }
+                SdoType::Raw => {
+                    return Err(anyhow::anyhow!(
+                        "Raw SDO writes are not supported"
+                    ));
+                }
             };
             return Ok(res?);
         }
@@ -657,6 +721,27 @@ where
             let res: Result<T, ethercrab::error::Error> =
                 runtime.block_on(device.sdo_read::<T>(request.index, request.sub_index as u8));
             return Ok(res?);
+        }
+    }
+    Err(anyhow::anyhow!("Unknown Subdevice"))
+}
+
+/// Read an SDO object as a raw byte blob, for objects whose size is not one of
+/// the fixed wire types (e.g. long diagnostic records).
+pub fn sdo_read_raw(
+    maindevice: &MainDevice,
+    group: &SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
+    request: SdoReadRequest,
+) -> Result<Vec<u8>, anyhow::Error> {
+    for device in group.iter(maindevice) {
+        if device.configured_address() == request.device_address {
+            let runtime = get_async_runtime();
+            let res: Result<heapless::Vec<u8, 128>, ethercrab::error::Error> =
+                runtime.block_on(device.sdo_read::<heapless::Vec<u8, 128>>(
+                    request.index,
+                    request.sub_index as u8,
+                ));
+            return Ok(res?.into_iter().collect());
         }
     }
     Err(anyhow::anyhow!("Unknown Subdevice"))

@@ -1,5 +1,6 @@
 use crate::TripleBufProducer;
 use crate::ethercat_helpers::configure_oversampling;
+use crate::ethercat_helpers::sdo_read_raw;
 use crate::ethercat_helpers::enable_dc_sync01;
 use crate::{
     ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES,
@@ -256,6 +257,13 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                     send_response(
                                         msg.response_channel,
                                         ChannelResponse::SdoResponseI32(res),
+                                    );
+                                }
+                                SdoType::Raw => {
+                                    let res = sdo_read_raw(maindev, preop_group, request);
+                                    send_response(
+                                        msg.response_channel,
+                                        ChannelResponse::SdoResponseRaw(res),
                                     );
                                 }
                             }

@@ -13,6 +13,8 @@ pub struct DrvControlWord {
     pub switch_on: bool,
     /// Bit 1: Enable voltage
     pub enable_voltage: bool,
+    /// Bit 2: Quick stop
+    pub quick_stop: bool,
     /// Bit 3: Enable operation
     pub enable_operation: bool,
     /// Bit 7: Fault reset
@@ -23,6 +25,7 @@ impl RxPdoObject for DrvControlWord {
     fn write(&self, bits: &mut BitSlice<u8, Lsb0>) {
         bits.set(0, self.switch_on);
         bits.set(1, self.enable_voltage);
+        bits.set(2, self.quick_stop);
         bits.set(3, self.enable_operation);
         bits.set(7, self.fault_reset);
     }
@@ -35,6 +38,7 @@ impl DrvControlWord {
         Self {
             switch_on: raw & (1 << 0) != 0,
             enable_voltage: raw & (1 << 1) != 0,
+            quick_stop: raw & (1 << 2) != 0,
             enable_operation: raw & (1 << 3) != 0,
             fault_reset: raw & (1 << 7) != 0,
         }

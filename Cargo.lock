@@ -519,6 +519,7 @@ dependencies = [
  "ethercat_hal_derive",
  "ethercrab",
  "futures",
+ "heapless 0.8.0",
  "libc",
  "rand",
  "smol",
