@@ -31,13 +31,59 @@ const CONTROL_WORD_SWITCH_ON: u16 = 0x0007;
 const CONTROL_WORD_ENABLE_OPERATION: u16 = 0x000F;
 const CONTROL_WORD_FAULT_RESET: u16 = 0x0080;
 
-/// CiA 402 status word bits
-const STATUS_READY_TO_SWITCH_ON: u16 = 1 << 0;
-const STATUS_SWITCHED_ON: u16 = 1 << 1;
-const STATUS_OPERATION_ENABLED: u16 = 1 << 2;
-const STATUS_FAULT: u16 = 1 << 3;
-const STATUS_SWITCH_ON_DISABLED: u16 = 1 << 6;
-const STATUS_DRIVE_FOLLOWS_COMMAND: u16 = 1 << 12;
+/// CiA 402 status word bits (as exposed by the EL7062 DRV statusword, see the
+/// ESI comment on `0x6010:0x01` / `0x6110:0x01`).
+pub const STATUS_READY_TO_SWITCH_ON: u16 = 1 << 0;
+pub const STATUS_SWITCHED_ON: u16 = 1 << 1;
+pub const STATUS_OPERATION_ENABLED: u16 = 1 << 2;
+pub const STATUS_FAULT: u16 = 1 << 3;
+/// Bit 4 and 5 are reserved on the EL7062 and may be either 0 or 1.
+pub const STATUS_SWITCH_ON_DISABLED: u16 = 1 << 6;
+/// Set while any drive warning is active (e.g. low DC link, current/temperature limit).
+pub const STATUS_WARNING: u16 = 1 << 7;
+/// Toggles every master cycle the drive processes (watchdog/telegram health).
+pub const STATUS_TXPDO_TOGGLE: u16 = 1 << 10;
+/// Set while an internal limit is active.
+pub const STATUS_INTERNAL_LIMIT_ACTIVE: u16 = 1 << 11;
+pub const STATUS_DRIVE_FOLLOWS_COMMAND: u16 = 1 << 12;
+/// Set in every other cycle; serves as a liveness signal.
+pub const STATUS_INPUT_CYCLE_COUNTER: u16 = 1 << 13;
+
+/// Default EL7062 minimum DC link voltage (0x8010:0x51 Ch.1 / 0x8110:0x51 Ch.2,
+/// "Min DC link voltage", default 6800 mV). Below this the output stage refuses
+/// to switch on and the drive raises the warning bit.
+pub const EL7062_MIN_DC_LINK_MV: u16 = 6800;
+
+/// Human-readable decoding of an EL7062 DRV status word, e.g.
+/// `0x00A1 [ready_to_switch_on | WARNING]`.
+///
+/// Useful as the first glance at a stuck channel: a state stuck on
+/// `ReadyToSwitchOn` (bit 0) together with the warning bit (bit 7) is the
+/// classic "motor supply missing / DC link collapse" signature.
+pub fn describe_status_word(status_word: u16) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    let mut push = |bit: u16, name: &'static str| {
+        if status_word & bit != 0 {
+            parts.push(name);
+        }
+    };
+    push(STATUS_FAULT, "FAULT");
+    push(STATUS_OPERATION_ENABLED, "operation_enabled");
+    push(STATUS_SWITCHED_ON, "switched_on");
+    push(STATUS_READY_TO_SWITCH_ON, "ready_to_switch_on");
+    push(STATUS_SWITCH_ON_DISABLED, "switch_on_disabled");
+    push(STATUS_WARNING, "WARNING");
+    push(STATUS_TXPDO_TOGGLE, "txpdo_toggle");
+    push(STATUS_INTERNAL_LIMIT_ACTIVE, "internal_limit");
+    push(STATUS_DRIVE_FOLLOWS_COMMAND, "drive_follows");
+    push(STATUS_INPUT_CYCLE_COUNTER, "input_cycle_counter");
+    let decoded = if parts.is_empty() {
+        "(no bits set: switch-on-disabled)".to_string()
+    } else {
+        parts.join(" | ")
+    };
+    format!("0x{status_word:04X} [{decoded}]")
+}
 
 /// The CiA 402 drive states relevant for the EL7062
 ///
@@ -147,6 +193,7 @@ pub struct EL7062 {
     fault_reset_pending: [bool; 2],
     target_positions: [i128; 2],
     position_wrappers: [PositionWrapperU32I128; 2],
+    prev_states: [CiA402ChannelState; 2],
 }
 
 impl EthercatDeviceProcessing for EL7062 {
@@ -169,6 +216,7 @@ impl NewEthercatDevice for EL7062 {
             fault_reset_pending: [false; 2],
             target_positions: [0; 2],
             position_wrappers: [PositionWrapperU32I128::new(); 2],
+            prev_states: [CiA402ChannelState::Start; 2],
         }
     }
 }
@@ -272,6 +320,66 @@ impl EL7062 {
         }
     }
 
+    /// Human-readable explanation of why a channel is not yet enabled/moving.
+    ///
+    /// Built purely from data already available in the TxPDO snapshot (status
+    /// word, DC link info data, mode display), so it works live in Op without
+    /// SDO traffic. Use it anywhere a channel unexpectedly stays out of
+    /// `OperationEnabled` to get the likely root cause in one line.
+    pub fn enable_diagnostic(&self, port: usize) -> Result<String, anyhow::Error> {
+        self.check_port(port)?;
+        let status_word = self.channel_status_word(port)?;
+        let state = CiA402ChannelState::from_status_word(status_word);
+        let dc_link = self.dc_link_voltage_mv(port)?;
+        let mode = self.channel_mode_display(port)?;
+        let actual = self.position_wrappers[port].current();
+        let target = self.target_positions[port];
+
+        let mut reasons: Vec<String> = Vec::new();
+        match state {
+            CiA402ChannelState::OperationEnabled => {
+                let follows = status_word & STATUS_DRIVE_FOLLOWS_COMMAND != 0;
+                return Ok(format!(
+                    "operation enabled: actual={actual} target={target} follows_command={follows}"
+                ));
+            }
+            CiA402ChannelState::Fault => {
+                reasons.push("drive reports a CiA 402 FAULT; issue a fault reset".to_string())
+            }
+            CiA402ChannelState::SwitchOnDisabled => {
+                reasons.push("drive is in 'switch on disabled' (power stage off)".to_string())
+            }
+            CiA402ChannelState::ReadyToSwitchOn | CiA402ChannelState::SwitchedOn => reasons.push(
+                format!("switch-on ladder stuck at {state:?} (switch-on was not accepted)")
+            ),
+            CiA402ChannelState::Start => reasons.push("no status word read back yet".to_string()),
+        }
+
+        if status_word & STATUS_WARNING != 0 {
+            reasons.push("status word warning bit SET".to_string());
+        }
+        match dc_link {
+            Some(mv) if mv < EL7062_MIN_DC_LINK_MV => reasons.push(format!(
+                "DC link only {mv} mV (needs >= {EL7062_MIN_DC_LINK_MV} mV): the 24/48 V MOTOR supply \
+                 is missing, tripped, or not wired - the output stage refuses to switch on"
+            )),
+            Some(mv) => reasons.push(format!("DC link OK ({mv} mV)")),
+            None => reasons.push("no DC link telemetry in TxPDO (add the info-data PDO)".to_string()),
+        }
+        if let Some(mode) = mode.filter(|&m| m != CSP_MODE) {
+            reasons.push(format!("mode display = {mode}, expected CSP = {CSP_MODE}"));
+        }
+        if status_word & STATUS_INTERNAL_LIMIT_ACTIVE != 0 {
+            reasons.push("internal limit active (end-of-travel/stall detection)".to_string());
+        }
+
+        reasons.push(describe_status_word(status_word));
+        Ok(format!(
+            "{} (actual={actual} target={target})",
+            reasons.join("; ")
+        ))
+    }
+
     fn check_port(&self, port: usize) -> Result<(), anyhow::Error> {
         if port < 2 {
             Ok(())
@@ -338,30 +446,43 @@ impl EL7062 {
         let actual_position = self.channel_fb_position(port)?;
         let target_position = self.target_positions[port];
         let enable = self.enable_requests[port];
+        let dc_link = self.dc_link_voltage_mv(port)?;
+        let follows_command = status_word & STATUS_DRIVE_FOLLOWS_COMMAND != 0;
+        let mode_display = self.channel_mode_display(port)?;
 
         self.position_wrappers[port].update(actual_position);
 
-        tracing::trace!(
-            "EL7062 ch{port}: status=0x{status_word:04X} state={state:?} enable={enable} target={target_position} actual={actual_position}"
-        );
+        // Emit an edge-triggered message whenever the CiA 402 state advances (or
+        // a requested enable fails to establish), keeping the steady-state log
+        // free of per-cycle spam.
+        if state != self.prev_states[port] {
+            let prev = self.prev_states[port];
+            self.prev_states[port] = state;
+            if enable && !state.is_operation_enabled() && !state.is_fault() {
+                tracing::warn!(
+                    "EL7062 ch{port}: enable requested, {prev:?} -> {state:?}, operation NOT established: {}",
+                    self.enable_diagnostic(port)?
+                );
+            } else {
+                tracing::info!(
+                    "EL7062 ch{port}: state {prev:?} -> {state:?} ({describe})",
+                    describe = describe_status_word(status_word)
+                );
+            }
+        }
 
-        if state.is_fault() {
+        let control_word = if state.is_fault() {
             // edge-triggered reset; hold the reset while pending, otherwise keep the drive off
-            let control_word = if self.fault_reset_pending[port] {
+            if self.fault_reset_pending[port] {
                 CONTROL_WORD_FAULT_RESET
             } else {
                 CONTROL_WORD_DISABLE_VOLTAGE
-            };
-            tracing::trace!(
-                "EL7062 ch{port}: fault -> control_word=0x{control_word:04X} (reset_pending={})",
-                self.fault_reset_pending[port]
-            );
-            self.rxpdo_write_control_word(port, control_word)?;
+            }
         } else {
             // leaving the fault state clears any pending reset
             self.fault_reset_pending[port] = false;
 
-            let control_word = match state {
+            match state {
                 CiA402ChannelState::Start | CiA402ChannelState::SwitchOnDisabled => {
                     if enable {
                         CONTROL_WORD_SHUTDOWN
@@ -391,13 +512,19 @@ impl EL7062 {
                     }
                 }
                 CiA402ChannelState::Fault => unreachable!(),
-            };
-            tracing::trace!(
-                "EL7062 ch{port}: state={state:?} -> control_word=0x{control_word:04X}"
-            );
-            self.rxpdo_write_control_word(port, control_word)?;
-        }
+            }
+        };
 
+        tracing::trace!(
+            "EL7062 ch{port}: status={describe} state={state:?} enable={enable} \
+             cw=0x{control_word:04X} target={target_position} actual={actual_position} \
+             dc_link={dc_link_mv} followed={follows_command} mode={mode:?}",
+            describe = describe_status_word(status_word),
+            dc_link_mv = dc_link.map_or_else(|| "-".to_string(), |v| v.to_string()),
+            mode = mode_display
+        );
+
+        self.rxpdo_write_control_word(port, control_word)?;
         // feed the target position and keep the mode of operation in CSP
         self.rxpdo_write_target_position(port, target_position)?;
         self.rxpdo_write_mode(port, CSP_MODE)?;
@@ -589,6 +716,67 @@ mod tests {
             CiA402ChannelState::from_status_word(0x0028),
             CiA402ChannelState::Fault
         );
+    }
+
+    #[test]
+    fn describe_status_word_decodes_bits() {
+        assert_eq!(
+            describe_status_word(0x00A1),
+            "0x00A1 [ready_to_switch_on | WARNING]"
+        );
+        assert_eq!(
+            describe_status_word(0x0021),
+            "0x0021 [ready_to_switch_on]"
+        );
+        assert_eq!(
+            describe_status_word(0x0027),
+            "0x0027 [operation_enabled | switched_on | ready_to_switch_on]"
+        );
+        assert_eq!(
+            describe_status_word(0x0040),
+            "0x0040 [switch_on_disabled]"
+        );
+        assert_eq!(
+            describe_status_word(0x0000),
+            "0x0000 [(no bits set: switch-on-disabled)]"
+        );
+        assert_eq!(
+            describe_status_word(0x10A7),
+            "0x10A7 [operation_enabled | switched_on | ready_to_switch_on | WARNING | drive_follows]"
+        );
+    }
+
+    #[test]
+    fn enable_diagnostic_flags_low_dc_link() {
+        let mut device = EL7062::new();
+        device.set_enabled(0, true).unwrap();
+        device.txpdo.status_word_ch1 = Some(pdo::DrvStatusWord {
+            status_word: 0x00A1,
+        });
+        device.txpdo.info_data_ch1 = Some(pdo::DrvInfoData { info_data: 94 });
+        device.txpdo.mode_of_operation_display_ch1 = Some(pdo::DrvModeOfOperationDisplay {
+            mode_display: CSP_MODE,
+        });
+        device.process_channel(0).unwrap();
+
+        let diagnostic = device.enable_diagnostic(0).unwrap();
+        assert!(diagnostic.contains("DC link only 94 mV"), "{diagnostic}");
+        assert!(diagnostic.contains("MOTOR supply"), "{diagnostic}");
+        assert!(diagnostic.contains("warning bit SET"), "{diagnostic}");
+    }
+
+    #[test]
+    fn enable_diagnostic_reports_operation_enabled() {
+        let mut device = EL7062::new();
+        device.set_enabled(0, true).unwrap();
+        device.txpdo.status_word_ch1 = Some(pdo::DrvStatusWord {
+            status_word: 0x1027,
+        });
+        device.txpdo.info_data_ch1 = Some(pdo::DrvInfoData { info_data: 24222 });
+        device.process_channel(0).unwrap();
+
+        let diagnostic = device.enable_diagnostic(0).unwrap();
+        assert!(diagnostic.starts_with("operation enabled"), "{diagnostic}");
     }
 
     #[test]

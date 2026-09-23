@@ -5,8 +5,8 @@ use ethercat_hal::{
     devices::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
         beckhoff_modules::el7062::{
-            DmcDriveStatus, EL7062, EL7062_PRODUCT_ID, EL7062Configuration, read_dc_link_voltage,
-            read_dmc_drive_status, read_dmc_error_id,
+            DmcDriveStatus, EL7062, EL7062_PRODUCT_ID, EL7062Configuration, describe_status_word,
+            read_dc_link_voltage, read_dmc_drive_status, read_dmc_error_id,
         },
     },
     init_ethercat,
@@ -139,6 +139,13 @@ fn main() {
                     status.error as u8
                 );
                 dmc_snapshot[port] = Some(status);
+                if !status.ready_to_enable {
+                    tracing::warn!(
+                        "EL7062 ch{port} DMC ready_to_enable=0: the drive-management unit will not \
+                         allow the power stage on this channel until it clears - the channel cannot \
+                         leave the CiA 402 switch-on ladder (check the 24/48 V motor supply and wiring)"
+                    );
+                }
             }
             Err(e) => {
                 tracing::warn!("EL7062 ch{port} DMC DriveStatus SDO read failed (PreOp): {e}");
@@ -327,17 +334,24 @@ fn main() {
                     })
                     .map_err(|e| e.to_string())
                     .unwrap_or_else(|e| format!("<{e}>"));
+                let diagnostic = el7062
+                    .enable_diagnostic(port)
+                    .map_err(|e| e.to_string())
+                    .unwrap_or_else(|e| format!("<diagnostic unavailable: {e}>"));
                 println!(
-                    "t={elapsed:>9.3}s ch{port}: pos={:>10} target={:>10} state={:<18?} status=0x{:04X} mode={:?} follows={} enabled={} dc_link={}",
+                    "t={elapsed:>9.3}s ch{port}: pos={:>10} target={:>10} state={:<18?} {} mode={:?} follows={} enabled={} dc_link={}",
                     input.position,
                     target,
                     input.state,
-                    input.status_word,
+                    describe_status_word(input.status_word),
                     input.mode_display,
                     input.drive_follows_command,
                     input.is_enabled,
                     dc_link,
                 );
+                if enable_motors && !input.is_enabled {
+                    println!("          diagnostic: {diagnostic}");
+                }
             }
         }
     }
