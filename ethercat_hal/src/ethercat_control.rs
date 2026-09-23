@@ -9,8 +9,8 @@ use crate::machine_ident_read::MachineDeviceInfo;
 use crate::mailbox::Mailbox;
 use crate::types::{Consumer, Producer};
 use crate::{
-    ETHERCAT_TX_RX_SIZE, EtherCATAppHandle, EtherCATState, EtherCATThreadChannel,
-    MetaSubdevice, TripleBufConsumer,
+    ETHERCAT_TX_RX_SIZE, EtherCATAppHandle, EtherCATState, EtherCATThreadChannel, MetaSubdevice,
+    TripleBufConsumer,
 };
 
 pub struct EtherCATControl<C, P>

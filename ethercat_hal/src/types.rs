@@ -1,6 +1,9 @@
+use crate::{
+    ETHERCAT_TX_RX_SIZE, al_diagnostics, app_handle::EtherCATAppHandle,
+    machine_ident_read::MachineDeviceInfo, mailbox::Mailbox,
+};
 use std::{fmt, sync::Arc, time::Duration};
 use triple_buffer::{Input, Output};
-use crate::{ETHERCAT_TX_RX_SIZE, al_diagnostics, app_handle::EtherCATAppHandle, machine_ident_read::MachineDeviceInfo, mailbox::Mailbox};
 
 #[derive(Clone)]
 pub struct EtherCATThreadResponseChannel(pub crate::Sender<ChannelResponse>);
@@ -93,7 +96,10 @@ pub struct TypeErasedValue {
 // `.0` is drained per-state, `.1` in every state.
 #[cfg(not(feature = "mock"))]
 #[derive(Clone)]
-pub struct EtherCATThreadChannel(pub crate::Sender<ChannelRequest>, pub crate::Sender<DiagnosticRequest>);
+pub struct EtherCATThreadChannel(
+    pub crate::Sender<ChannelRequest>,
+    pub crate::Sender<DiagnosticRequest>,
+);
 
 #[cfg(feature = "mock")]
 #[derive(Clone)]
@@ -134,8 +140,6 @@ impl fmt::Display for EthercatErr {
     }
 }
 impl std::error::Error for EthercatErr {}
-
-
 
 impl std::fmt::Debug for MetaSubdevice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

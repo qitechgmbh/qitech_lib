@@ -1,5 +1,7 @@
 use crate::{
-    ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES, MetaSubdevice, al_diagnostics::{TransitionLog, TransitionReport}, types::{Consumer, Producer},
+    ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES, MetaSubdevice,
+    al_diagnostics::{TransitionLog, TransitionReport},
+    types::{Consumer, Producer},
 };
 use std::sync::{
     Arc,

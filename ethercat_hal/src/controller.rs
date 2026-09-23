@@ -17,8 +17,7 @@ use crate::types::EthercatErr;
 use crate::types::Producer;
 use crate::types::SdoType;
 use crate::{
-    ChannelResponse, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES,
-    PDI_LEN, PDU_STORAGE,
+    ChannelResponse, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES, PDI_LEN, PDU_STORAGE,
     al_diagnostics::EtherCATTransition,
     ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
     get_async_runtime,

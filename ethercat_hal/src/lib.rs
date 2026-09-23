@@ -21,9 +21,11 @@ use crate::controller::EtherCATController;
 #[cfg(not(feature = "mock"))]
 use crate::ethercat_control::EtherCATControl;
 use crate::mailbox::Mailbox;
-#[cfg(not(feature = "mock"))]
-use crate::types::{EtherCATState, EtherCATThreadChannel, MetaSubdevice, TripleBufConsumer, TripleBufProducer};
 use crate::types::{ChannelResponse, EtherCATThreadResponseChannel};
+#[cfg(not(feature = "mock"))]
+use crate::types::{
+    EtherCATState, EtherCATThreadChannel, MetaSubdevice, TripleBufConsumer, TripleBufProducer,
+};
 use al_diagnostics::TransitionLog;
 use ethercrab::PduStorage;
 use std::sync::atomic::{AtomicBool, AtomicU64};

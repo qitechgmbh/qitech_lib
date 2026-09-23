@@ -1,4 +1,7 @@
-use crate::{ETHERCAT_TX_RX_SIZE, types::{Consumer, Producer}};
+use crate::{
+    ETHERCAT_TX_RX_SIZE,
+    types::{Consumer, Producer},
+};
 use std::{
     cell::UnsafeCell,
     sync::atomic::{AtomicBool, Ordering},
