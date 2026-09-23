@@ -4,7 +4,6 @@
 //!   - `input()`: unpack raw bytes from a `BitSlice` via `load_le` into a `TxPdo` struct.
 //!   - `output()`: pack a `RxPdo` struct into raw bytes and write them via `store_le`.
 
-use crate::EncoderResolution;
 use crate::devices::{
     EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed, EthercatDynamicPDO, Module,
     NewEthercatDevice, SubDeviceIdentityTuple,
@@ -12,6 +11,7 @@ use crate::devices::{
 use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::helpers::minas_a6_subdevice_wrapper::{EtherCATSlaveWrapper, PdoMapping};
 use crate::io::servo_velocity_minasa6::{MinasA6BDevice, MinasA6BInput, MinasA6BOutput};
+use crate::types::EncoderResolution;
 use anyhow::{Error, anyhow};
 use bitvec::field::BitField;
 use bitvec::prelude::{BitSlice, Lsb0};
