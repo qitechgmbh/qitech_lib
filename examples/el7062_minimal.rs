@@ -16,7 +16,8 @@
 
 use bitvec::slice::BitSlice;
 use ethercat_hal::{
-    DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig,
+    DcConfiguration, EtherCATState, EtherCATThreadChannel, MasterConfiguration,
+    RtOptimizationConfig,
     coe::ConfigurableDevice,
     devices::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
@@ -39,6 +40,28 @@ fn apply_rt() {
     let id = core_affinity::CoreId { id: 2 };
     set_current_thread_rt_priority(99);
     core_affinity::set_for_current(id);
+}
+
+fn dump_dc_registers(channel: &EtherCATThreadChannel, addr: u16) {
+    let pairs: [(u16, &str); 11] = [
+        (0x0980, "AssignActivate(classic)"),
+        (0x0981, "DcSyncActive(module)"),
+        (0x0984, "StartTime-classic-lo"),
+        (0x0985, "StartTime-classic-hi"),
+        (0x0988, "Sync0Cycle-classic-lo"),
+        (0x0989, "Sync0Cycle-classic-hi"),
+        (0x098C, "Sync1Cycle-classic-lo"),
+        (0x098D, "Sync1Cycle-classic-hi"),
+        (0x0990, "StartTime-module-lo"),
+        (0x09A0, "Sync0Cycle-module-lo"),
+        (0x09A4, "Sync1Cycle-module-lo"),
+    ];
+    for (reg, label) in pairs {
+        match channel.register_read(addr, reg) {
+            Ok(v) => debug!("  {label} @0x{reg:04X} = 0x{v:04x}"),
+            Err(e) => debug!("  {label} @0x{reg:04X} read failed: {e}"),
+        }
+    }
 }
 
 /// Drive the CiA402 state machine via the control word.
@@ -154,7 +177,7 @@ fn main() {
         // Give headroom for DC setup to finish
         start_delay: Duration::from_millis(100),
         sync0_period: Duration::from_micros(cycle_time_us),
-        sync0_shift: Duration::from_micros(cycle_time_us / 4), // Reduced to 25% of cycle time
+        sync0_shift: Duration::ZERO,
         target_dc_tick: 500,
     };
 
@@ -235,7 +258,7 @@ fn main() {
         debug!("Current EtherCAT state: {:?}", current_state);
         if matches!(current_state, EtherCATState::PreOp) {
             info!("EtherCAT master reached PreOp state");
-    log::logger().flush();
+            log::logger().flush();
             break;
         }
         attempts += 1;
@@ -325,9 +348,6 @@ fn main() {
 
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
     info!("Detected {} subdevices", subdevices.len());
-    log::logger().flush();
-    debug!("Detected {} subdevices", subdevices.len());
-    log::logger().flush();
 
     let mut el7062_found = false;
     for subdevice in &subdevices {
@@ -374,64 +394,117 @@ fn main() {
                 .expect("Failed to write config");
             info!("EL7062 configuration written successfully");
 
+            let sm = |index: u16, sub: u8| -> String {
+                match eth_control
+                    .channel
+                    .sdo_read::<u32>(subdevice.device_address, index, sub)
+                {
+                    Ok(v) => format!("0x{v:08x} ({v} dec)"),
+                    Err(e) => format!("read failed: {e}"),
+                }
+            };
+            info!("SM sync params readback:");
+            for (idx, sub, name) in [
+                (0x1C32u16, 0x01u8, "SM2 sync mode"),
+                (0x1C32, 0x02, "SM2 cycle [ns]"),
+                (0x1C32, 0x03, "SM2 shift [ns]"),
+                (0x1C32, 0x0A, "SM2 Sync0 cycle [ns]"),
+                (0x1C33, 0x01, "SM3 sync mode"),
+                (0x1C33, 0x02, "SM3 cycle [ns]"),
+                (0x1C33, 0x03, "SM3 shift [ns]"),
+            ] {
+                info!("  {name} ({idx:#06X}:{sub}): {}", sm(idx, sub));
+            }
+
+            let sync1_period = Duration::from_nanos(31250);
             eth_control
                 .channel
-                .enable_dc_sync0(subdevice.device_address)
+                .enable_dc_sync01(subdevice.device_address, sync1_period)
                 .expect("Failed to enable DC Sync!");
             info!(
-                "DC Sync0 enabled for subdevice {}",
-                subdevice.device_address
+                "DC Sync01 enabled for subdevice {} (sync1_period={:?})",
+                subdevice.device_address, sync1_period
             );
         }
     }
 
-    info!("Requesting EtherCAT state transition: -> Op");
-    info!("Configuring PDO mapping for EL7062...");
-    log::logger().flush();
-
-    // Ensure PDO mapping is configured before transitioning to Op
-    for subdevice in &subdevices {
-        if subdevice.product_id == EL7062_PRODUCT_ID {
-            el7062
-                .write_config(
-                    eth_control.channel.clone(),
-                    subdevice.device_address,
-                    &el7062.get_config(),
-                )
-                .expect("Failed to write config");
-
-            eth_control
-                .channel
-                .enable_dc_sync0(subdevice.device_address)
-                .expect("Failed to enable DC Sync!");
-        }
-    }
-    // Request Op state
+    // Request Op state. The master thread then drives the bus through PreopPdi
+    // (DC clock settling) -> SafeOp -> Op on its own.
     info!("Requesting EtherCAT state transition: -> Op");
     eth_control
         .channel
         .request_state_change(EtherCATState::Op)
         .expect("Failed to request state change to Op");
-    
-    // Wait for Op state
-    info!("Waiting for Op state...");
+
+    let el7062_address = subdevices
+        .iter()
+        .find(|s| s.product_id == EL7062_PRODUCT_ID)
+        .map(|s| s.device_address);
+
+    if let Some(report) = eth_handle.get_last_transition_failure() {
+        warn!("Previous transition failed: {}", report);
+    }
+
+    // Wait for Op state. The master reports PreopPdi (and then SafeOp) while it
+    // settles the distributed clocks, so poll until all subdevices report Op.
+    info!("Waiting for Op state (master passes through PreopPdi -> SafeOp -> Op)...");
     let mut attempts = 0;
-    let max_attempts = 100; // ~100 seconds timeout (100 * 1000ms)
-    while attempts < max_attempts {
+    let max_attempts = 400; // ~100 seconds timeout (400 * 250ms)
+    loop {
         current_state = eth_handle.get_state();
-        debug!("Current EtherCAT state: {:?}", current_state);
-        if eth_handle.check_all_op() {
-            info!("All subdevices reached Op state");
-    log::logger().flush();
+        let all_op = eth_handle.check_all_op();
+        debug!(
+            "EtherCAT state: {:?}, all subdevices OP: {}",
+            current_state, all_op
+        );
+        if all_op {
+            info!("EtherCAT master and all subdevices reached Op state");
+            log::logger().flush();
             break;
         }
+
+        // While wedged in PreopPdi the EL7062 may be refusing SAFE-OP; its AL
+        // status / AL status code (0x0130 / 0x0134) say why. The controller
+        // services these probes even during the PreopPdi cycle loop.
+        if attempts % 8 == 0 {
+            match eth_control.channel.al_status_snapshot() {
+                Ok(statuses) => {
+                    let any_faulty = statuses.iter().any(|s| s.is_faulty());
+                    log::log!(
+                        if any_faulty { log::Level::Warn } else { log::Level::Debug },
+                        "AL snapshot during state ramp:"
+                    );
+                    for s in &statuses {
+                        log::log!(
+                            if s.is_faulty() { log::Level::Warn } else { log::Level::Debug },
+                            "  {s}"
+                        );
+                    }
+                }
+                Err(e) => debug!("AL snapshot failed: {}", e),
+            }
+            if let Some(addr) = el7062_address {
+                match eth_control.channel.register_read(addr, 0x0134u16) {
+                    Ok(code) => debug!(
+                        "EL7062 @{} AL status code (0x0134): 0x{:04x}",
+                        addr, code
+                    ),
+                    Err(e) => debug!("EL7062 AL status code read failed: {}", e),
+                }
+                dump_dc_registers(&eth_control.channel, addr);
+            }
+            if let Some(report) = eth_handle.get_last_transition_failure() {
+                warn!("Last failed transition: {}", report);
+            }
+            log::logger().flush();
+        }
+
         attempts += 1;
-        std::thread::sleep(Duration::from_millis(1000));
-    }
-    
-    if attempts >= max_attempts {
-        error!("Timeout waiting for Op state! Check device configuration.");
-        return;
+        if attempts >= max_attempts {
+            error!("Timeout waiting for Op state! Check device configuration.");
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(250));
     }
 
     apply_rt();
@@ -458,7 +531,18 @@ fn main() {
             }
         }
         let position = el7062.get_position(EL7062Port::Ch1).unwrap_or(0);
-        info!("Initial position: {} increments", position);
+        let statusword = el7062
+            .get_statusword(EL7062Port::Ch1)
+            .unwrap_or_default();
+        info!(
+            "Initial position: {} increments, statusword=0x{:04X} (ready_to_switch_on={}, switched_on={}, operation_enabled={}, fault={})",
+            position,
+            statusword.as_raw(),
+            statusword.ready_to_switch_on,
+            statusword.switched_on,
+            statusword.operation_enabled,
+            statusword.fault,
+        );
         position
     };
 
@@ -477,6 +561,12 @@ fn main() {
         "Starting control loop with cycle time: {} µs",
         cycle_time_us
     );
+
+    // Track CiA402 enable transitions so we can confirm the drive enables.
+    let mut prev_switched_on = false;
+    let mut prev_operation_enabled = false;
+    let mut prev_follows = false;
+
     loop {
         while !eth_handle.check_inputs_ready() {}
 
@@ -501,17 +591,36 @@ fn main() {
         let statusword = el7062
             .get_statusword(EL7062Port::Ch1)
             .expect("Failed to read statusword");
-        debug!("Statusword: {:?}", statusword);
+        debug!(
+            "Statusword: 0x{:04X} (ready_to_switch_on={}, switched_on={}, operation_enabled={}, drive_follows={}, fault={})",
+            statusword.as_raw(),
+            statusword.ready_to_switch_on,
+            statusword.switched_on,
+            statusword.operation_enabled,
+            statusword.drive_follows_command_value,
+            statusword.fault,
+        );
 
         if statusword.fault {
-            error!("Fault detected! Statusword: {:?}", statusword);
+            error!("Fault detected! Statusword: 0x{:04X}", statusword.as_raw());
         }
 
         apply_controlword(&mut el7062, &statusword).expect("Failed to write controlword");
-        debug!(
-            "Controlword applied: switched_on={}, operation_enabled={}, fault={}",
-            statusword.switched_on, statusword.operation_enabled, statusword.fault
-        );
+
+        if statusword.operation_enabled && !prev_operation_enabled {
+            info!("Drive enabled: operation_enabled");
+            log::logger().flush();
+        } else if statusword.switched_on && !prev_switched_on {
+            info!("Drive switched on");
+            log::logger().flush();
+        }
+        if statusword.drive_follows_command_value && !prev_follows {
+            info!("Drive follows command value (CSP active)");
+            log::logger().flush();
+        }
+        prev_switched_on = statusword.switched_on;
+        prev_operation_enabled = statusword.operation_enabled;
+        prev_follows = statusword.drive_follows_command_value;
 
         if statusword.operation_enabled {
             ramp.advance(go_to, dt);
