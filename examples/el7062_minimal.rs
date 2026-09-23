@@ -5,7 +5,8 @@ use ethercat_hal::{
     devices::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
         beckhoff_modules::el7062::{
-            DmcDriveStatus, EL7062, EL7062_PRODUCT_ID, read_dmc_drive_status,
+            DmcDriveStatus, EL7062, EL7062_PRODUCT_ID, EL7062Configuration, read_dc_link_voltage,
+            read_dmc_drive_status, read_dmc_error_id,
         },
     },
     init_ethercat,
@@ -85,6 +86,13 @@ fn main() {
     }
 
     let mut el7062 = EL7062::new();
+    // The Nanotec stepper on channel 1 is rated 1.8 A; the EL7062 factory
+    // default is 3000 mA regardless of the connected motor.
+    let mut device_config = EL7062Configuration::default();
+    for channel in [&mut device_config.channel_1, &mut device_config.channel_2] {
+        channel.rated_current = 1800;
+        channel.configured_motor_current = 1800;
+    }
     let mut device_address: Option<u16> = None;
     for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
         if subdevice.product_id == EL7062_PRODUCT_ID {
@@ -98,7 +106,7 @@ fn main() {
                 .write_config(
                     eth_control.channel.clone(),
                     subdevice.device_address,
-                    &el7062.get_config(),
+                    &device_config,
                 )
                 .expect("Failed to write config");
             tracing::info!("EL7062 config written, enabling DC Sync0 (62.5us) + Sync1 (1ms)");
@@ -118,6 +126,8 @@ fn main() {
     // drops mailbox responses). So snapshot the DMC unit status here, before
     // entering Op, instead of reading it live in the loop.
     let mut dmc_snapshot: [Option<DmcDriveStatus>; 2] = [None, None];
+    let mut dc_link_snapshot: [Option<u16>; 2] = [None, None];
+    let mut error_id_snapshot: [Option<u32>; 2] = [None, None];
     for port in 0..2 {
         match read_dmc_drive_status(&eth_control.channel, device_address, port) {
             Ok(status) => {
@@ -132,6 +142,24 @@ fn main() {
             }
             Err(e) => {
                 tracing::warn!("EL7062 ch{port} DMC DriveStatus SDO read failed (PreOp): {e}");
+            }
+        }
+        match read_dc_link_voltage(&eth_control.channel, device_address, port) {
+            Ok(mv) => {
+                tracing::info!("EL7062 ch{port} DC link voltage (PreOp): {mv} mV");
+                dc_link_snapshot[port] = Some(mv);
+            }
+            Err(e) => {
+                tracing::warn!("EL7062 ch{port} DC link voltage SDO read failed (PreOp): {e}");
+            }
+        }
+        match read_dmc_error_id(&eth_control.channel, device_address, port) {
+            Ok(id) => {
+                tracing::info!("EL7062 ch{port} DMC error id (PreOp): 0x{id:08X}");
+                error_id_snapshot[port] = Some(id);
+            }
+            Err(e) => {
+                tracing::warn!("EL7062 ch{port} DMC error id SDO read failed (PreOp): {e}");
             }
         }
     }
@@ -172,6 +200,17 @@ fn main() {
             None => println!("  dmc   ch{port}: <unavailable - SDO read failed>"),
         }
     }
+    for port in 0..2 {
+        let dc_link = match dc_link_snapshot[port] {
+            Some(mv) => format!("{mv} mV"),
+            None => "<unavailable - SDO read failed>".to_string(),
+        };
+        let error_id = match error_id_snapshot[port] {
+            Some(id) => format!("0x{id:08X}"),
+            None => "<unavailable - SDO read failed>".to_string(),
+        };
+        println!("  pwr   ch{port}: dc_link={dc_link} dmc_error={error_id}");
+    }
     if enable_motors {
         println!(
             "  WARNING: motors are ENABLED and will move. Make sure 24V/48V motor supply is present."
@@ -189,6 +228,8 @@ fn main() {
     let mut target_ch1: i128 = 0;
     let mut dir_ch0: i128 = 1;
     let mut dir_ch1: i128 = -1;
+    let mut init_target_to_actual = true;
+    let mut prev_in_fault: [bool; 2] = [false, false];
     let mut last_target_step = std::time::Instant::now();
     let mut last_print = std::time::Instant::now();
     let started = std::time::Instant::now();
@@ -209,6 +250,19 @@ fn main() {
             }
         }
 
+        // Seed the CSP target with the current actual position once so the drive
+        // does not try to hunt a huge delta (raw feedback is ~2^31 while the
+        // sweep starts at 0) the moment it is enabled.
+        if init_target_to_actual {
+            target_ch0 = el7062
+                .get_actual_position(0)
+                .expect("Failed to read actual position");
+            target_ch1 = el7062
+                .get_actual_position(1)
+                .expect("Failed to read actual position");
+            init_target_to_actual = false;
+        }
+
         if last_target_step.elapsed() >= STEP_INTERVAL {
             last_target_step = std::time::Instant::now();
             target_ch0 += dir_ch0 * STEPS_PER_UPDATE;
@@ -225,12 +279,13 @@ fn main() {
             let input = el7062
                 .get_input(port)
                 .expect("Failed to read channel snapshot");
-            if input.is_in_fault {
-                eprintln!("channel {port}: fault, issuing reset");
+            if input.is_in_fault && !prev_in_fault[port] {
+                eprintln!("channel {port}: fault detected, issuing reset");
                 el7062
                     .reset_fault(port)
                     .expect("Failed to reset channel fault");
             }
+            prev_in_fault[port] = input.is_in_fault;
             el7062
                 .set_enabled(port, enable_motors)
                 .expect("Failed to set channel enable");
@@ -264,8 +319,16 @@ fn main() {
                 let target = el7062
                     .get_target_position(port)
                     .expect("Failed to read target position");
+                let dc_link = el7062
+                    .dc_link_voltage_mv(port)
+                    .map(|v| match v {
+                        Some(mv) => format!("{mv}mV"),
+                        None => "n/a".to_string(),
+                    })
+                    .map_err(|e| e.to_string())
+                    .unwrap_or_else(|e| format!("<{e}>"));
                 println!(
-                    "t={elapsed:>9.3}s ch{port}: pos={:>10} target={:>10} state={:<18?} status=0x{:04X} mode={:?} follows={} enabled={}",
+                    "t={elapsed:>9.3}s ch{port}: pos={:>10} target={:>10} state={:<18?} status=0x{:04X} mode={:?} follows={} enabled={} dc_link={}",
                     input.position,
                     target,
                     input.state,
@@ -273,6 +336,7 @@ fn main() {
                     input.mode_display,
                     input.drive_follows_command,
                     input.is_enabled,
+                    dc_link,
                 );
             }
         }

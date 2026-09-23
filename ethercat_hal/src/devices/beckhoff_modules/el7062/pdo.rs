@@ -75,9 +75,25 @@ impl TxPdoObject for FbPosition {
     }
 }
 
+/// DRV Inputs Info data 1 (0x6010:18 Ch.1 / 0x6110:18 Ch.2)
+///
+/// 16-bit value whose meaning is chosen by the "DRV Info data" selection
+/// objects. By factory default it reports the DC link voltage in mV.
+#[derive(Debug, Clone, Copy, Default, PdoObject, PartialEq, Eq)]
+#[pdo_object(bits = 16)]
+pub struct DrvInfoData {
+    pub info_data: u16,
+}
+
+impl TxPdoObject for DrvInfoData {
+    fn read(&mut self, bits: &BitSlice<u8, Lsb0>) {
+        self.info_data = bits[0..16].load_le();
+    }
+}
+
 // RxPDO objects (master -> slave)
 //
-// The `DRV` output objects live at 0x7010 (Ch.1) / 0x7020 (Ch.2).
+// The `DRV` output objects live at 0x7010 (Ch.1) / 0x7110 (Ch.2).
 
 /// DRV Outputs Controlword (0x7010:01 Ch.1 / 0x7020:01 Ch.2)
 ///
@@ -145,6 +161,9 @@ pub struct EL7062TxPdo {
     #[pdo_object_index(0x1A0E)]
     pub mode_of_operation_display_ch1: Option<DrvModeOfOperationDisplay>,
 
+    #[pdo_object_index(0x1A04)]
+    pub info_data_ch1: Option<DrvInfoData>,
+
     #[pdo_object_index(0x1A06)]
     pub following_error_ch1: Option<DrvFollowingError>,
 
@@ -156,6 +175,9 @@ pub struct EL7062TxPdo {
 
     #[pdo_object_index(0x1A8E)]
     pub mode_of_operation_display_ch2: Option<DrvModeOfOperationDisplay>,
+
+    #[pdo_object_index(0x1A84)]
+    pub info_data_ch2: Option<DrvInfoData>,
 
     #[pdo_object_index(0x1A86)]
     pub following_error_ch2: Option<DrvFollowingError>,
@@ -226,10 +248,12 @@ impl PredefinedPdoAssignment<EL7062TxPdo, EL7062RxPdo> for EL7062PredefinedPdoAs
             fb_position_ch1: Some(FbPosition::default()),
             status_word_ch1: Some(DrvStatusWord::default()),
             mode_of_operation_display_ch1: with_mode.then(DrvModeOfOperationDisplay::default),
+            info_data_ch1: with_mode.then(DrvInfoData::default),
             following_error_ch1: with_following_error.then(DrvFollowingError::default),
             fb_position_ch2: Some(FbPosition::default()),
             status_word_ch2: Some(DrvStatusWord::default()),
             mode_of_operation_display_ch2: with_mode.then(DrvModeOfOperationDisplay::default),
+            info_data_ch2: with_mode.then(DrvInfoData::default),
             following_error_ch2: with_following_error.then(DrvFollowingError::default),
         }
     }
@@ -264,6 +288,17 @@ mod tests {
         let txpdo = assignment.txpdo_assignment();
         // position (32) + statusword (16) + following error (32) per channel = 160 bits
         assert_eq!(txpdo.size(), 160);
+
+        let assignment = EL7062PredefinedPdoAssignment::CspWithMode;
+        let txpdo = assignment.txpdo_assignment();
+        // position (32) + statusword (16) + mode display (8) + info data (16) per channel = 144 bits
+        assert_eq!(txpdo.size(), 144);
+
+        let assignment = EL7062PredefinedPdoAssignment::CspWithModeAndFollowingError;
+        let txpdo = assignment.txpdo_assignment();
+        // position (32) + statusword (16) + mode display (8) + info data (16)
+        // + following error (32) per channel = 208 bits
+        assert_eq!(txpdo.size(), 208);
     }
 
     #[test]

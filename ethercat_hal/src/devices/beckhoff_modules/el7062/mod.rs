@@ -2,11 +2,13 @@ pub mod coe;
 pub mod pdo;
 
 use anyhow::anyhow;
-use coe::EL7062Configuration;
 use ethercat_hal_derive::EthercatDevice;
 use pdo::CSP_MODE;
 
-pub use coe::{DmcDriveStatus, read_dmc_drive_status, read_dmc_error_id};
+pub use coe::{
+    DmcDriveStatus, EL7062ChannelConfiguration, EL7062Configuration, read_dc_link_voltage,
+    read_dmc_drive_status, read_dmc_error_id,
+};
 
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::{
@@ -180,12 +182,13 @@ impl EL7062 {
     ///
     /// The CiA 402 state machine is driven in [`EthercatDeviceProcessing::output_pre_process`]
     /// and advances the control word towards operation enabled / switch on disabled.
+    ///
+    /// Disabling does NOT cancel a pending fault reset: [`reset_fault`] is
+    /// edge-triggered and must not be dropped by a subsequent disable request,
+    /// otherwise the `0x0080` reset control word is never transmitted.
     pub fn set_enabled(&mut self, port: usize, enabled: bool) -> Result<(), anyhow::Error> {
         self.check_port(port)?;
         self.enable_requests[port] = enabled;
-        if !enabled {
-            self.fault_reset_pending[port] = false;
-        }
         Ok(())
     }
 
@@ -253,6 +256,20 @@ impl EL7062 {
     pub fn mode_of_operation_display(&self, port: usize) -> Result<Option<u8>, anyhow::Error> {
         self.check_port(port)?;
         self.channel_mode_display(port)
+    }
+
+    /// DRV Info data 1 (0x6010:18 Ch.1 / 0x6110:18 Ch.2) if the PDO is mapped.
+    ///
+    /// By factory default selected to report the DC link voltage in mV. A value
+    /// far below the parametrized minimum (6.8 V by default) causes warning +
+    /// status bit 4 = 0, blocking the motor from switching on.
+    pub fn dc_link_voltage_mv(&self, port: usize) -> Result<Option<u16>, anyhow::Error> {
+        self.check_port(port)?;
+        match port {
+            0 => Ok(self.txpdo.info_data_ch1.as_ref().map(|o| o.info_data)),
+            1 => Ok(self.txpdo.info_data_ch2.as_ref().map(|o| o.info_data)),
+            _ => Err(anyhow!("Invalid port: {port}")),
+        }
     }
 
     fn check_port(&self, port: usize) -> Result<(), anyhow::Error> {
@@ -375,7 +392,9 @@ impl EL7062 {
                 }
                 CiA402ChannelState::Fault => unreachable!(),
             };
-            tracing::trace!("EL7062 ch{port}: state={state:?} -> control_word=0x{control_word:04X}");
+            tracing::trace!(
+                "EL7062 ch{port}: state={state:?} -> control_word=0x{control_word:04X}"
+            );
             self.rxpdo_write_control_word(port, control_word)?;
         }
 
@@ -691,6 +710,22 @@ mod tests {
         });
         device.process_channel(0).unwrap();
         assert!(!device.fault_reset_pending[0]);
+    }
+
+    #[test]
+    fn set_enabled_does_not_cancel_pending_fault_reset() {
+        let mut device = EL7062::new();
+        device.txpdo.status_word_ch1 = Some(pdo::DrvStatusWord {
+            status_word: 0x0008,
+        });
+        device.reset_fault(0).unwrap();
+        device.set_enabled(0, false).unwrap();
+        assert!(device.fault_reset_pending[0]);
+        device.process_channel(0).unwrap();
+        assert_eq!(
+            device.rxpdo.control_word_ch1.unwrap().control_word,
+            CONTROL_WORD_FAULT_RESET
+        );
     }
 
     #[test]

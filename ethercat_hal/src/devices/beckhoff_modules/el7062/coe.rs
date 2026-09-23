@@ -93,10 +93,42 @@ pub fn read_dmc_error_id(
     channel.sdo_read::<u32>(device_address, index, DMC_ERROR_ID)
 }
 
+/// Read the DC link voltage of one EL7062 channel over SDO in mV.
+///
+/// Reads "DRV Info data 1" (`0x6010:0x12` Ch.1 / `0x6110:0x12` Ch.2), which by
+/// factory default is selected to report the DC link voltage in mV. A low value
+/// (or 0 when the external motor supply is missing) shows up as CiA 402 status
+/// bit 4 = 0 together with the warning bit, blocking `SwitchOn`.
+pub fn read_dc_link_voltage(
+    channel: &EtherCATThreadChannel,
+    device_address: u16,
+    port: usize,
+) -> Result<u16, anyhow::Error> {
+    let index = match port {
+        0 => DRV_INPUTS_CH1,
+        1 => DRV_INPUTS_CH2,
+        _ => anyhow::bail!("Invalid port, expected 0 or 1, got {port}"),
+    };
+    channel.sdo_read::<u16>(device_address, index, INFO_DATA_1)
+}
+
 const DRV_AMPLIFIER_SETTINGS_CH1: u16 = 0x8010;
 const DRV_AMPLIFIER_SETTINGS_CH2: u16 = 0x8110;
+const DRV_MOTOR_SETTINGS_CH1: u16 = 0x8011;
+const DRV_MOTOR_SETTINGS_CH2: u16 = 0x8111;
 const FOLLOWING_ERROR_WINDOW: u8 = 0x50;
 const FOLLOWING_ERROR_TIMEOUT: u8 = 0x51;
+
+/// 0x8011:0x12 (Ch.1) / 0x8111:0x12 (Ch.2): rated motor current in mA (`UDINT`).
+const RATED_CURRENT: u8 = 18;
+/// 0x8011:0x34 (Ch.1) / 0x8111:0x34 (Ch.2): configured motor current in mA (`UDINT`).
+const CONFIGURED_MOTOR_CURRENT: u8 = 52;
+
+/// Info data 1 (0x6010:0x12 / 0x6110:0x12): by factory default selected to report
+/// the DC link voltage in mV (`UINT`). See the "DRV Info data" selection objects.
+const DRV_INPUTS_CH1: u16 = 0x6010;
+const DRV_INPUTS_CH2: u16 = 0x6110;
+const INFO_DATA_1: u8 = 18;
 
 /// Per channel configuration for the EL7062
 #[derive(Debug, Clone)]
@@ -115,6 +147,23 @@ pub struct EL7062ChannelConfiguration {
     ///
     /// default: `0`
     pub following_error_timeout: u16,
+
+    /// # 0x8011:0x12 (Ch.1) / 0x8111:0x12 (Ch.2)
+    /// Rated motor current in mA (`UDINT`).
+    ///
+    /// Both this and [`configured_motor_current`] should match the datasheet of
+    /// the connected motor (e.g. 1800 for a Nanotec rated at 1.8 A). The EL7062
+    /// factory default is 3000 mA regardless of the motor.
+    ///
+    /// default: `3000`
+    pub rated_current: u32,
+
+    /// # 0x8011:0x34 (Ch.1) / 0x8111:0x34 (Ch.2)
+    /// Configured motor current in mA (`UDINT`) - the actual coil current used
+    /// by the output stage.
+    ///
+    /// default: `3000`
+    pub configured_motor_current: u32,
 }
 
 impl Default for EL7062ChannelConfiguration {
@@ -123,6 +172,8 @@ impl Default for EL7062ChannelConfiguration {
         Self {
             following_error_window: u32::MAX,
             following_error_timeout: 0,
+            rated_current: 3000,
+            configured_motor_current: 3000,
         }
     }
 }
@@ -133,6 +184,7 @@ impl EL7062ChannelConfiguration {
         channel: EtherCATThreadChannel,
         device_address: u16,
         amplifier_settings: u16,
+        motor_settings: u16,
     ) -> Result<(), anyhow::Error> {
         tracing::debug!(
             "EL7062 following error window: 0x{:04X}:0x{:02X} = {}",
@@ -157,6 +209,30 @@ impl EL7062ChannelConfiguration {
             amplifier_settings,
             FOLLOWING_ERROR_TIMEOUT,
             self.following_error_timeout,
+        )?;
+        tracing::debug!(
+            "EL7062 rated current: 0x{:04X}:0x{:02X} = {} mA",
+            motor_settings,
+            RATED_CURRENT,
+            self.rated_current
+        );
+        channel.sdo_write(
+            device_address,
+            motor_settings,
+            RATED_CURRENT,
+            self.rated_current,
+        )?;
+        tracing::debug!(
+            "EL7062 configured motor current: 0x{:04X}:0x{:02X} = {} mA",
+            motor_settings,
+            CONFIGURED_MOTOR_CURRENT,
+            self.configured_motor_current
+        );
+        channel.sdo_write(
+            device_address,
+            motor_settings,
+            CONFIGURED_MOTOR_CURRENT,
+            self.configured_motor_current,
         )?;
         Ok(())
     }
@@ -196,11 +272,13 @@ impl Configuration for EL7062Configuration {
             ecat_channel.clone(),
             device_address,
             DRV_AMPLIFIER_SETTINGS_CH1,
+            DRV_MOTOR_SETTINGS_CH1,
         )?;
         self.channel_2.write_config(
             ecat_channel.clone(),
             device_address,
             DRV_AMPLIFIER_SETTINGS_CH2,
+            DRV_MOTOR_SETTINGS_CH2,
         )?;
 
         // persistent fallback; the mode is also fed live via the 0x1608/0x1688 PDOs
@@ -214,12 +292,7 @@ impl Configuration for EL7062Configuration {
                 mode_object.1,
                 CSP_MODE
             );
-            ecat_channel.sdo_write(
-                device_address,
-                mode_object.0,
-                mode_object.1,
-                CSP_MODE,
-            )?;
+            ecat_channel.sdo_write(device_address, mode_object.0, mode_object.1, CSP_MODE)?;
         }
 
         self.pdo_assignment
