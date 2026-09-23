@@ -12,7 +12,8 @@ xtrem = { path = "xtrem" }
 units = {path = "units"}
 common = {path = "common"}
 tokio = "1.49.0"
-
+log = { version = "0.4", features = ["std"] }
+env_logger = "0.10"
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }

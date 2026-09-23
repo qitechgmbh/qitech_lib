@@ -27,6 +27,7 @@ use ethercat_hal::{
     },
     init_ethercat, set_current_thread_rt_priority,
 };
+use log::{debug, error, info, warn};
 use std::{env, time::Duration};
 
 const USAGE: &str = concat!(
@@ -47,6 +48,7 @@ fn apply_controlword(
     statusword: &DrvStatusWord,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if statusword.fault {
+        warn!("Fault detected! Applying fault reset to EL7062 (Channel 1)");
         el7062.set_controlword(
             EL7062Port::Ch1,
             DrvControlWord {
@@ -56,6 +58,7 @@ fn apply_controlword(
         )?;
     } else {
         // Switch on + enable voltage + enable operation.
+        debug!("Applying controlword: switch_on, enable_voltage, enable_operation");
         el7062.set_controlword(
             EL7062Port::Ch1,
             DrvControlWord {
@@ -119,6 +122,14 @@ impl SetpointRamp {
 }
 
 fn main() {
+    // Force early logger initialization
+    env_logger::Builder::from_default_env()
+        .format_timestamp_micros()
+        .init();
+
+    // Immediately log to confirm logging works
+    debug!("Logger initialized successfully");
+
     let fail = format!("{}:\n{}", "Invalid arguments", USAGE);
     let interface = env::args().nth(1).expect(&fail);
     let cycle_time_us: u64 = env::args()
@@ -132,11 +143,18 @@ fn main() {
         .parse()
         .expect("target_position_increments must be a valid i32");
 
+    // Force flush logs
+    log::logger().flush();
+    info!("Starting EL7062 minimal example");
+    info!("Interface: {}", interface);
+    info!("Cycle time: {} µs", cycle_time_us);
+    info!("Target position: {} increments", target_position);
+
     let dc_config = DcConfiguration {
-        // Give some headroom for dc setup to finish
+        // Give headroom for DC setup to finish
         start_delay: Duration::from_millis(100),
         sync0_period: Duration::from_micros(cycle_time_us),
-        sync0_shift: Duration::from_micros(cycle_time_us / 2),
+        sync0_shift: Duration::from_micros(cycle_time_us / 4), // Reduced to 25% of cycle time
         target_dc_tick: 500,
     };
 
@@ -149,6 +167,24 @@ fn main() {
         lock_memory: true,
     };
 
+    info!("Initializing EtherCAT master on interface: {}", interface);
+    debug!("Creating EtherCAT master configuration");
+
+    debug!(
+        "MasterConfiguration: target_cycle_time_us={}, tx_rx_config={:?}, wkc_mismatch_threshold={}",
+        cycle_time_us,
+        ethercat_hal::MasterTxRxConfig::TxRxIoUring,
+        5
+    );
+    debug!(
+        "DC Configuration: start_delay={:?}, sync0_period={:?}, sync0_shift={:?}",
+        dc_config.start_delay, dc_config.sync0_period, dc_config.sync0_shift
+    );
+    debug!(
+        "RT Optimization: ethercat_loop_thread_core={}, ethercat_loop_thread_priority={}",
+        rt.ethercat_loop_thread_core, rt.ethercat_loop_thread_priority
+    );
+
     let config = MasterConfiguration {
         target_cycle_time_us: cycle_time_us as usize,
         tx_rx_config: ethercat_hal::MasterTxRxConfig::TxRxIoUring,
@@ -157,20 +193,61 @@ fn main() {
         wkc_mismatch_threshold: 5,
         op_ramp_grace_cycles: 10000,
     };
+    log::logger().flush();
 
+    debug!("EtherCAT master configuration created");
+    log::logger().flush();
+
+    debug!("Initializing EtherCAT master with interface: {}", interface);
     let eth_control = init_ethercat(&interface, Some(config));
+    info!("EtherCAT master initialized");
+    log::logger().flush();
+
+    // Ensure the master is fully initialized
+    info!("Waiting for EtherCAT master to stabilize...");
+    std::thread::sleep(Duration::from_millis(1000));
     let mut eth_handle = eth_control.app_handle;
 
+    // Wait for Init state
+    info!("Waiting for EtherCAT master to reach Init state...");
+    let mut current_state = eth_handle.get_state();
+    while !matches!(current_state, EtherCATState::Init) {
+        debug!("Current EtherCAT state: {:?}", current_state);
+        std::thread::sleep(Duration::from_millis(100));
+        current_state = eth_handle.get_state();
+    }
+    info!("EtherCAT master reached Init state");
+    log::logger().flush();
+    
+    // Request PreOp state
+    info!("Requesting EtherCAT state transition: -> PreOp");
     eth_control
         .channel
         .request_state_change(EtherCATState::PreOp)
-        .expect("Channel was not ready");
-    loop {
-        if matches!(eth_handle.get_state(), EtherCATState::PreOp) {
+        .expect("Failed to request state change to PreOp");
+    
+    // Wait for PreOp state
+    info!("Waiting for PreOp state...");
+    let mut attempts = 0;
+    let max_attempts = 100; // ~100 seconds timeout (100 * 1000ms)
+    while attempts < max_attempts {
+        current_state = eth_handle.get_state();
+        debug!("Current EtherCAT state: {:?}", current_state);
+        if matches!(current_state, EtherCATState::PreOp) {
+            info!("EtherCAT master reached PreOp state");
+    log::logger().flush();
             break;
         }
-        std::thread::sleep(Duration::from_millis(10));
+        attempts += 1;
+        std::thread::sleep(Duration::from_millis(1000));
     }
+    
+    if attempts >= max_attempts {
+        error!("Timeout waiting for PreOp state! Check device configuration.");
+        return;
+    }
+
+    info!("Configuring EL7062 driver for Channel 1");
 
     // Build the driver with the closed-loop encoder+motor configuration for channel 1.
     let mut el7062 = EL7062::new();
@@ -192,6 +269,17 @@ fn main() {
         .channel_1
         .motor
         .motor_full_steps_per_revolution = 200;
+
+    debug!(
+        "EL7062 configuration: encoder_type={}, CPR={}, commutation_type={}",
+        el7062.configuration.channel_1.feedback.encoder_type,
+        el7062
+            .configuration
+            .channel_1
+            .feedback
+            .encoder_increments_per_revolution,
+        el7062.configuration.channel_1.amplifier.commutation_type
+    );
 
     // Safety limits for the smoke test (tune later).
     el7062
@@ -216,7 +304,92 @@ fn main() {
         .amplifier
         .acceleration_limitation = 2000; // 0.1 rad/s²
 
+    info!(
+        "EL7062 safety limits: velocity={} rev/min, following_error_window={} increments, acceleration={} rad/s²",
+        el7062.configuration.channel_1.amplifier.velocity_limitation,
+        el7062
+            .configuration
+            .channel_1
+            .amplifier
+            .following_error_window,
+        el7062
+            .configuration
+            .channel_1
+            .amplifier
+            .acceleration_limitation as f64
+            / 10.0
+    );
+
+    info!("Checking for EtherCAT subdevices...");
+    log::logger().flush();
+
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    info!("Detected {} subdevices", subdevices.len());
+    log::logger().flush();
+    debug!("Detected {} subdevices", subdevices.len());
+    log::logger().flush();
+
+    let mut el7062_found = false;
+    for subdevice in &subdevices {
+        debug!(
+            "Subdevice: Product ID={:#X}, Device Address={}",
+            subdevice.product_id, subdevice.device_address
+        );
+        log::logger().flush();
+
+        if subdevice.product_id == EL7062_PRODUCT_ID {
+            el7062_found = true;
+            info!(
+                "EL7062 device detected at address: {}",
+                subdevice.device_address
+            );
+        }
+    }
+
+    if !el7062_found {
+        error!("EL7062 device not found! Check power and connection.");
+        log::logger().flush();
+        return;
+    }
+
+    if subdevices.is_empty() {
+        error!("No EtherCAT subdevices detected! Check network connection.");
+        log::logger().flush();
+        return;
+    }
+
+    for subdevice in &subdevices {
+        if subdevice.product_id == EL7062_PRODUCT_ID {
+            info!(
+                "Configuring subdevice: Product ID={:#X}, Device Address={}",
+                subdevice.product_id, subdevice.device_address
+            );
+
+            el7062
+                .write_config(
+                    eth_control.channel.clone(),
+                    subdevice.device_address,
+                    &el7062.get_config(),
+                )
+                .expect("Failed to write config");
+            info!("EL7062 configuration written successfully");
+
+            eth_control
+                .channel
+                .enable_dc_sync0(subdevice.device_address)
+                .expect("Failed to enable DC Sync!");
+            info!(
+                "DC Sync0 enabled for subdevice {}",
+                subdevice.device_address
+            );
+        }
+    }
+
+    info!("Requesting EtherCAT state transition: -> Op");
+    info!("Configuring PDO mapping for EL7062...");
+    log::logger().flush();
+
+    // Ensure PDO mapping is configured before transitioning to Op
     for subdevice in &subdevices {
         if subdevice.product_id == EL7062_PRODUCT_ID {
             el7062
@@ -226,51 +399,83 @@ fn main() {
                     &el7062.get_config(),
                 )
                 .expect("Failed to write config");
+
             eth_control
                 .channel
                 .enable_dc_sync0(subdevice.device_address)
                 .expect("Failed to enable DC Sync!");
         }
     }
-
+    // Request Op state
+    info!("Requesting EtherCAT state transition: -> Op");
     eth_control
         .channel
         .request_state_change(EtherCATState::Op)
-        .expect("Channel was not ready");
-    std::thread::sleep(Duration::from_millis(4000));
-    loop {
+        .expect("Failed to request state change to Op");
+    
+    // Wait for Op state
+    info!("Waiting for Op state...");
+    let mut attempts = 0;
+    let max_attempts = 100; // ~100 seconds timeout (100 * 1000ms)
+    while attempts < max_attempts {
+        current_state = eth_handle.get_state();
+        debug!("Current EtherCAT state: {:?}", current_state);
         if eth_handle.check_all_op() {
+            info!("All subdevices reached Op state");
+    log::logger().flush();
             break;
         }
-        std::thread::sleep(Duration::from_millis(10));
+        attempts += 1;
+        std::thread::sleep(Duration::from_millis(1000));
+    }
+    
+    if attempts >= max_attempts {
+        error!("Timeout waiting for Op state! Check device configuration.");
+        return;
     }
 
     apply_rt();
 
+    info!("Reading initial position from EL7062");
     let initial_position = {
         while !eth_handle.check_inputs_ready() {}
         if let Some(inputs) = eth_handle.get_inputs() {
             for subdevice in &subdevices {
                 if subdevice.product_id == EL7062_PRODUCT_ID {
+                    debug!(
+                        "Reading input from subdevice: Product ID={:#X}, Device Address={}",
+                        subdevice.product_id, subdevice.device_address
+                    );
                     el7062
                         .input(BitSlice::from_slice(
                             &inputs[subdevice.start_tx..subdevice.end_tx],
                         ))
                         .expect("Failed to read input");
+                    el7062
+                        .input_post_process()
+                        .expect("Failed to process input");
                 }
             }
         }
-        el7062.get_position(EL7062Port::Ch1).unwrap_or(0)
+        let position = el7062.get_position(EL7062Port::Ch1).unwrap_or(0);
+        info!("Initial position: {} increments", position);
+        position
     };
 
     // Ramp the setpoint instead of jumping to the target, and bounce between 0 and the target.
+    info!(
+        "Starting EL7062 CSP smoke test: cycle {} µs, bouncing between 0 and {} increments",
+        cycle_time_us, target_position
+    );
+
     let mut ramp = SetpointRamp::new(initial_position);
     let mut go_to: f64 = target_position as f64;
     let dt = cycle_time_us as f64 * 1e-6;
     let mut last_cycle = eth_handle.get_current_cycle();
-    println!(
-        "EL7062 CSP smoke test: cycle {}us, bouncing between 0 and {} increments",
-        cycle_time_us, target_position
+
+    info!(
+        "Starting control loop with cycle time: {} µs",
+        cycle_time_us
     );
     loop {
         while !eth_handle.check_inputs_ready() {}
@@ -278,6 +483,10 @@ fn main() {
         if let Some(inputs) = eth_handle.get_inputs() {
             for subdevice in &subdevices {
                 if subdevice.product_id == EL7062_PRODUCT_ID {
+                    debug!(
+                        "Processing input for subdevice: Product ID={:#X}, Device Address={}",
+                        subdevice.product_id, subdevice.device_address
+                    );
                     let input = &inputs[subdevice.start_tx..subdevice.end_tx];
                     el7062
                         .input(BitSlice::from_slice(input))
@@ -292,25 +501,47 @@ fn main() {
         let statusword = el7062
             .get_statusword(EL7062Port::Ch1)
             .expect("Failed to read statusword");
+        debug!("Statusword: {:?}", statusword);
+
+        if statusword.fault {
+            error!("Fault detected! Statusword: {:?}", statusword);
+        }
+
         apply_controlword(&mut el7062, &statusword).expect("Failed to write controlword");
+        debug!(
+            "Controlword applied: switched_on={}, operation_enabled={}, fault={}",
+            statusword.switched_on, statusword.operation_enabled, statusword.fault
+        );
 
         if statusword.operation_enabled {
             ramp.advance(go_to, dt);
+            debug!(
+                "Setpoint ramp updated: target={}, current_position={}, velocity={}",
+                go_to, ramp.position, ramp.velocity
+            );
+
             el7062
                 .set_target_position(EL7062Port::Ch1, ramp.position as i32)
                 .expect("Failed to write target position");
+            debug!("Target position set: {} increments", ramp.position as i32);
+
             if (go_to - ramp.position).abs() < 0.5 {
                 go_to = if (go_to - target_position as f64).abs() < 0.5 {
                     0.0
                 } else {
                     target_position as f64
                 };
+                debug!("Target position toggled: {}", go_to);
             }
         }
 
         if let Some(outputs) = eth_handle.write_outputs() {
             for subdevice in &subdevices {
                 if subdevice.product_id == EL7062_PRODUCT_ID {
+                    debug!(
+                        "Writing output to subdevice: Product ID={:#X}, Device Address={}",
+                        subdevice.product_id, subdevice.device_address
+                    );
                     el7062
                         .output_pre_process()
                         .expect("Failed to prepare output");
@@ -332,9 +563,32 @@ fn main() {
             let following_error = el7062
                 .get_following_error(EL7062Port::Ch1)
                 .expect("Failed to read following error");
-            println!(
-                "pos={} following_error={} op_enabled={} fault={}",
-                position, following_error, statusword.operation_enabled, statusword.fault
+
+            if following_error
+                > el7062
+                    .configuration
+                    .channel_1
+                    .amplifier
+                    .following_error_window as i32
+            {
+                warn!(
+                    "Following error exceeded threshold! Error={}, Threshold={}",
+                    following_error,
+                    el7062
+                        .configuration
+                        .channel_1
+                        .amplifier
+                        .following_error_window
+                );
+            }
+
+            info!(
+                "Cycle {}: Position={}, Following Error={}, Operation Enabled={}, Fault={}",
+                current_cycle,
+                position,
+                following_error,
+                statusword.operation_enabled,
+                statusword.fault
             );
         }
     }
