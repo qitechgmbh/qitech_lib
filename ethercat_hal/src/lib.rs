@@ -14,18 +14,16 @@ mod app_handle;
 mod ethercat_control;
 pub mod machine_ident_read;
 mod mailbox;
-mod types;
+pub mod types;
+pub use types::*;
+
 use crate::app_handle::EtherCATAppHandle;
 #[cfg(not(feature = "mock"))]
 use crate::controller::EtherCATController;
 #[cfg(not(feature = "mock"))]
 use crate::ethercat_control::EtherCATControl;
 use crate::mailbox::Mailbox;
-use crate::types::{ChannelResponse, EtherCATThreadResponseChannel};
 #[cfg(not(feature = "mock"))]
-use crate::types::{
-    EtherCATState, EtherCATThreadChannel, MetaSubdevice, TripleBufConsumer, TripleBufProducer,
-};
 use al_diagnostics::TransitionLog;
 use ethercrab::PduStorage;
 use std::sync::atomic::{AtomicBool, AtomicU64};
