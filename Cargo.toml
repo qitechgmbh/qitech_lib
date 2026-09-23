@@ -18,6 +18,8 @@ tokio = "1.49.0"
 serde = { version = "1.0", features = ["derive"] }
 postcard = { version = "1.0", features = ["alloc"] }
 core_affinity = "0.8.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [lib]
 
