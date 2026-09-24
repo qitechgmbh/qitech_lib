@@ -3,7 +3,7 @@
 
     This example assumes a motor (200 full steps/rev, 1.8 A/phase) and an encoder
     (WEDL5541-A14, RS422 differential, 500 counts/rev after 4-fold evaluation)
-    connected to channel 1, running closed-loop with commutation type 17.
+    connected to channel 1, running open-loop with commutation type 16.
 
     This is a SAFETY-HARDENED smoke test: conservative current, speed, acceleration
     and following-error limits are applied, and the axis is moved back and forth
@@ -107,9 +107,18 @@ fn diag_name(text_id: u16) -> Option<&'static str> {
 /// (see ethercat_hal::debugging::diagnosis_history): bytes 0..3 DiagCode,
 /// 4..5 Flags, 6..7 TextID, 8..15 timestamp, then P1/P2 data.
 fn dump_diag_messages(channel: &EtherCATThreadChannel, addr: u16) {
-    let new_available = channel.sdo_read::<u8>(addr, 0x10F3, 0x04).unwrap_or(0);
-    let count = channel.sdo_read::<u8>(addr, 0x10F3, 0x00).unwrap_or(0);
-    let newest = channel.sdo_read::<u8>(addr, 0x10F3, 0x02).unwrap_or(0);
+    let read_u8 = |sub: u8| -> Option<u8> {
+        for _ in 0..3 {
+            if let Ok(v) = channel.sdo_read::<u8>(addr, 0x10F3, sub) {
+                return Some(v);
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        None
+    };
+    let new_available = read_u8(0x04).unwrap_or(0);
+    let count = read_u8(0x00).unwrap_or(0);
+    let newest = read_u8(0x02).unwrap_or(0);
     info!(
         "DiagMessages (0x10F3): slots={} newest_index={} new_available={}",
         count, newest, new_available
@@ -117,11 +126,14 @@ fn dump_diag_messages(channel: &EtherCATThreadChannel, addr: u16) {
     if count == 0 {
         return;
     }
+    // Messages live in subs 0x06..; scan only the meaningful window around the
+    // newest index (whole ring if newest is unknown). 16 reads max.
+    let mut end = 0x06u8.saturating_add(if newest >= 0x06 { newest - 0x05 } else { 8 });
+    if end > 0x06u8.saturating_add(15) {
+        end = 0x06u8.saturating_add(15);
+    }
     let mut shown = 0;
-    for sub in 0x06u8.. {
-        if sub as u16 > 0x02 + count as u16 {
-            break;
-        }
+    for sub in 0x06u8..end {
         match channel.sdo_read_raw(addr, 0x10F3, sub) {
             Ok(bytes) => {
                 if bytes.iter().all(|&b| b == 0) {
@@ -418,7 +430,7 @@ fn main() {
         .channel_1
         .feedback
         .encoder_increments_per_revolution = 500; // CPR (after 4x)
-    el7062.configuration.channel_1.amplifier.commutation_type = 17; // stepper with encoder
+    el7062.configuration.channel_1.amplifier.commutation_type = 16; // stepper with internal counter (open-loop)
     el7062.configuration.channel_1.motor.rated_current = 1800; // 1.8 A per phase
     el7062
         .configuration
@@ -453,7 +465,7 @@ fn main() {
         .configuration
         .channel_1
         .amplifier
-        .following_error_window = 1000; // increments (~2 rev)
+        .following_error_window = u32::MAX; // open-loop: encoder-based monitoring disabled
     el7062
         .configuration
         .channel_1
@@ -532,47 +544,57 @@ fn main() {
                 .expect("Failed to write config");
             info!("EL7062 configuration written successfully");
 
-            let sm = |index: u16, sub: u8| -> String {
-                match eth_control
-                    .channel
-                    .sdo_read::<u32>(subdevice.device_address, index, sub)
-                {
-                    Ok(v) => format!("0x{v:08x} ({v} dec)"),
-                    Err(e) => format!("read failed: {e}"),
+            let addr = subdevice.device_address;
+            let rd = |t: char, index: u16, sub: u8| -> String {
+                let chan = &eth_control.channel;
+                match t {
+                    'b' => chan
+                        .sdo_read::<u8>(addr, index, sub)
+                        .map(|v| format!("0x{v:02x} ({v} dec)"))
+                        .unwrap_or_else(|e| format!("read failed: {e}")),
+                    'w' => chan
+                        .sdo_read::<u16>(addr, index, sub)
+                        .map(|v| format!("0x{v:04x} ({v} dec)"))
+                        .unwrap_or_else(|e| format!("read failed: {e}")),
+                    'd' => chan
+                        .sdo_read::<u32>(addr, index, sub)
+                        .map(|v| format!("0x{v:08x} ({v} dec)"))
+                        .unwrap_or_else(|e| format!("read failed: {e}")),
+                    _ => format!("bad type tag '{t}'"),
                 }
             };
             info!("SM sync params readback:");
-            for (idx, sub, name) in [
-                (0x1C32u16, 0x01u8, "SM2 sync mode"),
-                (0x1C32, 0x02, "SM2 cycle [ns]"),
-                (0x1C32, 0x03, "SM2 shift [ns]"),
-                (0x1C32, 0x0A, "SM2 Sync0 cycle [ns]"),
-                (0x1C33, 0x01, "SM3 sync mode"),
-                (0x1C33, 0x02, "SM3 cycle [ns]"),
-                (0x1C33, 0x03, "SM3 shift [ns]"),
+            for (t, idx, sub, name) in [
+                ('w', 0x1C32u16, 0x01u8, "SM2 sync mode"),
+                ('d', 0x1C32, 0x02, "SM2 cycle [ns]"),
+                ('d', 0x1C32, 0x03, "SM2 shift [ns]"),
+                ('d', 0x1C32, 0x0A, "SM2 Sync0 cycle [ns]"),
+                ('w', 0x1C33, 0x01, "SM3 sync mode"),
+                ('d', 0x1C33, 0x02, "SM3 cycle [ns]"),
+                ('d', 0x1C33, 0x03, "SM3 shift [ns]"),
             ] {
-                info!("  {name} ({idx:#06X}:{sub}): {}", sm(idx, sub));
+                info!("  {name} ({idx:#06X}:{sub}): {}", rd(t, idx, sub));
             }
             info!("PDO assignment readback:");
-            for (idx, sub, name) in [
-                (0x1C13u16, 0x00u8, "SM3 PDO assignment count"),
-                (0x1C13, 0x01, "SM3 PDO 1 (TxPdo)"),
-                (0x1C13, 0x02, "SM3 PDO 2 (TxPdo)"),
-                (0x1C13, 0x03, "SM3 PDO 3 (TxPdo)"),
-                (0x1C12, 0x00, "SM2 PDO assignment count"),
-                (0x1C12, 0x01, "SM2 PDO 1 (RxPdo)"),
-                (0x1C12, 0x02, "SM2 PDO 2 (RxPdo)"),
-                (0x1C12, 0x03, "SM2 PDO 3 (RxPdo)"),
-                (0x1A00u16, 0x00u8, "0x1A00 entry count"),
-                (0x1A00, 0x01, "0x1A00:1 mapping [idx:sub:bits]"),
-                (0x1A01, 0x01, "0x1A01:1 mapping [idx:sub:bits]"),
-                (0x1A06, 0x01, "0x1A06:1 mapping [idx:sub:bits]"),
-                (0x1600u16, 0x00u8, "0x1600 entry count"),
-                (0x1600, 0x01, "0x1600:1 mapping [idx:sub:bits]"),
-                (0x1606, 0x01, "0x1606:1 mapping [idx:sub:bits]"),
-                (0x1601, 0x01, "0x1601:1 mapping [idx:sub:bits]"),
+            for (t, idx, sub, name) in [
+                ('b', 0x1C13u16, 0x00u8, "SM3 PDO assignment count"),
+                ('w', 0x1C13, 0x01, "SM3 PDO 1 (TxPdo)"),
+                ('w', 0x1C13, 0x02, "SM3 PDO 2 (TxPdo)"),
+                ('w', 0x1C13, 0x03, "SM3 PDO 3 (TxPdo)"),
+                ('b', 0x1C12, 0x00, "SM2 PDO assignment count"),
+                ('w', 0x1C12, 0x01, "SM2 PDO 1 (RxPdo)"),
+                ('w', 0x1C12, 0x02, "SM2 PDO 2 (RxPdo)"),
+                ('w', 0x1C12, 0x03, "SM2 PDO 3 (RxPdo)"),
+                ('b', 0x1A00u16, 0x00u8, "0x1A00 entry count"),
+                ('d', 0x1A00, 0x01, "0x1A00:1 mapping [idx:sub:bits]"),
+                ('d', 0x1A01, 0x01, "0x1A01:1 mapping [idx:sub:bits]"),
+                ('d', 0x1A06, 0x01, "0x1A06:1 mapping [idx:sub:bits]"),
+                ('b', 0x1600u16, 0x00u8, "0x1600 entry count"),
+                ('d', 0x1600, 0x01, "0x1600:1 mapping [idx:sub:bits]"),
+                ('d', 0x1606, 0x01, "0x1606:1 mapping [idx:sub:bits]"),
+                ('d', 0x1601, 0x01, "0x1601:1 mapping [idx:sub:bits]"),
             ] {
-                info!("  {name} ({idx:#06X}:{sub}): {}", sm(idx, sub));
+                info!("  {name} ({idx:#06X}:{sub}): {}", rd(t, idx, sub));
             }
 
             info!("DMC drive status readback (Ch.1):");
@@ -617,14 +639,14 @@ fn main() {
             }
             match eth_control
                 .channel
-                .sdo_read::<u32>(subdevice.device_address, 0x10F3, 0x00)
+                .sdo_read::<u8>(subdevice.device_address, 0x10F3, 0x00)
             {
                 Ok(v) => info!("  DiagMessages (0x10F3:0) size/count: {}", v),
                 Err(e) => info!("  DiagMessages (0x10F3:0): read failed: {e}"),
             }
             match eth_control
                 .channel
-                .sdo_read::<u32>(subdevice.device_address, 0x10F3, 0x02)
+                .sdo_read::<u8>(subdevice.device_address, 0x10F3, 0x02)
             {
                 Ok(v) => info!("  DiagMessages (0x10F3:2) latest index: {}", v),
                 Err(e) => info!("  DiagMessages (0x10F3:2): read failed: {e}"),
@@ -638,7 +660,7 @@ fn main() {
             ] {
                 match eth_control
                     .channel
-                    .sdo_read::<u32>(subdevice.device_address, idx, sub)
+                    .sdo_read::<u8>(subdevice.device_address, idx, sub)
                 {
                     Ok(v) => info!("  {}: {}", name, v),
                     Err(e) => info!("  {}: read failed: {e}", name),
@@ -801,6 +823,7 @@ fn main() {
     let mut prev_switched_on = false;
     let mut prev_operation_enabled = false;
     let mut prev_follows = false;
+    let mut prev_warning = false;
     // Stateful fault handling: log/reset only on fault transitions, cool down
     // between enable attempts after a reset, and abort entirely after repeated
     // faults so a stuck fault never chops the motor at 1 kHz.
@@ -814,6 +837,7 @@ fn main() {
     // the 1ms process cycle instead of printing every tick.
     let mut last_ramp_cycle = eth_handle.get_current_cycle();
     let mut last_status_cycle = eth_handle.get_current_cycle();
+    let mut last_probe_cycle = eth_handle.get_current_cycle();
 
     loop {
         while !eth_handle.check_inputs_ready() {}
@@ -928,6 +952,18 @@ fn main() {
             }
         }
 
+        if statusword.warning && !prev_warning {
+            warn!(
+                "Drive warning active (statusword=0x{:04X})",
+                statusword.as_raw()
+            );
+            if let Some(addr) = el7062_address {
+                dump_diag_messages(&eth_control.channel, addr);
+            }
+            log::logger().flush();
+        }
+        prev_warning = statusword.warning;
+
         if statusword.operation_enabled && !prev_operation_enabled {
             info!("Drive enabled: operation_enabled");
             log::logger().flush();
@@ -950,10 +986,6 @@ fn main() {
         if ramp_cycle {
             if statusword.operation_enabled {
                 ramp.advance(go_to, dt);
-                debug!(
-                    "Setpoint ramp updated: target={}, current_position={}, velocity={}",
-                    go_to, ramp.position, ramp.velocity
-                );
             }
             // Always publish the setpoint. Before enable this pins the target to
             // the seed so the drive never sees a stale/zero target the moment it
@@ -961,7 +993,6 @@ fn main() {
             el7062
                 .set_target_position(EL7062Port::Ch1, ramp.position as i32)
                 .expect("Failed to write target position");
-            debug!("Target position set: {} increments", ramp.position as i32);
 
             if statusword.operation_enabled && (go_to - ramp.position).abs() < 0.5 {
                 go_to = if (go_to - seed_position).abs() < 0.5 {
@@ -1003,21 +1034,15 @@ fn main() {
                 .get_following_error(EL7062Port::Ch1)
                 .expect("Failed to read following error");
 
-            if following_error
-                > el7062
-                    .configuration
-                    .channel_1
-                    .amplifier
-                    .following_error_window as i32
-            {
+            let fe_window = el7062
+                .configuration
+                .channel_1
+                .amplifier
+                .following_error_window;
+            if fe_window != u32::MAX && (following_error as i64).abs() > fe_window as i64 {
                 warn!(
                     "Following error exceeded threshold! Error={}, Threshold={}",
-                    following_error,
-                    el7062
-                        .configuration
-                        .channel_1
-                        .amplifier
-                        .following_error_window
+                    following_error, fe_window
                 );
             }
 
@@ -1029,6 +1054,26 @@ fn main() {
                 statusword.operation_enabled,
                 statusword.fault
             );
+        }
+
+        let probe_cycle = current_cycle.wrapping_sub(last_probe_cycle) >= 2000;
+        if probe_cycle {
+            last_probe_cycle = current_cycle;
+            if let Some(addr) = el7062_address {
+                let chan = &eth_control.channel;
+                let velocity = chan.sdo_read::<i32>(addr, 0x6010, 0x07).ok();
+                let torque = chan.sdo_read::<i16>(addr, 0x6010, 0x08).ok();
+                let dc_link = chan.sdo_read::<u16>(addr, 0x6010, 0x18).ok();
+                let rated_ma = el7062.configuration.channel_1.motor.rated_current;
+                let v = velocity.map_or(f64::NAN, |v| v as f64);
+                let t = torque.map_or(f64::NAN, |t| t as f64);
+                let t_ma = t * rated_ma as f64 / 1000.0;
+                let dc = dc_link.map_or(f64::NAN, |v| v as f64);
+                info!(
+                    "Drive probe: velocity_actual={} inc/s, torque_actual={} ({} mA), dc_link={} mV, warning={}",
+                    v, t, t_ma, dc, statusword.warning,
+                );
+            }
         }
     }
 }
