@@ -16,24 +16,34 @@
 
 use bitvec::slice::BitSlice;
 use ethercat_hal::{
-    DcConfiguration, EtherCATState, EtherCATThreadChannel, MasterConfiguration,
-    RtOptimizationConfig,
+    DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig,
     coe::ConfigurableDevice,
+    debugging::dump_dc_registers,
     devices::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
         beckhoff_modules::el7062::{
             EL7062, EL7062_PRODUCT_ID, EL7062Port,
-            pdo::{DrvControlWord, DrvStatusWord},
+            diagnostics::dump_diag_messages,
+            motion::SetpointRamp,
+            pdo::{DrvControlWord, EL7062PredefinedPdoAssignment},
         },
     },
     init_ethercat, set_current_thread_rt_priority,
 };
 use log::{debug, error, info, warn};
-use std::{env, time::Duration};
+use std::{
+    env,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 const USAGE: &str = concat!(
-    "el7062_minimal interface_name cycle_time_us target_position_increments\n",
-    " example: ./target/release/examples/el7062_minimal enp4s0 1000 2000"
+    "el7062_minimal interface_name cycle_time_us target_position_increments [csp|csv]\n",
+    "  csp = position ramp jog (default), csv = constant-velocity command\n",
+    " example: ./target/release/examples/el7062_minimal enp4s0 1000 500 csv"
 );
 
 fn apply_rt() {
@@ -42,255 +52,6 @@ fn apply_rt() {
     core_affinity::set_for_current(id);
 }
 
-fn dump_dc_registers(channel: &EtherCATThreadChannel, addr: u16) {
-    let pairs: [(u16, &str); 11] = [
-        (0x0980, "AssignActivate(classic)"),
-        (0x0981, "DcSyncActive(module)"),
-        (0x0984, "StartTime-classic-lo"),
-        (0x0985, "StartTime-classic-hi"),
-        (0x0988, "Sync0Cycle-classic-lo"),
-        (0x0989, "Sync0Cycle-classic-hi"),
-        (0x098C, "Sync1Cycle-classic-lo"),
-        (0x098D, "Sync1Cycle-classic-hi"),
-        (0x0990, "StartTime-module-lo"),
-        (0x09A0, "Sync0Cycle-module-lo"),
-        (0x09A4, "Sync1Cycle-module-lo"),
-    ];
-    for (reg, label) in pairs {
-        match channel.register_read(addr, reg) {
-            Ok(v) => debug!("  {label} @0x{reg:04X} = 0x{v:04x}"),
-            Err(e) => debug!("  {label} @0x{reg:04X} read failed: {e}"),
-        }
-    }
-}
-
-/// Human-readable name for a Beckhoff EL7062 diag TextID. The TextID in the
-/// 0x10F3 record maps directly to the ESI `<DiagMessage>` table (EL7062.xml).
-fn diag_name(text_id: u16) -> Option<&'static str> {
-    match text_id {
-        0x4101 => Some("Amplifier-Overtemperature"),
-        0x4102 => Some("PDO-configuration is incompatible to the selected mode of operation"),
-        0x4103 => Some("Undervoltage Us"),
-        0x4104 => Some("Overvoltage Us"),
-        0x4400 => Some("Calibration data corrupted or missing"),
-        0x4411 => Some("DC-Link undervoltage"),
-        0x4412 => Some("DC-Link overvoltage"),
-        0x8103 => Some("Undervoltage Us"),
-        0x8104 => Some("Amplifier-Overtemperature"),
-        0x8105 => Some("PD-Watchdog"),
-        0x8144 => Some("Hardware fault"),
-        0x817F => Some("Error"),
-        0x8404 => Some("Overcurrent"),
-        0x8406 => Some("Undervoltage DC-Link"),
-        0x8407 => Some("Overvoltage DC-Link"),
-        0x840A => Some("Overall current threshold exceeded"),
-        0x840B => Some("Commutation error"),
-        0x840C => Some("Motor not connected"),
-        0x840F => Some("Commutation Type requires an encoder, but feedback is disabled"),
-        0x8415 => Some("Invalid modulo range"),
-        0x8417 => Some("Maximum rotating field velocity exceeded"),
-        0x841F => Some("Torque limitation too low"),
-        0x8422 => Some("Drive configuration missing"),
-        0x8423 => Some("Invalid process data format (singleturn+multiturn bits != 32)"),
-        0x8441 => Some("Maximum following error distance exceeded"),
-        0x8442 => Some("Encoder-Resolution insufficient"),
-        0x8443 => Some("Combination of Mode of Operation and Commutation Type is invalid"),
-        0x8452 => Some("Drive error during positioning"),
-        0x8457 => Some("Invalid value for Target velocity"),
-        0x8458 => Some("Invalid value for Target position"),
-        0x8459 => Some("Emergency stop active"),
-        _ => None,
-    }
-}
-
-/// Dump the EL7062 DiagMessages history (0x10F3). Record layout per ETG.1020
-/// (see ethercat_hal::debugging::diagnosis_history): bytes 0..3 DiagCode,
-/// 4..5 Flags, 6..7 TextID, 8..15 timestamp, then P1/P2 data.
-fn dump_diag_messages(channel: &EtherCATThreadChannel, addr: u16) {
-    let read_u8 = |sub: u8| -> Option<u8> {
-        for _ in 0..3 {
-            if let Ok(v) = channel.sdo_read::<u8>(addr, 0x10F3, sub) {
-                return Some(v);
-            }
-            std::thread::sleep(Duration::from_millis(2));
-        }
-        None
-    };
-    let new_available = read_u8(0x04).unwrap_or(0);
-    let count = read_u8(0x00).unwrap_or(0);
-    let newest = read_u8(0x02).unwrap_or(0);
-    info!(
-        "DiagMessages (0x10F3): slots={} newest_index={} new_available={}",
-        count, newest, new_available
-    );
-    if count == 0 {
-        return;
-    }
-    // Messages live in subs 0x06..; scan only the meaningful window around the
-    // newest index (whole ring if newest is unknown). 16 reads max.
-    let mut end = 0x06u8.saturating_add(if newest >= 0x06 { newest - 0x05 } else { 8 });
-    if end > 0x06u8.saturating_add(15) {
-        end = 0x06u8.saturating_add(15);
-    }
-    let mut shown = 0;
-    for sub in 0x06u8..end {
-        match channel.sdo_read_raw(addr, 0x10F3, sub) {
-            Ok(bytes) => {
-                if bytes.iter().all(|&b| b == 0) {
-                    continue;
-                }
-                shown += 1;
-                let diag_code = if bytes.len() >= 4 {
-                    u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
-                } else {
-                    0
-                };
-                let flags = if bytes.len() >= 6 {
-                    u16::from_le_bytes([bytes[4], bytes[5]])
-                } else {
-                    0
-                };
-                let text_id = if bytes.len() >= 8 {
-                    u16::from_le_bytes([bytes[6], bytes[7]])
-                } else {
-                    0
-                };
-                let msg_type = match flags {
-                    0x0000 => "Info",
-                    0x0001 => "Warning",
-                    0x0002 => "Error",
-                    _ => "Unknown",
-                };
-                let raw = if bytes.len() >= 26 {
-                    &bytes[..26]
-                } else {
-                    &bytes[..]
-                };
-                info!(
-                    "  [{}] sub=0x{:02X} {} TextID=0x{:04X} DiagCode=0x{:04X} ts=0x{:016X} msg(26B)={:02X?}",
-                    shown - 1,
-                    sub,
-                    msg_type,
-                    text_id,
-                    diag_code & 0xFFFF,
-                    if bytes.len() >= 16 {
-                        u64::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]])
-                    } else {
-                        0
-                    },
-                    raw,
-                );
-                if let Some(name) = diag_name(text_id) {
-                    info!("       -> {name}");
-                }
-            }
-            Err(e) => {
-                debug!("  [{}] 0x10F3:0x{:02X} read failed: {}", shown, sub, e);
-            }
-        }
-    }
-    if shown == 0 {
-        info!("  (message slots present but all empty)");
-    }
-}
-
-/// Drive the CiA402 state machine via the control word.
-/// Bits on the EL7062: 0=switch on, 1=enable voltage, 3=enable operation, 7=fault reset.
-fn apply_controlword(
-    el7062: &mut EL7062,
-    statusword: &DrvStatusWord,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if statusword.fault {
-        warn!("Fault detected! Applying fault reset to EL7062 (Channel 1)");
-        el7062.set_controlword(
-            EL7062Port::Ch1,
-            DrvControlWord {
-                fault_reset: true,
-                ..Default::default()
-            },
-        )?;
-    } else if !statusword.ready_to_switch_on {
-        el7062.set_controlword(
-            EL7062Port::Ch1,
-            DrvControlWord {
-                enable_voltage: true,
-                quick_stop: true,
-                ..Default::default()
-            },
-        )?;
-    } else if !statusword.switched_on {
-        el7062.set_controlword(
-            EL7062Port::Ch1,
-            DrvControlWord {
-                switch_on: true,
-                enable_voltage: true,
-                quick_stop: true,
-                ..Default::default()
-            },
-        )?;
-    } else {
-        el7062.set_controlword(
-            EL7062Port::Ch1,
-            DrvControlWord {
-                switch_on: true,
-                enable_voltage: true,
-                quick_stop: true,
-                enable_operation: true,
-                ..Default::default()
-            },
-        )?;
-    }
-    Ok(())
-}
-
-/// Simple trapezoidal setpoint ramp in encoder increments.
-///
-/// Generates a smooth 3-segment profile (accelerate / cruise / decelerate) so the
-/// drive is never asked to jump straight to the target position.
-struct SetpointRamp {
-    position: f64,
-    velocity: f64,
-}
-
-/// 5 rev/s = 300 rev/min at 500 CPR.
-const RAMP_MAX_VELOCITY_INCR_PER_S: f64 = 2500.0;
-/// 10 rev/s² at 500 CPR (~63 rad/s²).
-const RAMP_ACCEL_INCR_PER_S2: f64 = 5000.0;
-
-impl SetpointRamp {
-    fn new(initial_position: i32) -> Self {
-        Self {
-            position: initial_position as f64,
-            velocity: 0.0,
-        }
-    }
-
-    fn advance(&mut self, target: f64, dt: f64) {
-        let remaining = target - self.position;
-        if remaining.abs() < 1e-3 {
-            self.position = target;
-            self.velocity = 0.0;
-            return;
-        }
-        let dir = remaining.signum();
-        let dist = remaining.abs();
-        // Cap the velocity so we can still stop within the remaining distance.
-        let v_brake = (2.0 * RAMP_ACCEL_INCR_PER_S2 * dist).sqrt();
-        let v_cmd = dir * RAMP_MAX_VELOCITY_INCR_PER_S.min(v_brake);
-        let dv = (v_cmd - self.velocity)
-            .clamp(-RAMP_ACCEL_INCR_PER_S2 * dt, RAMP_ACCEL_INCR_PER_S2 * dt);
-        self.velocity += dv;
-
-        let next = self.position + self.velocity * dt;
-        // Do not overshoot the target.
-        if (target - self.position).signum() != (target - next).signum() {
-            self.position = target;
-            self.velocity = 0.0;
-        } else {
-            self.position = next;
-        }
-    }
-}
 
 fn main() {
     // Force early logger initialization
@@ -300,6 +61,15 @@ fn main() {
 
     // Immediately log to confirm logging works
     debug!("Logger initialized successfully");
+
+    let stop_requested = Arc::new(AtomicBool::new(false));
+    {
+        let flag = Arc::clone(&stop_requested);
+        ctrlc::set_handler(move || {
+            flag.store(true, Ordering::Relaxed);
+        })
+        .expect("Failed to install Ctrl-C handler");
+    }
 
     let fail = format!("{}:\n{}", "Invalid arguments", USAGE);
     let interface = env::args().nth(1).expect(&fail);
@@ -313,6 +83,7 @@ fn main() {
         .expect(&fail)
         .parse()
         .expect("target_position_increments must be a valid i32");
+    let mode_csv = matches!(env::args().nth(4).as_deref(), Some("csv"));
 
     // Force flush logs
     log::logger().flush();
@@ -320,6 +91,10 @@ fn main() {
     info!("Interface: {}", interface);
     info!("Cycle time: {} µs", cycle_time_us);
     info!("Target position: {} increments", target_position);
+    info!(
+        "Command mode: {}",
+        if mode_csv { "CSV (velocity)" } else { "CSP (position)" }
+    );
 
     let dc_config = DcConfiguration {
         // Give headroom for DC setup to finish
@@ -424,6 +199,10 @@ fn main() {
 
     // Build the driver with the closed-loop encoder+motor configuration for channel 1.
     let mut el7062 = EL7062::new();
+    if mode_csv {
+        el7062.configuration.pdo_assignment =
+            EL7062PredefinedPdoAssignment::CyclicSynchronousVelocity;
+    }
     el7062.configuration.channel_1.feedback.encoder_type = 1; // RS422 differential
     el7062
         .configuration
@@ -679,6 +458,56 @@ fn main() {
         }
     }
 
+    let el7062_address = subdevices
+        .iter()
+        .find(|s| s.product_id == EL7062_PRODUCT_ID)
+        .map(|s| s.device_address);
+
+    // Best-effort fault reset (CiA402 controlword bit 7) via mailbox SDO while
+    // the drive is still in PreOp, so runs start from a clean state instead of
+    // inheriting a latched fault from a previous session.
+    if let Some(addr) = el7062_address {
+        match eth_control.channel.sdo_write::<u16>(addr, 0x7010, 0x01, 0x0080) {
+            Ok(_) => info!("Fault reset (0x7010:01) = 0x0080 sent"),
+            Err(e) => warn!("Fault reset (0x7010:01) failed: {e}"),
+        }
+        std::thread::sleep(Duration::from_millis(200));
+        match eth_control.channel.sdo_read::<u16>(addr, 0x6010, 0x01) {
+            Ok(v) => info!("Ch.1 statusword after fault reset: 0x{v:04X}"),
+            Err(e) => warn!("Ch.1 statusword read failed: {e}"),
+        }
+    }
+
+    // Brake diagnosis: force a holding brake (if fitted) to release and confirm
+    // via 0x9010:40. If the shaft still feels locked afterwards, it is not the
+    // brake holding it.
+    if let Some(addr) = el7062_address {
+        match eth_control.channel.sdo_read::<u8>(addr, 0x8012, 0x01) {
+            Ok(v) => info!("  Brake manual override (0x8012:01) default: {}", v),
+            Err(e) => info!("  Brake manual override (0x8012:01): read failed: {e}"),
+        }
+        match eth_control.channel.sdo_write::<u8>(addr, 0x8012, 0x01, 1u8) {
+            Ok(_) => info!("  Brake: manual override ENABLED"),
+            Err(e) => warn!("  Brake manual override write failed: {e}"),
+        }
+        match eth_control.channel.sdo_write::<u8>(addr, 0x8012, 0x02, 0u8) {
+            Ok(_) => info!("  Brake: manually released (0x8012:02 = 0)"),
+            Err(e) => warn!("  Brake manual release write failed: {e}"),
+        }
+        std::thread::sleep(Duration::from_millis(500));
+        match eth_control.channel.sdo_read::<u8>(addr, 0x9010, 0x28) {
+            Ok(v) => info!("  Actual motor brake state (0x9010:40): {v} [0=applied,1=released]"),
+            Err(e) => info!("  Actual motor brake state (0x9010:40): read failed: {e}"),
+        }
+        // Shaft-freedom check: with the brake released and the output stage NOT
+        // yet energized, the shaft must turn freely by hand. If it does not,
+        // the axis is mechanically locked (brake stuck / gearbox / jammed load)
+        // and no software configuration will make it rotate.
+        info!("SHAFT CHECK (brake released, output NOT energized): try to turn the shaft manually now");
+        log::logger().flush();
+        std::thread::sleep(Duration::from_secs(8));
+    }
+
     // Request Op state. The master thread then drives the bus through PreopPdi
     // (DC clock settling) -> SafeOp -> Op on its own.
     info!("Requesting EtherCAT state transition: -> Op");
@@ -686,11 +515,6 @@ fn main() {
         .channel
         .request_state_change(EtherCATState::Op)
         .expect("Failed to request state change to Op");
-
-    let el7062_address = subdevices
-        .iter()
-        .find(|s| s.product_id == EL7062_PRODUCT_ID)
-        .map(|s| s.device_address);
 
     if let Some(report) = eth_handle.get_last_transition_failure() {
         warn!("Previous transition failed: {}", report);
@@ -805,8 +629,12 @@ fn main() {
     // then jogs between seed and seed+target_position.
     let seed_position = initial_position as f64;
     info!(
-        "Starting EL7062 CSP smoke test: cycle {} µs, jogging {} increments around initial position {}",
-        cycle_time_us, target_position, initial_position
+        "Starting EL7062 {} smoke test: cycle {} µs, {} {} increments around initial position {}",
+        if mode_csv { "CSV" } else { "CSP" },
+        cycle_time_us,
+        if mode_csv { "commanding velocity" } else { "jogging" },
+        target_position,
+        initial_position
     );
 
     let mut ramp = SetpointRamp::new(initial_position);
@@ -840,6 +668,9 @@ fn main() {
     let mut last_probe_cycle = eth_handle.get_current_cycle();
 
     loop {
+        if stop_requested.load(Ordering::Relaxed) {
+            break;
+        }
         while !eth_handle.check_inputs_ready() {}
 
         if let Some(inputs) = eth_handle.get_inputs() {
@@ -948,7 +779,9 @@ fn main() {
                     )
                     .expect("Failed to write shutdown word");
             } else {
-                apply_controlword(&mut el7062, &statusword).expect("Failed to write controlword");
+                el7062
+                    .apply_controlword(EL7062Port::Ch1, &statusword)
+                    .expect("Failed to write controlword");
             }
         }
 
@@ -972,7 +805,10 @@ fn main() {
             log::logger().flush();
         }
         if statusword.drive_follows_command_value && !prev_follows {
-            info!("Drive follows command value (CSP active)");
+            info!(
+                "Drive follows command value ({} active)",
+                if mode_csv { "CSV" } else { "CSP" }
+            );
             log::logger().flush();
         }
         prev_switched_on = statusword.switched_on;
@@ -984,23 +820,32 @@ fn main() {
             last_ramp_cycle = current_cycle;
         }
         if ramp_cycle {
-            if statusword.operation_enabled {
-                ramp.advance(go_to, dt);
-            }
-            // Always publish the setpoint. Before enable this pins the target to
-            // the seed so the drive never sees a stale/zero target the moment it
-            // enables.
-            el7062
-                .set_target_position(EL7062Port::Ch1, ramp.position as i32)
-                .expect("Failed to write target position");
-
-            if statusword.operation_enabled && (go_to - ramp.position).abs() < 0.5 {
-                go_to = if (go_to - seed_position).abs() < 0.5 {
-                    seed_position + target_position as f64
+            if mode_csv {
+                let target_v = if statusword.operation_enabled {
+                    target_position
                 } else {
-                    seed_position
+                    0
                 };
-                debug!("Target position toggled: {}", go_to);
+                el7062
+                    .set_target_velocity(EL7062Port::Ch1, target_v)
+                    .expect("Failed to write target velocity");
+            } else if statusword.operation_enabled {
+                ramp.advance(go_to, dt);
+                // Always publish the setpoint. Before enable this pins the target to
+                // the seed so the drive never sees a stale/zero target the moment it
+                // enables.
+                el7062
+                    .set_target_position(EL7062Port::Ch1, ramp.position() as i32)
+                    .expect("Failed to write target position");
+
+                if (go_to - ramp.position()).abs() < 0.5 {
+                    go_to = if (go_to - seed_position).abs() < 0.5 {
+                        seed_position + target_position as f64
+                    } else {
+                        seed_position
+                    };
+                    debug!("Target position toggled: {}", go_to);
+                }
             }
         }
 
@@ -1030,30 +875,41 @@ fn main() {
             let position = el7062
                 .get_position(EL7062Port::Ch1)
                 .expect("Failed to read position");
-            let following_error = el7062
-                .get_following_error(EL7062Port::Ch1)
-                .expect("Failed to read following error");
 
-            let fe_window = el7062
-                .configuration
-                .channel_1
-                .amplifier
-                .following_error_window;
-            if fe_window != u32::MAX && (following_error as i64).abs() > fe_window as i64 {
-                warn!(
-                    "Following error exceeded threshold! Error={}, Threshold={}",
-                    following_error, fe_window
+            if mode_csv {
+                info!(
+                    "Cycle {}: Position={}, Operation Enabled={}, Fault={}",
+                    current_cycle,
+                    position,
+                    statusword.operation_enabled,
+                    statusword.fault
+                );
+            } else {
+                let following_error = el7062
+                    .get_following_error(EL7062Port::Ch1)
+                    .expect("Failed to read following error");
+
+                let fe_window = el7062
+                    .configuration
+                    .channel_1
+                    .amplifier
+                    .following_error_window;
+                if fe_window != u32::MAX && (following_error as i64).abs() > fe_window as i64 {
+                    warn!(
+                        "Following error exceeded threshold! Error={}, Threshold={}",
+                        following_error, fe_window
+                    );
+                }
+
+                info!(
+                    "Cycle {}: Position={}, Following Error={}, Operation Enabled={}, Fault={}",
+                    current_cycle,
+                    position,
+                    following_error,
+                    statusword.operation_enabled,
+                    statusword.fault
                 );
             }
-
-            info!(
-                "Cycle {}: Position={}, Following Error={}, Operation Enabled={}, Fault={}",
-                current_cycle,
-                position,
-                following_error,
-                statusword.operation_enabled,
-                statusword.fault
-            );
         }
 
         let probe_cycle = current_cycle.wrapping_sub(last_probe_cycle) >= 2000;
@@ -1076,4 +932,48 @@ fn main() {
             }
         }
     }
+
+    // Graceful stop: command Ch.1 off via PDO, drop the bus back to PreOp
+    // (where mailbox SDOs are serviced again) and capture this session's diag
+    // history while the drive still holds it.
+    info!("Graceful stop requested; shutting the drive down...");
+    if mode_csv {
+        el7062
+            .set_target_velocity(EL7062Port::Ch1, 0)
+            .expect("Failed to write zero target velocity");
+    }
+    el7062
+        .set_controlword(EL7062Port::Ch1, DrvControlWord::default())
+        .expect("Failed to write shutdown controlword");
+    if let Some(outputs) = eth_handle.write_outputs() {
+        for subdevice in &subdevices {
+            if subdevice.product_id == EL7062_PRODUCT_ID {
+                el7062
+                    .output_pre_process()
+                    .expect("Failed to prepare output");
+                let output = &mut outputs[subdevice.start_rx..subdevice.end_rx];
+                el7062
+                    .output(BitSlice::from_slice_mut(output))
+                    .expect("Failed to write output");
+            }
+        }
+    }
+    eth_handle.send_outputs();
+
+    eth_control
+        .channel
+        .request_state_change(EtherCATState::PreOp)
+        .expect("Failed to request PreOp");
+    for _ in 0..40 {
+        std::thread::sleep(Duration::from_millis(50));
+        if eth_handle.get_state() == EtherCATState::PreOp {
+            break;
+        }
+    }
+
+    if let Some(addr) = el7062_address {
+        info!("Post-shutdown DiagMessages dump:");
+        dump_diag_messages(&eth_control.channel, addr);
+    }
+    info!("Clean shutdown complete");
 }

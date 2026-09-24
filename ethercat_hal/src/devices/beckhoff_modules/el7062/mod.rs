@@ -1,11 +1,14 @@
 use coe::EL7062Configuration;
 use ethercat_hal_derive::EthercatDevice;
+use log::warn;
 
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::pdo::{PredefinedPdoAssignment, RxPdo, TxPdo};
 use anyhow::anyhow;
 
 pub mod coe;
+pub mod diagnostics;
+pub mod motion;
 pub mod pdo;
 
 #[derive(EthercatDevice, Clone, Debug)]
@@ -129,6 +132,59 @@ impl EL7062 {
             }
             None => Err(anyhow!("Target velocity PDO of channel {:?} is None", port)),
         }
+    }
+
+    /// Drive the CiA402 state machine via the control word.
+    ///
+    /// Steps the drive towards `Operation enabled` (fault reset is left to the
+    /// caller, which may want to latch faults instead of auto-clearing them).
+    /// Bits on the EL7062: 0=switch on, 1=enable voltage, 3=enable operation.
+    pub fn apply_controlword(
+        &mut self,
+        port: EL7062Port,
+        statusword: &pdo::DrvStatusWord,
+    ) -> Result<(), anyhow::Error> {
+        if statusword.fault {
+            warn!("Fault detected! Applying fault reset to EL7062 ({:?})", port);
+            self.set_controlword(
+                port,
+                pdo::DrvControlWord {
+                    fault_reset: true,
+                    ..Default::default()
+                },
+            )?;
+        } else if !statusword.ready_to_switch_on {
+            self.set_controlword(
+                port,
+                pdo::DrvControlWord {
+                    enable_voltage: true,
+                    quick_stop: true,
+                    ..Default::default()
+                },
+            )?;
+        } else if !statusword.switched_on {
+            self.set_controlword(
+                port,
+                pdo::DrvControlWord {
+                    switch_on: true,
+                    enable_voltage: true,
+                    quick_stop: true,
+                    ..Default::default()
+                },
+            )?;
+        } else {
+            self.set_controlword(
+                port,
+                pdo::DrvControlWord {
+                    switch_on: true,
+                    enable_voltage: true,
+                    quick_stop: true,
+                    enable_operation: true,
+                    ..Default::default()
+                },
+            )?;
+        }
+        Ok(())
     }
 }
 
