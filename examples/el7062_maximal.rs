@@ -1,55 +1,29 @@
 /*
-    EL7062 2-channel stepper motor output stage in Cyclic Synchronous Position mode (CSP).
-
-    This example assumes a motor (200 full steps/rev, 1.8 A/phase) and an encoder
-    (WEDL5541-A14, RS422 differential, 500 counts/rev after 4-fold evaluation)
-    connected to channel 1, running open-loop with commutation type 16.
+    EL7062 channel 1 in Cyclic Synchronous Position mode. Assumes a motor
+    (200 full steps/rev, 1.8 A/phase) and a WEDL5541-A14 RS422 encoder: 500 CPR
+    from the data sheet, so 0x8008:13 is 2000 after 4-fold evaluation.
 
     UNITS. The EL7062 does not use one unit for everything, which is the single
-    easiest thing to get wrong:
+    easiest thing to get wrong. POSITION (0x6072, 0x6064) is
+    2^singleturn_bits increments per revolution: 0x8000:12 defaults to 20, so
+    1,048,576/rev, and 0x9010:15 reports exactly that back. 0x8008:13 does not
+    change this scale; it only tells the terminal how many raw encoder counts
+    make up one revolution. VELOCITY (0xFF00, 0x6010:07) uses the separate,
+    coarser "velocity encoder resolution" from 0x9010:14, ~268435/rev. Converting
+    a velocity with the position scale runs the motor ~4x too fast. Both scales
+    are read back from the terminal and logged at startup.
 
-      * POSITION (0x6072, 0x6064) is 2^singleturn_bits increments per motor
-        revolution. 0x8000:12 defaults to 20, so 1,048,576 increments/rev.
-        0x9010:21 reports this back. 0x8008:13 only tells the terminal how many
-        raw encoder counts make up one revolution; it does not change this scale.
-        One full step of a 200-steps/rev motor is 5242.88 increments, so a
-        "500 increment" move is 0.17 degrees - a tenth of one full step, and
-        therefore no step at all.
+    PROFILES (4th argument, default csp):
 
-      * VELOCITY (0xFF00, 0x6010:07) uses the separate, coarser "velocity
-        encoder resolution" from 0x9010:20, which measures ~268435 per rev on
-        this terminal, i.e. about 1/4 of the position increment. Converting a
-        velocity with the position scale runs the motor ~4x too fast. Both
-        scales are read back from the terminal and logged at startup.
-
-    MOVEMENT PROFILES (4th argument, default csp):
-
-      csp   Position jog. The setpoint ramps out to seed+target and back to seed
-            on a trapezoidal profile limited to 5 rev/s and 10 rev/s^2, then
-            repeats. With the default limits one 1-rev leg takes ~0.63 s, so the
-            axis sweeps 1 rev out, 1 rev back, every ~1.27 s. Hold time is zero,
-            which is why it looks continuous rather than stepping.
-
-      csv   Constant velocity at <target> rev/s, converted with 0x9010:20.
-
-      clock A seconds hand: 1 revolution per minute, advancing exactly 1/60 rev
-            (6 degrees, 17476 increments, 3.3 full steps) once per second. The
-            setpoint is a staircase, so the motion is visibly discrete. This is
-            the easiest profile to check against a real clock.
-
-    TIMING. The control step runs once per MASTER CYCLE, using the measured
-    cycle time from get_cycle_time_us(). The application loop itself spins much
-    faster than the master cycle - check_inputs_ready() is a level flag that
-    stays set for the whole cycle window, not a new-image event - so the step is
-    gated on get_current_cycle() actually changing. Un-gated, the ramp and the
-    clock both run at CPU speed (measured ~200x too fast).
-
-    This is a SAFETY-HARDENED smoke test: conservative current, speed, acceleration
-    and following-error limits are applied, so the motor can be verified to spin
-    without risking the hardware.
-
-    For a stripped-down version of this, see examples/el7062_minimal.rs, which
-    only drives Ch.1 as a 1 rev/min clock and prints the closed-loop error.
+      csp    Jog: ramps <target> rev out and back around the startup position on
+             a trapezoid limited to 5 rev/s and 10 rev/s^2, then repeats. One
+             1-rev leg takes ~0.63 s. Hold time is zero, so it looks continuous.
+      csv    Constant velocity at <target> rev/s, converted with 0x9010:14.
+      clock  Seconds hand: 1/60 rev (6 deg, 17476 increments) once per second.
+             The setpoint is a staircase, so the motion is visibly discrete.
+      probe  Write config, read it back, dump 0x10F3 in PreOp, then exit.
+             Commutation type defaults to 17 here. Never requests Op, so no
+             current can flow. For validating an encoder-based type.
 
     DIAGNOSTICS. 0x10F3 is read once, during startup, while the bus is still in
     PreOp. It is deliberately not read from the control loop: a blocking mailbox
@@ -57,10 +31,7 @@
     (0x8105) and stalls the loop for seconds. 0x10F3 keeps its history, so this
     run's events show up in the next run's startup dump.
 
-    usage: el7062_maximal <interface> <cycle_time_us> <target> [csp|csv|clock]
-    example (1 rev jog): ./target/release/examples/el7062_maximal enp4s0 1000 1
-    example (1 rev/s):    ./target/release/examples/el7062_maximal enp4s0 1000 1 csv
-    example (clock):      ./target/release/examples/el7062_maximal enp4s0 1000 0 clock
+    For a stripped-down 1 rev/min clock, see examples/el7062_minimal.rs.
 */
 
 use bitvec::slice::BitSlice;
@@ -93,11 +64,18 @@ use std::{
 };
 
 const USAGE: &str = concat!(
-    "el7062_maximal interface_name cycle_time_us target [csp|csv|clock]\n",
+    "el7062_maximal interface_name cycle_time_us target [csp|csv|clock|probe] [commutation_type]\n",
     "  csp   = position jog: ramps <target> revs out, holds, ramps back, repeats\n",
     "  csv   = constant velocity, target in revolutions per second\n",
     "  clock = 1 revolution per minute, one 6 deg step per second (target unused)\n",
-    " example: ./target/release/examples/el7062_maximal enp4s0 1000 1 csv",
+    "  probe = write config + read back + dump 0x10F3 in PreOp, then exit. Never requests\n",
+    "          Op, never enables the axis, so no current can flow. For encoder-based\n",
+    "          commutation types. Defaults to commutation type 17.\n",
+    "  commutation_type = 16 (internal step counter), 17 (incremental encoder),\n",
+    "                      18 (FOC). Default 16, or 17 for probe. 18 also needs\n",
+    "                      commutation determination (0x8010:63), which is not done here.\n",
+    " example: ./target/release/examples/el7062_maximal enp4s0 1000 1 csv\n",
+    " example: ./target/release/examples/el7062_maximal enp4s0 1000 0 probe",
 );
 
 /// The clock profile: one revolution per minute, advancing one sixtieth of a
@@ -113,12 +91,10 @@ fn apply_rt() {
 }
 
 fn main() {
-    // Force early logger initialization
     env_logger::Builder::from_default_env()
         .format_timestamp_micros()
         .init();
 
-    // Immediately log to confirm logging works
     debug!("Logger initialized successfully");
 
     let stop_requested = Arc::new(AtomicBool::new(false));
@@ -145,32 +121,55 @@ fn main() {
         .expect(&fail)
         .parse()
         .expect("target must be a valid f64 (revolutions, or revolutions/s in csv)");
-    let mode_csv = matches!(env::args().nth(4).as_deref(), Some("csv"));
-    let mode_clock = matches!(env::args().nth(4).as_deref(), Some("clock"));
-    match env::args().nth(4).as_deref() {
-        None | Some("csp") | Some("csv") | Some("clock") => {}
+    let mode_arg = env::args().nth(4);
+    let mode_csv = matches!(mode_arg.as_deref(), Some("csv"));
+    let mode_clock = matches!(mode_arg.as_deref(), Some("clock"));
+    let mode_probe = matches!(mode_arg.as_deref(), Some("probe"));
+    match mode_arg.as_deref() {
+        None | Some("csp") | Some("csv") | Some("clock") | Some("probe") => {}
         Some(_) => {
             eprintln!("{fail}");
             std::process::exit(2);
         }
     }
+    // Commutation type picks the position source the loop runs on: 16 uses the
+    // drive's own step counter, 17 the incremental encoder, 18 FOC. `probe`
+    // exists to validate an encoder-based type without ever enabling the axis,
+    // so it defaults to 17; the motion modes default to 16.
+    let commutation_type: u8 = match env::args().nth(5) {
+        Some(v) => v
+            .parse()
+            .expect("commutation_type must be a number: 16, 17 or 18"),
+        None if mode_probe => 17,
+        None => 16,
+    };
+    if !matches!(commutation_type, 16 | 17 | 18) {
+        eprintln!("commutation_type must be 16, 17 or 18, got {commutation_type}");
+        std::process::exit(2);
+    }
 
-    // Force flush logs
     log::logger().flush();
     info!("Starting EL7062 minimal example");
     info!("Interface: {}", interface);
     info!("Cycle time: {} µs", cycle_time_us);
     info!(
         "Command mode: {}",
-        if mode_csv {
-            "CSV (constant velocity)"
+        if mode_probe {
+            format!(
+                "PROBE (config + readback + 0x10F3 dump in PreOp, no Op, no enable, commutation \
+                 type {commutation_type})"
+            )
+        } else if mode_csv {
+            "CSV (constant velocity)".to_string()
         } else if mode_clock {
-            "CSP (clock: 1 rev/min, one 6 deg step per second)"
+            "CSP (clock: 1 rev/min, one 6 deg step per second)".to_string()
         } else {
-            "CSP (position jog)"
+            "CSP (position jog)".to_string()
         }
     );
-    info!("Target: {} rev", target);
+    if !mode_probe {
+        info!("Target: {} rev", target);
+    }
 
     let dc_config = DcConfiguration {
         // Give headroom for DC setup to finish
@@ -227,12 +226,10 @@ fn main() {
     info!("EtherCAT master initialized");
     log::logger().flush();
 
-    // Ensure the master is fully initialized
     info!("Waiting for EtherCAT master to stabilize...");
     std::thread::sleep(Duration::from_millis(1000));
     let mut eth_handle = eth_control.app_handle;
 
-    // Wait for Init state
     info!("Waiting for EtherCAT master to reach Init state...");
     let mut current_state = eth_handle.get_state();
     while !matches!(current_state, EtherCATState::Init) {
@@ -243,14 +240,12 @@ fn main() {
     info!("EtherCAT master reached Init state");
     log::logger().flush();
 
-    // Request PreOp state
     info!("Requesting EtherCAT state transition: -> PreOp");
     eth_control
         .channel
         .request_state_change(EtherCATState::PreOp)
         .expect("Failed to request state change to PreOp");
 
-    // Wait for PreOp state
     info!("Waiting for PreOp state...");
     let mut attempts = 0;
     let max_attempts = 100; // ~100 seconds timeout (100 * 1000ms)
@@ -273,7 +268,6 @@ fn main() {
 
     info!("Configuring EL7062 driver for Channel 1");
 
-    // Build the driver with the closed-loop encoder+motor configuration for channel 1.
     let mut el7062 = EL7062::new();
     if mode_csv {
         el7062.configuration.pdo_assignment =
@@ -287,10 +281,12 @@ fn main() {
         // 0x8008:13 is the resolution AFTER 4-fold evaluation, so a 500 CPR
         // encoder is 2000 here. Putting the raw 500 in scales the encoder 4x slow.
         .encoder_increments_per_revolution = 2000;
-    // Commutation type 16 closes the drive's position loop around its own step
-    // counter, so the encoder is monitored but not used for commutation. Types
-    // 17/18 use the encoder as the position source.
-    el7062.configuration.channel_1.amplifier.commutation_type = 16;
+    // Type 16 closes the loop around the drive's own step counter, so the encoder
+    // is monitored but not used for commutation. Types 17/18 use the encoder, and
+    // need 0x8008:01 to agree with the motor direction or the loop has positive
+    // feedback. Selected on the CLI (see USAGE) so `probe` can validate a type
+    // without committing it to the motion modes.
+    el7062.configuration.channel_1.amplifier.commutation_type = commutation_type;
     el7062.configuration.channel_1.motor.rated_current = 1800; // 1.8 A per phase
     el7062
         .configuration
@@ -464,9 +460,7 @@ fn main() {
                 }
             };
             // Confirms the SDO writes in write_config actually landed, instead of
-            // assuming they did. Watch 8008:13 in particular: it is the
-            // after-4-fold-evaluation resolution, so a value that looks right but
-            // is 4x off scales the encoder wrong.
+            // assuming they did.
             info!("Config readback (what the drive actually stored):");
             for (t, idx, sub, name) in [
                 ('b', 0x8000u16, 0x12u8, "singleturn bits"),
@@ -631,7 +625,7 @@ fn main() {
     // with. Everything downstream converts revolutions to increments using
     // `incr_per_rev`, so a mismatch here would silently scale every command.
     // `vel_incr_per_rev` is the separate, coarser unit used for velocity; it is
-    // only known once the terminal has published 0x9010:20.
+    // only known once the terminal has published 0x9010:14.
     let mut vel_incr_per_rev = 0u32;
     if let Some(addr) = el7062_address {
         let stb = eth_control.channel.sdo_read::<u8>(addr, 0x8000, 0x12).ok();
@@ -665,17 +659,17 @@ fn main() {
             (
                 0x9010,
                 0x14,
-                "0x9010:20 velocity encoder resolution (velocity incr/rev)",
+                "0x9010:14 velocity encoder resolution (velocity incr/rev)",
             ),
             (
                 0x9010,
                 0x15,
-                "0x9010:21 position encoder resolution increments",
+                "0x9010:15 position encoder resolution increments",
             ),
             (
                 0x9010,
                 0x16,
-                "0x9010:22 position encoder resolution revolutions",
+                "0x9010:16 position encoder resolution revolutions",
             ),
         ] {
             match eth_control.channel.sdo_read::<u32>(addr, idx, sub) {
@@ -684,31 +678,104 @@ fn main() {
             }
         }
 
-        // The EL7062 does NOT use one unit for both position and velocity.
-        // Position is 2^singleturn_bits per rev (0x8000:12, 0x9010:21), but the
-        // target/actual velocity in 0xFF00 / 0x6010:07 use the coarser
-        // "velocity encoder resolution" from 0x9010:20, which is a factor of
-        // ~4 smaller. Commanding `incr_per_rev` as a velocity therefore runs the
-        // motor ~4x faster than requested, so CSV converts with this value.
+        // 0x9010:15 is NOT the physical encoder resolution: measured on this
+        // terminal it returns 2^singleturn_bits, i.e. the process-data position
+        // scale, regardless of 0x8008:13. It is reported here only to show the
+        // two values side by side, and it cannot confirm the 0x8008:13 write.
+        let phys_incr = eth_control.channel.sdo_read::<u32>(addr, 0x8008, 0x13).ok();
+        let pos_incr = eth_control.channel.sdo_read::<u32>(addr, 0x9010, 0x15).ok();
+        let pos_rev = eth_control.channel.sdo_read::<u32>(addr, 0x9010, 0x16).ok();
+        match (phys_incr, pos_incr, pos_rev) {
+            (Some(enc), Some(inc), Some(rev)) => {
+                let scale_incr = increments_per_revolution(singleturn_bits);
+                if inc == scale_incr {
+                    info!(
+                        "0x9010:15 reports {} incr/rev, which is the process-data position scale \
+                         (2^{} = {}), as expected -- it is not the physical encoder resolution and \
+                         says nothing about whether 0x8008:13 = {} is correct.",
+                        inc, singleturn_bits, scale_incr, enc
+                    );
+                } else if inc == enc {
+                    // Unreachable on this terminal while 0x8000:12 is 20: 0x9010:15
+                    // tracks the position scale, so a collision here means one of
+                    // the two is not what we think.
+                    warn!(
+                        "0x9010:15 = {} coincidentally equals 0x8008:13 = {}. Expected the position \
+                         scale {}. Check 0x8000:12.",
+                        inc, enc, scale_incr
+                    );
+                } else {
+                    warn!(
+                        "0x9010:15 = {} matches NEITHER the position scale {} nor the physical \
+                         encoder resolution {}. Check 0x8000:12 and 0x8008:12/13. \
+                         0x9010:16 reports {} rev.",
+                        inc, scale_incr, enc, rev
+                    );
+                }
+            }
+            (phys, pi, pr) => warn!(
+                "Could not compare encoder resolutions (0x8008:13={phys:?}, 0x9010:15={pi:?}, \
+                 0x9010:16={pr:?}); the encoder scaling check did not run."
+            ),
+        }
+
+        // Velocity uses the coarser 0x9010:14 unit, not the position increment
+        // (see UNITS in the header), so CSV must convert with this value.
         match eth_control.channel.sdo_read::<u32>(addr, 0x9010, 0x14) {
             Ok(v) if v > 0 => {
                 vel_incr_per_rev = v;
                 info!(
-                    "Velocity scale: 0x9010:20 = {} incr/rev (position is {} incr/rev, ratio \
+                    "Velocity scale: 0x9010:14 = {} incr/rev (position is {} incr/rev, ratio \
                      {:.3})",
                     v,
                     incr_per_rev,
                     incr_per_rev as f64 / v as f64
                 );
             }
-            Ok(v) => error!("0x9010:20 velocity encoder resolution is {v}, expected non-zero"),
-            Err(e) => error!("0x9010:20 velocity encoder resolution read failed: {e}"),
+            Ok(v) => error!("0x9010:14 velocity encoder resolution is {v}, expected non-zero"),
+            Err(e) => error!("0x9010:14 velocity encoder resolution read failed: {e}"),
         }
         log::logger().flush();
     }
 
-    // Request Op state. The master thread then drives the bus through PreopPdi
-    // (DC clock settling) -> SafeOp -> Op on its own.
+    if mode_probe {
+        // Zero-motion validation of an encoder-based commutation type. The bus is
+        // still in PreOp: the axis was never enabled, the drive was never
+        // commanded, and no current can flow, so this is safe to run on hardware
+        // at any time. What it does NOT do is prove the encoder config is valid.
+        // PreOp only catches what the drive validates at config-write time.
+        info!(
+            "PROBE: commutation type {} written and read back in PreOp. Not requesting Op, not \
+             enabling the axis, no motion and no current.",
+            commutation_type
+        );
+        let Some(addr) = el7062_address else {
+            error!("PROBE: no EL7062 subdevice on the bus, nothing to probe.");
+            return;
+        };
+        dump_diag_messages(&eth_control.channel, addr);
+        info!(
+            "PROBE verdict -- how to read the history above:\n  \
+             REJECTION CHECK: 0x8301 encoder increments not configured / 0x8304 encoder comms \
+             error / 0x840F commutation type needs an encoder / 0x8442 encoder resolution \
+             insufficient / 0x8443 type+mode invalid. Any of these means the drive REJECTED the \
+             configuration.\n  \
+             Silence is NOT proof of a working encoder: 0x8442 is worded \"insufficient\" and may \
+             only fire when the resolution is too LOW, so a 4x scaling error passes unnoticed, and \
+             the absence of 0x1303/0x1304 is expected in PreOp rather than bad news -- the drive \
+             has not closed the feedback path, so it never evaluated the encoder.\n  \
+             BEST DISCRIMINATOR: compare 0x6060:17 ready_to_enable and 0x6060:18 ready in the DMC \
+             readback above against the same two lines from `probe 16`. ready=false here AND ready=true \
+             under type 16 means the encoder/commutation config is blocking enable and must be fixed \
+             before the axis can ever be switched on. ready=false under BOTH is a PreOp artifact. \
+             To run the control: el7062_maximal <if> <cycle> 0 probe 16"
+        );
+        log::logger().flush();
+        return;
+    }
+
+    // The master ramps PreopPdi (DC settling) -> SafeOp -> Op on its own, so
+    // poll until all subdevices report Op rather than expecting it immediately.
     info!("Requesting EtherCAT state transition: -> Op");
     eth_control
         .channel
@@ -719,8 +786,6 @@ fn main() {
         warn!("Previous transition failed: {}", report);
     }
 
-    // Wait for Op state. The master reports PreopPdi (and then SafeOp) while it
-    // settles the distributed clocks, so poll until all subdevices report Op.
     info!("Waiting for Op state (master passes through PreopPdi -> SafeOp -> Op)...");
     let mut attempts = 0;
     let max_attempts = 400; // ~100 seconds timeout (400 * 250ms)
@@ -834,14 +899,14 @@ fn main() {
     if mode_csv {
         if vel_incr_per_rev == 0 {
             error!(
-                "CSV needs the velocity unit (0x9010:20) but it could not be read, so the target \
+                "CSV needs the velocity unit (0x9010:14) but it could not be read, so the target \
                  velocity cannot be scaled. Re-run without 'csv', or check mailbox access."
             );
             return;
         }
         info!(
             "Starting EL7062 CSV smoke test: cycle {} µs, commanding {} rev/s = {} velocity \
-             increments/s (0x9010:20 = {} incr/rev) from initial position {} increments ({:.4} \
+             increments/s (0x9010:14 = {} incr/rev) from initial position {} increments ({:.4} \
              rev)",
             cycle_time_us,
             target,
@@ -872,12 +937,6 @@ fn main() {
         );
     }
 
-    // The setpoint is advanced once per MASTER CYCLE, and one master cycle is
-    // `get_cycle_time_us()` long. The application loop below spins much faster
-    // than that (it is only waiting on a level flag, not a new-image event), so
-    // the control step is gated on the master cycle counter actually changing.
-    // Skipping that gate makes the ramp run at the CPU spin rate rather than
-    // real time - measured at ~200x too fast on this machine.
     let mut ramp = SetpointRamp::new(initial_position, singleturn_bits);
     let mut go_to: f64 = seed_position;
     let mut last_control_cycle = eth_handle.get_current_cycle();
@@ -890,7 +949,6 @@ fn main() {
         cycle_time_us
     );
 
-    // Track CiA402 enable transitions so we can confirm the drive enables.
     let mut prev_switched_on = false;
     let mut prev_operation_enabled = false;
     let mut prev_follows = false;
@@ -907,7 +965,6 @@ fn main() {
     // `get_current_cycle()` counts master cycles, i.e. `cycle_time_us` apart, so
     // these thresholds are milliseconds: 1000 = 1 s of status logging.
     let mut last_status_cycle = eth_handle.get_current_cycle();
-    // Previous sample for the measured-velocity calculation.
     let mut last_position = initial_position;
     let mut last_position_cycle = eth_handle.get_current_cycle();
     let mut last_cycle = eth_handle.get_current_cycle();
@@ -1079,7 +1136,7 @@ fn main() {
             control_steps += 1;
 
             if mode_csv {
-                // Velocity uses the coarser 0x9010:20 unit, not the position
+                // Velocity uses the coarser 0x9010:14 unit, not the position
                 // increment. Only command once enabled, so enabling never sees a
                 // stale non-zero setpoint.
                 let target_v = if statusword.operation_enabled {
@@ -1091,12 +1148,10 @@ fn main() {
                     .set_target_velocity(EL7062Port::Ch1, target_v)
                     .expect("Failed to write target velocity");
             } else if mode_clock {
-                // One 6 deg step per second, forever, like a seconds hand. The
-                // step is small enough that the drive tracks it in one cycle
-                // (1/60 rev = 17476 increments = 3.3 full steps). Negated so the
-                // hand runs clockwise as seen from the drive face, matching
-                // examples/el7062_minimal.rs; inverting 0x8008:01 instead would
-                // also flip CSV velocity and the jog profile.
+                // One 6 deg step per second, forever, like a seconds hand. Negated
+                // so the hand runs clockwise as seen from the drive face, matching
+                // el7062_minimal.rs; inverting 0x8008:01 instead would also flip
+                // CSV velocity and the jog profile.
                 if current_cycle.wrapping_sub(last_step_cycle) >= CLOCK_STEP_PERIOD_MS {
                     last_step_cycle = current_cycle;
                     step_count += 1;
@@ -1231,10 +1286,11 @@ fn main() {
         }
     }
 
-    // Graceful stop: command Ch.1 off via PDO, drop the bus back to PreOp
-    // (where mailbox SDOs are serviced again) and capture this session's diag
-    // history while the drive still holds it.
-    info!("Graceful stop requested; shutting the drive down...");
+    // The drive's PD watchdog disables the axis as soon as cyclic exchange stops,
+    // so motor-deenergised-on-exit comes from the drive, not from here. All this
+    // does is issue disable-voltage (0x0000) so the drive begins its CiA 402
+    // transition one cycle early instead of when the watchdog fires.
+    info!("Graceful stop requested; commanding Ch.1 off and exiting...");
     if mode_csv {
         el7062
             .set_target_velocity(EL7062Port::Ch1, 0)
@@ -1258,12 +1314,17 @@ fn main() {
     }
     eth_handle.send_outputs();
 
+    info!(
+        "Exiting. The bus is not returned to SafeOp/PreOp (the controller drops those \
+         down-transitions), so cyclic exchange stops here and the drive's PD watchdog disables \
+         the axis. Expect 0x8105 (PD-Watchdog) and usually 0x4411 (DC-Link undervoltage) in the \
+         NEXT run's 0x10F3 history: that is this exit path, not a fault during motion."
+    );
     if pending_diag_dump {
         info!(
-            "Clean shutdown complete. This run saw a fault or warning; 0x10F3 keeps the history, \
-             so the next run prints it during startup."
+            "This run also saw a fault or warning; 0x10F3 keeps the history, so the next run \
+             prints it during startup."
         );
-    } else {
-        info!("Clean shutdown complete");
     }
+    log::logger().flush();
 }

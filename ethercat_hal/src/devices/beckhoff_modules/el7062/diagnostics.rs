@@ -84,12 +84,20 @@ pub fn dump_diag_messages(channel: &EtherCATThreadChannel, addr: u16) {
     if count == 0 {
         return;
     }
-    // Messages live in subs 0x06..; scan only the meaningful window around the
-    // newest index (whole ring if newest is unknown). 16 reads max.
-    let window = if newest >= 0x06 { newest - 0x05 } else { 8 }.min(15);
-    let end = 0x06u8 + window;
+    // Messages live in subs 0x06.., and message N sits at subindex 0x05 + N.
+    // Read the newest ones, ending at 0x10F3:02 -- not the oldest. The newest
+    // window is the one that matters: a fresh encoder or commutation fault lands
+    // there, and scanning upwards from 0x06 silently drops it once the ring has
+    // more history than the read window. 15 reads max.
+    let newest_sub = 0x05u8.saturating_add(newest);
+    let last_sub = newest_sub.min(0x37);
+    let start_sub = last_sub.saturating_sub(14).max(0x06);
+    if start_sub > last_sub {
+        info!("  no DiagMessage slots in range (newest_index={newest})");
+        return;
+    }
     let mut shown = 0;
-    for sub in 0x06u8..end {
+    for sub in start_sub..=last_sub {
         match channel.sdo_read_raw(addr, 0x10F3, sub) {
             Ok(bytes) => {
                 if bytes.iter().all(|&b| b == 0) {

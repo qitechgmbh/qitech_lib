@@ -1,47 +1,24 @@
 /*
-    EL7062 stepper output stage, channel 1, in Cyclic Synchronous Position mode,
-    driven as a clock: one 6 degree step per second, one revolution per minute.
-    Each step prints the following error, i.e. the commanded position against the
-    drive's reported actual position.
+    EL7062 channel 1 in Cyclic Synchronous Position mode, driven as a clock:
+    one 6 degree step per second, one revolution per minute. Each step prints
+    the commanded position against the drive's reported actual position.
 
-    WHAT "CLOSED LOOP" MEANS HERE. Commutation type 16 (0x8010:64) is "Stepper with
-    internal counter": the drive counts its own steps and closes its position loop
-    around that count. So the error printed below is the DRIVE's internal following
-    error, not encoder feedback. It is a real closed loop, but it cannot detect a
-    physically skipped step - the counter would read on target while the shaft did
-    not. The external encoder covers that, via commutation types 17/18 or the
-    step-loss diagnostic 0x4416. Type 16 does not use the encoder, which is why the
-    example works with it disabled.
+    Commutation type 16 (0x8010:64) is "stepper with internal counter": the
+    drive closes its position loop around its own step count. The error printed
+    here is the DRIVE's internal following error, not encoder feedback, so it
+    cannot detect a physically skipped step -- the counter would read on target
+    while the shaft did not. The external encoder covers that, via commutation
+    types 17/18 or the step-loss diagnostic 0x4416.
 
-    WHY YOU SEE A FAULT ON EVERY STARTUP. Ctrl+C kills this process while the
-    drive is still in Op, so it loses process data, logs DC-Link undervoltage
-    (0x4411) and PD-Watchdog (0x8105), and latches a fault. The next run prints
-    `FAULT: statusword 0x0008, latched by an earlier run` before clearing it on
-    enable. That line is expected after an interrupted run, not a new fault, and
-    each interrupt adds one more 0x4411/0x8105 pair to the drive's 0x10F3
-    history. A graceful Op -> SafeOp transition is not possible here: the master's
-    state-change channel acts on NoInterface, PreOp and Op only, and drops every
-    other target, so there is no supported way for an example to leave Op.
+    Ctrl+C kills this process while the drive is in Op, so it loses process data,
+    logs DC-Link undervoltage (0x4411) and PD-Watchdog (0x8105), and latches a
+    fault. The next run prints `FAULT: statusword 0x0008, latched by an earlier
+    run` before clearing it. That line is expected after an interrupt, not a new
+    fault, and each interrupt adds one more 0x4411/0x8105 pair to the drive's
+    0x10F3 history. A graceful Op -> SafeOp transition is not possible: the
+    master's state-change channel acts on NoInterface, PreOp and Op only, and
+    drops every other target.
 
-    Gotchas this example exists to demonstrate, each of which cost real time:
-
-      * UNITS. Position is 2^singleturn_bits increments per revolution (0x8000:12,
-        default 20 -> 1,048,576/rev). Velocity is a different, coarser unit
-        (0x9010:20, ~268435/rev); not used here, but see el7062_maximal.rs.
-      * SYNC0. The EL7062's DC-Synchron OpMode declares a fixed 62500 ns SYNC0
-        cycle (ESI CycleTimeSync0 Factor="0"), and SafeOp rejects anything else
-        with AL status 0x0035. Hence sync0_period is pinned, not derived.
-      * THREADING. This thread is deliberately not real-time, unlike the other
-        examples here. The master's I/O thread owns the cycle timing and runs on
-        core 3; an app thread busy-waiting at hard RT priority on that same core
-        starved it, and the master stopped cycling after about a minute. So it
-        sleeps out all but the last 100 us of each cycle.
-      * SEEDING. The target is seeded from the terminal's own position on the
-        first cycle, before the drive is enabled. A placeholder would be a jump
-        of however many revolutions the axis is from zero, and the drive follows
-        it the moment it enables.
-
-    Config defaults, and the motor/encoder this assumes, are printed at startup.
     For CSV, jog profiles and scale readback, see examples/el7062_maximal.rs.
 */
 
@@ -110,10 +87,6 @@ fn main() {
     // get_current_cycle() counts master cycles, so one second is this many.
     let step_cycles = 1_000_000 / cycle_time_us;
 
-    // write_config sends these values to the terminal, and the library defaults
-    // are wrong for the hardware this example assumes. Say so before the bus is
-    // even touched, so it is the first thing the user sees rather than a line
-    // they scroll past once the motor is already turning.
     let mut el7062 = EL7062::new();
     let channel1 = &mut el7062.configuration.channel_1;
     channel1.motor.rated_current = MOTOR_RATED_MA;
@@ -121,12 +94,6 @@ fn main() {
     channel1.feedback.encoder_type = ENCODER_TYPE;
     channel1.feedback.encoder_increments_per_revolution = ENCODER_INCR_PER_REV;
 
-    // The library defaults leave acceleration effectively unlimited
-    // (62832 = 6283.2 rad/s2) and velocity at 100000 rev/min. The drive then
-    // executes each 6 deg clock step as violently as it physically can, which is
-    // loud, runs hot, and defeats the point of a slow smooth turn. Capping both
-    // makes the motor turn quietly and keeps a stuck shaft from being driven at
-    // full power.
     let amp = &mut channel1.amplifier;
     amp.velocity_limitation = VELOCITY_LIMIT_REV_PER_MIN;
     amp.acceleration_limitation = ACCEL_LIMIT_0_1_RAD_PER_S2;
@@ -135,14 +102,12 @@ fn main() {
     amp.following_error_window = increments_per_revolution(channel1.feedback.singleturn_bits);
     amp.following_error_timeout = 100;
 
-    // Reported before the bus is even touched, so it is the first thing the user
-    // sees rather than a line they scroll past once the motor is already turning.
     let ch1 = &el7062.configuration.channel_1;
     println!(
         "assuming a {MOTOR_RATED_MA} mA (1.8 A/phase), {} full steps/rev motor and a 500 CPR \
          RS422 encoder. Writing rated_current={} mA, configured_motor_current={} mA, \
          motor_full_steps_per_revolution={}, encoder_type={} (1 = RS422), \
-         encoder_increments_per_revolution={} (500 CPR after 4-fold evaluation), \
+         encoder_increments_per_revolution={} (500 CPR after 4x evaluation = 2000), \
          commutation_type={}, velocity_limit={} rev/min, acceleration_limit={} rad/s^2, \
          following_error_window={} increments. The encoder is only monitored, not used for \
          commutation, at commutation type {}. The library defaults (6283.2 rad/s^2, 100000 \
@@ -163,6 +128,9 @@ fn main() {
 
     let dc_config = DcConfiguration {
         start_delay: Duration::from_millis(100),
+        // Pinned, not derived: the EL7062's DC-Synchron OpMode declares a fixed
+        // 62500 ns SYNC0 cycle (ESI CycleTimeSync0 Factor="0") and SafeOp rejects
+        // anything else with AL status 0x0035.
         sync0_period: Duration::from_nanos(62_500),
         sync0_shift: Duration::ZERO,
         target_dc_tick: 500,
@@ -223,20 +191,16 @@ fn main() {
 
     let incr_per_rev =
         increments_per_revolution(el7062.configuration.channel_1.feedback.singleturn_bits) as f64;
-    // Negative, so the hand runs clockwise as seen from the drive face. The
-    // drive's positive position direction is fixed by the encoder wiring and
-    // happens to be anticlockwise here. Negating the step is deliberate: setting
-    // 0x8008:01 to invert the feedback would also flip the sign of velocity in
-    // CSV mode and of the position jog. Flip this back if the motor is mounted
-    // the other way round.
+    // Negated so the hand runs clockwise as seen from the drive face. Inverting
+    // 0x8008:01 (the feedback direction) instead would also flip the sign of
+    // velocity in CSV mode and of the position jog. Flip this back if the motor
+    // is mounted the other way round.
     let step_incr = -((incr_per_rev / STEPS_PER_REV) as i32);
     println!(
         "EL7062 @0x{addr:04X} clock: {STEPS_PER_REV:.0} steps/rev, {step_incr} incr/step, \
          {incr_per_rev:.0} incr/rev"
     );
 
-    // Seed the setpoint from the terminal's own position, so the very first
-    // target is a no-op and the drive never sees a jump on enable.
     let mut target = 0i32;
     let mut seeded = false;
     let mut last_step_cycle = eth_handle.get_current_cycle();
@@ -345,14 +309,4 @@ fn main() {
         }
         eth_handle.send_outputs();
     }
-
-    // No clean shutdown is attempted, because the library cannot do one. The
-    // master's state-change channel (controller.rs) acts on NoInterface, PreOp
-    // and Op only; every other target, including state 4 / SafeOp, falls through
-    // to `_ => continue` and is dropped without a response. So Op cannot be left
-    // gracefully, and killing the process here means the drive loses process
-    // data: it logs DC-Link undervoltage (0x4411) plus PD-Watchdog (0x8105) and
-    // latches a fault. The next run therefore starts with
-    // `FAULT: statusword 0x0008, latched by an earlier run`, which the enable
-    // sequence below clears. That line is expected after Ctrl+C, not a new fault.
 }
