@@ -149,14 +149,19 @@ pub struct DrvStatusWord {
     pub switch_on_disabled: bool,
     /// Bit 7: Warning
     pub warning: bool,
-    /// Bit 10: TxPDOToggle
+    /// Bit 10: TxPDOToggle (enabled via 0x8010:01) *or* the low bit of the input
+    /// cycle counter (enabled via 0x8010:02). Both claim this bit, so enabling
+    /// the two features at once makes the readings ambiguous.
     pub txpdo_toggle: bool,
     /// Bit 11: Internal limit active
     pub internal_limit_active: bool,
     /// Bit 12: Drive follows the command value
     pub drive_follows_command_value: bool,
-    /// Bit 13: Input cycle counter
+    /// Bit 13: Input cycle counter (as documented for 0x6010:01)
     pub input_cycle_counter: bool,
+    /// Bit 14: High bit of the two-bit input cycle counter that 0x8010:02 places
+    /// in bit 10 (low) and bit 14 (high). Only valid when 0x8010:02 is enabled.
+    pub input_cycle_counter_high: bool,
 }
 
 impl TxPdoObject for DrvStatusWord {
@@ -171,6 +176,7 @@ impl TxPdoObject for DrvStatusWord {
         self.internal_limit_active = bits[11];
         self.drive_follows_command_value = bits[12];
         self.input_cycle_counter = bits[13];
+        self.input_cycle_counter_high = bits[14];
     }
 }
 
@@ -207,6 +213,9 @@ impl DrvStatusWord {
         }
         if self.input_cycle_counter {
             raw |= 1 << 13;
+        }
+        if self.input_cycle_counter_high {
+            raw |= 1 << 14;
         }
         raw
     }

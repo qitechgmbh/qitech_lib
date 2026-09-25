@@ -5,13 +5,53 @@
     (WEDL5541-A14, RS422 differential, 500 counts/rev after 4-fold evaluation)
     connected to channel 1, running open-loop with commutation type 16.
 
-    This is a SAFETY-HARDENED smoke test: conservative current, speed, acceleration
-    and following-error limits are applied, and the axis is moved back and forth
-    between 0 and the target position with a trapezoidal setpoint ramp, so the motor
-    can be verified to spin without risking the hardware.
+    UNITS. The EL7062 does not use one unit for everything, which is the single
+    easiest thing to get wrong:
 
-    usage: el7062_minimal <interface> <cycle_time_us> <target_position_increments>
-    example (1 rev = 500 increments): ./target/release/examples/el7062_minimal enp4s0 1000 500
+      * POSITION (0x6072, 0x6064) is 2^singleturn_bits increments per motor
+        revolution. 0x8000:12 defaults to 20, so 1,048,576 increments/rev.
+        0x9010:21 reports this back. 0x8008:13 only tells the terminal how many
+        raw encoder counts make up one revolution; it does not change this scale.
+        One full step of a 200-steps/rev motor is 5242.88 increments, so a
+        "500 increment" move is 0.17 degrees - a tenth of one full step, and
+        therefore no step at all.
+
+      * VELOCITY (0xFF00, 0x6010:07) uses the separate, coarser "velocity
+        encoder resolution" from 0x9010:20, which measures ~268435 per rev on
+        this terminal, i.e. about 1/4 of the position increment. Converting a
+        velocity with the position scale runs the motor ~4x too fast. Both
+        scales are read back from the terminal and logged at startup.
+
+    MOVEMENT PROFILES (4th argument, default csp):
+
+      csp   Position jog. The setpoint ramps out to seed+target and back to seed
+            on a trapezoidal profile limited to 5 rev/s and 10 rev/s^2, then
+            repeats. With the default limits one 1-rev leg takes ~0.63 s, so the
+            axis sweeps 1 rev out, 1 rev back, every ~1.27 s. Hold time is zero,
+            which is why it looks continuous rather than stepping.
+
+      csv   Constant velocity at <target> rev/s, converted with 0x9010:20.
+
+      clock A seconds hand: 1 revolution per minute, advancing exactly 1/60 rev
+            (6 degrees, 17476 increments, 3.3 full steps) once per second. The
+            setpoint is a staircase, so the motion is visibly discrete. This is
+            the easiest profile to check against a real clock.
+
+    TIMING. The control step runs once per MASTER CYCLE, using the measured
+    cycle time from get_cycle_time_us(). The application loop itself spins much
+    faster than the master cycle - check_inputs_ready() is a level flag that
+    stays set for the whole cycle window, not a new-image event - so the step is
+    gated on get_current_cycle() actually changing. Un-gated, the ramp and the
+    clock both run at CPU speed (measured ~200x too fast).
+
+    This is a SAFETY-HARDENED smoke test: conservative current, speed, acceleration
+    and following-error limits are applied, so the motor can be verified to spin
+    without risking the hardware.
+
+    usage: el7062_minimal <interface> <cycle_time_us> <target> [csp|csv|clock]
+    example (1 rev jog): ./target/release/examples/el7062_minimal enp4s0 1000 1
+    example (1 rev/s):    ./target/release/examples/el7062_minimal enp4s0 1000 1 csv
+    example (clock):      ./target/release/examples/el7062_minimal enp4s0 1000 0 clock
 */
 
 use bitvec::slice::BitSlice;
@@ -24,7 +64,10 @@ use ethercat_hal::{
         beckhoff_modules::el7062::{
             EL7062, EL7062_PRODUCT_ID, EL7062Port,
             diagnostics::dump_diag_messages,
-            motion::SetpointRamp,
+            motion::{
+                DEFAULT_MAX_REV_PER_S, DEFAULT_MAX_REV_PER_S2, SetpointRamp,
+                increments_per_revolution,
+            },
             pdo::{DrvControlWord, EL7062PredefinedPdoAssignment},
         },
     },
@@ -41,17 +84,24 @@ use std::{
 };
 
 const USAGE: &str = concat!(
-    "el7062_minimal interface_name cycle_time_us target_position_increments [csp|csv]\n",
-    "  csp = position ramp jog (default), csv = constant-velocity command\n",
-    " example: ./target/release/examples/el7062_minimal enp4s0 1000 500 csv"
+    "el7062_minimal interface_name cycle_time_us target [csp|csv|clock]\n",
+    "  csp   = position jog: ramps <target> revs out, holds, ramps back, repeats\n",
+    "  csv   = constant velocity, target in revolutions per second\n",
+    "  clock = 1 revolution per minute, one 6 deg step per second (target unused)\n",
+    " example: ./target/release/examples/el7062_minimal enp4s0 1000 1 csv",
 );
+
+/// The clock profile: one revolution per minute, advancing one sixtieth of a
+/// revolution once per second, exactly like the seconds hand of an analogue
+/// clock. `target` is ignored in this mode.
+const CLOCK_STEPS_PER_REV: f64 = 60.0;
+const CLOCK_STEP_PERIOD_MS: u64 = 1_000;
 
 fn apply_rt() {
     let id = core_affinity::CoreId { id: 2 };
     set_current_thread_rt_priority(99);
     core_affinity::set_for_current(id);
 }
-
 
 fn main() {
     // Force early logger initialization
@@ -78,23 +128,40 @@ fn main() {
         .expect(&fail)
         .parse()
         .expect("cycle_time_us must be a valid u64");
-    let target_position: i32 = env::args()
+    // Target magnitude, in revolutions: a position offset in CSP, a velocity in
+    // CSV. Keeping the CLI in revolutions makes the 2^20 increment scale (and its
+    // off-by-1000x misreadings) impossible to express from the command line.
+    let target: f64 = env::args()
         .nth(3)
         .expect(&fail)
         .parse()
-        .expect("target_position_increments must be a valid i32");
+        .expect("target must be a valid f64 (revolutions, or revolutions/s in csv)");
     let mode_csv = matches!(env::args().nth(4).as_deref(), Some("csv"));
+    let mode_clock = matches!(env::args().nth(4).as_deref(), Some("clock"));
+    match env::args().nth(4).as_deref() {
+        None | Some("csp") | Some("csv") | Some("clock") => {}
+        Some(_) => {
+            eprintln!("{fail}");
+            std::process::exit(2);
+        }
+    }
 
     // Force flush logs
     log::logger().flush();
     info!("Starting EL7062 minimal example");
     info!("Interface: {}", interface);
     info!("Cycle time: {} µs", cycle_time_us);
-    info!("Target position: {} increments", target_position);
     info!(
         "Command mode: {}",
-        if mode_csv { "CSV (velocity)" } else { "CSP (position)" }
+        if mode_csv {
+            "CSV (constant velocity)"
+        } else if mode_clock {
+            "CSP (clock: 1 rev/min, one 6 deg step per second)"
+        } else {
+            "CSP (position jog)"
+        }
     );
+    info!("Target: {} rev", target);
 
     let dc_config = DcConfiguration {
         // Give headroom for DC setup to finish
@@ -166,14 +233,14 @@ fn main() {
     }
     info!("EtherCAT master reached Init state");
     log::logger().flush();
-    
+
     // Request PreOp state
     info!("Requesting EtherCAT state transition: -> PreOp");
     eth_control
         .channel
         .request_state_change(EtherCATState::PreOp)
         .expect("Failed to request state change to PreOp");
-    
+
     // Wait for PreOp state
     info!("Waiting for PreOp state...");
     let mut attempts = 0;
@@ -189,7 +256,7 @@ fn main() {
         attempts += 1;
         std::thread::sleep(Duration::from_millis(1000));
     }
-    
+
     if attempts >= max_attempts {
         error!("Timeout waiting for PreOp state! Check device configuration.");
         return;
@@ -233,18 +300,55 @@ fn main() {
         el7062.configuration.channel_1.amplifier.commutation_type
     );
 
+    // Derive the position scale from what we just asked the terminal for, rather
+    // than assuming a value: every command value below is converted with it.
+    // The terminal is read back after the config is written to confirm it agrees.
+    let singleturn_bits = el7062.configuration.channel_1.feedback.singleturn_bits;
+    let multiturn_bits = el7062.configuration.channel_1.feedback.multiturn_bits;
+    assert_eq!(
+        singleturn_bits as u16 + multiturn_bits as u16,
+        32,
+        "0x8000:12 + 0x8000:13 must be 32 or the terminal rejects the process \
+         data format (diag 0x8423)"
+    );
+    let incr_per_rev = increments_per_revolution(singleturn_bits);
+    info!(
+        "Position scale: {} singleturn bits + {} multiturn bits -> {} increments per motor \
+         revolution ({} increments per full step at {} steps/rev)",
+        singleturn_bits,
+        multiturn_bits,
+        incr_per_rev,
+        incr_per_rev as f64
+            / el7062
+                .configuration
+                .channel_1
+                .motor
+                .motor_full_steps_per_revolution as f64,
+        el7062
+            .configuration
+            .channel_1
+            .motor
+            .motor_full_steps_per_revolution,
+    );
+    let target_incr = (target * incr_per_rev as f64) as i32;
+
     // Safety limits for the smoke test (tune later).
+    //
+    // 0x8010:01 and 0x8010:02 both drive statusword bit 10, so only one of them
+    // can be interpreted at a time. The example wants the cycle counter; leave
+    // the TxPDO toggle off so bit 10 unambiguously carries the counter's low bit.
+    el7062.configuration.channel_1.amplifier.enable_txpdo_toggle = false;
     el7062
         .configuration
         .channel_1
         .amplifier
-        .enable_input_cycle_counter = true; // fault on lost cycles
+        .enable_input_cycle_counter = true; // statusword bits 10/14, display only
     el7062.configuration.channel_1.amplifier.velocity_limitation = 300; // 1/min (rev-equivalent)
     el7062
         .configuration
         .channel_1
         .amplifier
-        .following_error_window = u32::MAX; // open-loop: encoder-based monitoring disabled
+        .following_error_window = incr_per_rev; // trip only if a full rev of lag
     el7062
         .configuration
         .channel_1
@@ -257,7 +361,8 @@ fn main() {
         .acceleration_limitation = 2000; // 0.1 rad/s²
 
     info!(
-        "EL7062 safety limits: velocity={} rev/min, following_error_window={} increments, acceleration={} rad/s²",
+        "EL7062 safety limits: velocity={} rev/min, following_error_window={} increments (1 rev), \
+         acceleration={} rad/s², ramp={} rev/s / {} rev/s²",
         el7062.configuration.channel_1.amplifier.velocity_limitation,
         el7062
             .configuration
@@ -269,7 +374,9 @@ fn main() {
             .channel_1
             .amplifier
             .acceleration_limitation as f64
-            / 10.0
+            / 10.0,
+        DEFAULT_MAX_REV_PER_S,
+        DEFAULT_MAX_REV_PER_S2,
     );
 
     info!("Checking for EtherCAT subdevices...");
@@ -398,7 +505,11 @@ fn main() {
                 Ok(v) => info!(
                     "  DMC error ID (0x6060:55): 0x{:08X}{}",
                     v,
-                    if v != 0 { " (DMC fault active)" } else { " (no error)" }
+                    if v != 0 {
+                        " (DMC fault active)"
+                    } else {
+                        " (no error)"
+                    }
                 ),
                 Err(e) => info!("  DMC error ID (0x6060:55): read failed: {e}"),
             }
@@ -406,8 +517,8 @@ fn main() {
                 .channel
                 .sdo_read::<u16>(subdevice.device_address, 0x6010, 0x12)
             {
-                Ok(v) => info!("  DC link voltage (0x6010:18): {} mV", v),
-                Err(e) => info!("  DC link voltage (0x6010:18): read failed: {e}"),
+                Ok(v) => info!("  Info data 1 / DC link voltage (0x6010:18): {} mV", v),
+                Err(e) => info!("  Info data 1 / DC link voltage (0x6010:18): read failed: {e}"),
             }
             match eth_control
                 .channel
@@ -432,15 +543,33 @@ fn main() {
             }
             dump_diag_messages(&eth_control.channel, subdevice.device_address);
             for (idx, sub, name) in [
-                (0xF900u16, 0x12u8, "DC link voltage (0xF900:18) [V?]"),
-                (0xF900, 0x13, "Supply voltage Up (0xF900:19)"),
-                (0x9010, 0x27, "Output stage safety state (0x9010:39) [0=safe,1=ready]"),
-                (0x9010, 0x28, "Actual motor brake state (0x9010:40) [0=applied,1=released]"),
+                (0xF900u16, 0x12u8, "DC link voltage (0xF900:18) [mV]"),
+                (0xF900, 0x13, "Supply voltage Up (0xF900:19) [mV]"),
+                (
+                    0x9010,
+                    0x27,
+                    "Output stage safety state (0x9010:39) [0=safe,1=ready]",
+                ),
+                (
+                    0x9010,
+                    0x28,
+                    "Actual motor brake state (0x9010:40) [0=applied,1=released]",
+                ),
             ] {
-                match eth_control
-                    .channel
-                    .sdo_read::<u8>(subdevice.device_address, idx, sub)
-                {
+                // 0xF900:18/19 are UINT32 mV, but 0x9010:39/40 answer with a
+                // single byte on this terminal despite the ESI declaring them
+                // UDINT, so they are read as u8.
+                let res = if idx == 0x9010 {
+                    eth_control
+                        .channel
+                        .sdo_read::<u8>(subdevice.device_address, idx, sub)
+                        .map(|v| v as u32)
+                } else {
+                    eth_control
+                        .channel
+                        .sdo_read::<u32>(subdevice.device_address, idx, sub)
+                };
+                match res {
                     Ok(v) => info!("  {}: {}", name, v),
                     Err(e) => info!("  {}: read failed: {e}", name),
                 }
@@ -467,7 +596,10 @@ fn main() {
     // the drive is still in PreOp, so runs start from a clean state instead of
     // inheriting a latched fault from a previous session.
     if let Some(addr) = el7062_address {
-        match eth_control.channel.sdo_write::<u16>(addr, 0x7010, 0x01, 0x0080) {
+        match eth_control
+            .channel
+            .sdo_write::<u16>(addr, 0x7010, 0x01, 0x0080)
+        {
             Ok(_) => info!("Fault reset (0x7010:01) = 0x0080 sent"),
             Err(e) => warn!("Fault reset (0x7010:01) failed: {e}"),
         }
@@ -478,34 +610,84 @@ fn main() {
         }
     }
 
-    // Brake diagnosis: force a holding brake (if fitted) to release and confirm
-    // via 0x9010:40. If the shaft still feels locked afterwards, it is not the
-    // brake holding it.
+    // Confirm the terminal actually took the position scale we are commanding
+    // with. Everything downstream converts revolutions to increments using
+    // `incr_per_rev`, so a mismatch here would silently scale every command.
+    // `vel_incr_per_rev` is the separate, coarser unit used for velocity; it is
+    // only known once the terminal has published 0x9010:20.
+    let mut vel_incr_per_rev = 0u32;
     if let Some(addr) = el7062_address {
-        match eth_control.channel.sdo_read::<u8>(addr, 0x8012, 0x01) {
-            Ok(v) => info!("  Brake manual override (0x8012:01) default: {}", v),
-            Err(e) => info!("  Brake manual override (0x8012:01): read failed: {e}"),
+        let stb = eth_control.channel.sdo_read::<u8>(addr, 0x8000, 0x12).ok();
+        let mtb = eth_control.channel.sdo_read::<u8>(addr, 0x8000, 0x13).ok();
+        info!(
+            "Position scale readback: 0x8000:12 singleturn bits = {:?}, 0x8000:13 multiturn bits \
+             = {:?} (asked for {} / {})",
+            stb, mtb, singleturn_bits, multiturn_bits
+        );
+        if let Some(stb) = stb {
+            let readback_incr = increments_per_revolution(stb);
+            if readback_incr != incr_per_rev {
+                error!(
+                    "Position scale mismatch: terminal reports {} singleturn bits \
+                     ({} incr/rev) but this example is commanding with {} incr/rev. \
+                     Commands would be off by a factor of {}.",
+                    stb,
+                    readback_incr,
+                    incr_per_rev,
+                    readback_incr as f64 / incr_per_rev as f64
+                );
+                return;
+            }
         }
-        match eth_control.channel.sdo_write::<u8>(addr, 0x8012, 0x01, 1u8) {
-            Ok(_) => info!("  Brake: manual override ENABLED"),
-            Err(e) => warn!("  Brake manual override write failed: {e}"),
+        for (idx, sub, name) in [
+            (
+                0x8008u16,
+                0x13u8,
+                "0x8008:13 encoder increments/rev (raw counts, 4-fold)",
+            ),
+            (
+                0x9010,
+                0x14,
+                "0x9010:20 velocity encoder resolution (velocity incr/rev)",
+            ),
+            (
+                0x9010,
+                0x15,
+                "0x9010:21 position encoder resolution increments",
+            ),
+            (
+                0x9010,
+                0x16,
+                "0x9010:22 position encoder resolution revolutions",
+            ),
+        ] {
+            match eth_control.channel.sdo_read::<u32>(addr, idx, sub) {
+                Ok(v) => info!("  {}: {}", name, v),
+                Err(e) => info!("  {}: read failed: {e}", name),
+            }
         }
-        match eth_control.channel.sdo_write::<u8>(addr, 0x8012, 0x02, 0u8) {
-            Ok(_) => info!("  Brake: manually released (0x8012:02 = 0)"),
-            Err(e) => warn!("  Brake manual release write failed: {e}"),
+
+        // The EL7062 does NOT use one unit for both position and velocity.
+        // Position is 2^singleturn_bits per rev (0x8000:12, 0x9010:21), but the
+        // target/actual velocity in 0xFF00 / 0x6010:07 use the coarser
+        // "velocity encoder resolution" from 0x9010:20, which is a factor of
+        // ~4 smaller. Commanding `incr_per_rev` as a velocity therefore runs the
+        // motor ~4x faster than requested, so CSV converts with this value.
+        match eth_control.channel.sdo_read::<u32>(addr, 0x9010, 0x14) {
+            Ok(v) if v > 0 => {
+                vel_incr_per_rev = v;
+                info!(
+                    "Velocity scale: 0x9010:20 = {} incr/rev (position is {} incr/rev, ratio \
+                     {:.3})",
+                    v,
+                    incr_per_rev,
+                    incr_per_rev as f64 / v as f64
+                );
+            }
+            Ok(v) => error!("0x9010:20 velocity encoder resolution is {v}, expected non-zero"),
+            Err(e) => error!("0x9010:20 velocity encoder resolution read failed: {e}"),
         }
-        std::thread::sleep(Duration::from_millis(500));
-        match eth_control.channel.sdo_read::<u8>(addr, 0x9010, 0x28) {
-            Ok(v) => info!("  Actual motor brake state (0x9010:40): {v} [0=applied,1=released]"),
-            Err(e) => info!("  Actual motor brake state (0x9010:40): read failed: {e}"),
-        }
-        // Shaft-freedom check: with the brake released and the output stage NOT
-        // yet energized, the shaft must turn freely by hand. If it does not,
-        // the axis is mechanically locked (brake stuck / gearbox / jammed load)
-        // and no software configuration will make it rotate.
-        info!("SHAFT CHECK (brake released, output NOT energized): try to turn the shaft manually now");
         log::logger().flush();
-        std::thread::sleep(Duration::from_secs(8));
     }
 
     // Request Op state. The master thread then drives the bus through PreopPdi
@@ -546,12 +728,20 @@ fn main() {
                 Ok(statuses) => {
                     let any_faulty = statuses.iter().any(|s| s.is_faulty());
                     log::log!(
-                        if any_faulty { log::Level::Warn } else { log::Level::Debug },
+                        if any_faulty {
+                            log::Level::Warn
+                        } else {
+                            log::Level::Debug
+                        },
                         "AL snapshot during state ramp:"
                     );
                     for s in &statuses {
                         log::log!(
-                            if s.is_faulty() { log::Level::Warn } else { log::Level::Debug },
+                            if s.is_faulty() {
+                                log::Level::Warn
+                            } else {
+                                log::Level::Debug
+                            },
                             "  {s}"
                         );
                     }
@@ -560,10 +750,7 @@ fn main() {
             }
             if let Some(addr) = el7062_address {
                 match eth_control.channel.register_read(addr, 0x0134u16) {
-                    Ok(code) => debug!(
-                        "EL7062 @{} AL status code (0x0134): 0x{:04x}",
-                        addr, code
-                    ),
+                    Ok(code) => debug!("EL7062 @{} AL status code (0x0134): 0x{:04x}", addr, code),
                     Err(e) => debug!("EL7062 AL status code read failed: {}", e),
                 }
                 dump_dc_registers(&eth_control.channel, addr);
@@ -608,12 +795,11 @@ fn main() {
             }
         }
         let position = el7062.get_position(EL7062Port::Ch1).unwrap_or(0);
-        let statusword = el7062
-            .get_statusword(EL7062Port::Ch1)
-            .unwrap_or_default();
+        let statusword = el7062.get_statusword(EL7062Port::Ch1).unwrap_or_default();
         info!(
-            "Initial position: {} increments, statusword=0x{:04X} (ready_to_switch_on={}, switched_on={}, operation_enabled={}, fault={})",
+            "Initial position: {} increments ({:.4} rev), statusword=0x{:04X} (ready_to_switch_on={}, switched_on={}, operation_enabled={}, fault={})",
             position,
+            position as f64 / incr_per_rev as f64,
             statusword.as_raw(),
             statusword.ready_to_switch_on,
             statusword.switched_on,
@@ -624,23 +810,62 @@ fn main() {
     };
 
     // Ramp the setpoint instead of jumping to the target. Seed the ramp and the
-    // first target to the current encoder position so enabling never demands an
-    // instant large step (which trips the following-error protection). The axis
-    // then jogs between seed and seed+target_position.
+    // first target to the position the terminal reported at startup so enabling
+    // never demands an instant large step (which trips the following-error
+    // protection).
     let seed_position = initial_position as f64;
-    info!(
-        "Starting EL7062 {} smoke test: cycle {} µs, {} {} increments around initial position {}",
-        if mode_csv { "CSV" } else { "CSP" },
-        cycle_time_us,
-        if mode_csv { "commanding velocity" } else { "jogging" },
-        target_position,
-        initial_position
-    );
+    if mode_csv {
+        if vel_incr_per_rev == 0 {
+            error!(
+                "CSV needs the velocity unit (0x9010:20) but it could not be read, so the target \
+                 velocity cannot be scaled. Re-run without 'csv', or check mailbox access."
+            );
+            return;
+        }
+        info!(
+            "Starting EL7062 CSV smoke test: cycle {} µs, commanding {} rev/s = {} velocity \
+             increments/s (0x9010:20 = {} incr/rev) from initial position {} increments ({:.4} \
+             rev)",
+            cycle_time_us,
+            target,
+            (target * vel_incr_per_rev as f64) as i32,
+            vel_incr_per_rev,
+            initial_position,
+            initial_position as f64 / incr_per_rev as f64,
+        );
+    } else if mode_clock {
+        info!(
+            "Starting EL7062 CSP clock smoke test: cycle {} µs, 1 rev/min, one {:.0} deg step \
+             every {} ms from initial position {} increments ({:.4} rev)",
+            cycle_time_us,
+            360.0 / CLOCK_STEPS_PER_REV,
+            CLOCK_STEP_PERIOD_MS,
+            initial_position,
+            initial_position as f64 / incr_per_rev as f64,
+        );
+    } else {
+        info!(
+            "Starting EL7062 CSP jog smoke test: cycle {} µs, ramping {} rev ({} increments) out \
+             and back around initial position {} increments ({:.4} rev)",
+            cycle_time_us,
+            target,
+            target_incr,
+            initial_position,
+            initial_position as f64 / incr_per_rev as f64,
+        );
+    }
 
-    let mut ramp = SetpointRamp::new(initial_position);
+    // The setpoint is advanced once per MASTER CYCLE, and one master cycle is
+    // `get_cycle_time_us()` long. The application loop below spins much faster
+    // than that (it is only waiting on a level flag, not a new-image event), so
+    // the control step is gated on the master cycle counter actually changing.
+    // Skipping that gate makes the ramp run at the CPU spin rate rather than
+    // real time - measured at ~200x too fast on this machine.
+    let mut ramp = SetpointRamp::new(initial_position, singleturn_bits);
     let mut go_to: f64 = seed_position;
-    let dt = cycle_time_us as f64 * 1e-6;
-    let mut last_cycle = eth_handle.get_current_cycle();
+    let mut last_control_cycle = eth_handle.get_current_cycle();
+    let mut last_step_cycle = eth_handle.get_current_cycle();
+    let mut step_count: u64 = 0;
 
     info!(
         "Starting control loop with cycle time: {} µs",
@@ -660,12 +885,13 @@ fn main() {
     let mut fault_episodes: u32 = 0;
     const FAULT_COOLDOWN_CYCLES: u32 = 600;
     const FAULT_ABORT_AFTER_EPISODES: u32 = 3;
-    // The DC sync0 cadence is 62.5us, so a new input arrives every ~1ms worth of
-    // 16 DC ticks; gate the CSP setpoint update and the per-second log output to
-    // the 1ms process cycle instead of printing every tick.
-    let mut last_ramp_cycle = eth_handle.get_current_cycle();
+    // `get_current_cycle()` counts master cycles, i.e. `cycle_time_us` apart, so
+    // these thresholds are milliseconds: 1000 = 1 s of status logging.
     let mut last_status_cycle = eth_handle.get_current_cycle();
-    let mut last_probe_cycle = eth_handle.get_current_cycle();
+    // Previous sample for the measured-velocity calculation.
+    let mut last_position = initial_position;
+    let mut last_position_cycle = eth_handle.get_current_cycle();
+    let mut last_cycle = eth_handle.get_current_cycle();
 
     loop {
         if stop_requested.load(Ordering::Relaxed) {
@@ -688,7 +914,7 @@ fn main() {
         }
 
         let current_cycle = eth_handle.get_current_cycle();
-        let log_cycle_state = current_cycle.wrapping_sub(last_status_cycle) >= 16_000;
+        let log_cycle_state = current_cycle.wrapping_sub(last_status_cycle) >= 1_000;
         if log_cycle_state {
             last_status_cycle = current_cycle;
         }
@@ -698,13 +924,15 @@ fn main() {
             .expect("Failed to read statusword");
         if log_cycle_state {
             debug!(
-                "Statusword: 0x{:04X} (ready_to_switch_on={}, switched_on={}, operation_enabled={}, drive_follows={}, fault={})",
+                "Statusword: 0x{:04X} (ready_to_switch_on={}, switched_on={}, operation_enabled={}, drive_follows={}, fault={}, cycle_counter={}{})",
                 statusword.as_raw(),
                 statusword.ready_to_switch_on,
                 statusword.switched_on,
                 statusword.operation_enabled,
                 statusword.drive_follows_command_value,
                 statusword.fault,
+                statusword.input_cycle_counter_high as u8,
+                statusword.txpdo_toggle as u8,
             );
         }
 
@@ -714,7 +942,9 @@ fn main() {
                 fault_episodes += 1;
                 warn!(
                     "Fault detected (episode {}/{}): statusword=0x{:04X}",
-                    fault_episodes, FAULT_ABORT_AFTER_EPISODES, statusword.as_raw()
+                    fault_episodes,
+                    FAULT_ABORT_AFTER_EPISODES,
+                    statusword.as_raw()
                 );
                 if fault_episodes == 1 {
                     if let Some(addr) = el7062_address {
@@ -815,36 +1045,55 @@ fn main() {
         prev_operation_enabled = statusword.operation_enabled;
         prev_follows = statusword.drive_follows_command_value;
 
-        let ramp_cycle = current_cycle.wrapping_sub(last_ramp_cycle) >= 16;
-        if ramp_cycle {
-            last_ramp_cycle = current_cycle;
-        }
-        if ramp_cycle {
+        // Advance the command by exactly one master cycle's worth of time. The
+        // loop spins far faster than the master cycle (check_inputs_ready is a
+        // level flag that stays set for the whole cycle window), so without this
+        // gate the ramp and the clock both run at CPU speed.
+        let new_control_cycle = current_cycle != last_control_cycle;
+        if new_control_cycle {
+            last_control_cycle = current_cycle;
+            let dt = (eth_handle.get_cycle_time_us().max(1) as f64) * 1e-6;
+
             if mode_csv {
+                // Velocity uses the coarser 0x9010:20 unit, not the position
+                // increment. Only command once enabled, so enabling never sees a
+                // stale non-zero setpoint.
                 let target_v = if statusword.operation_enabled {
-                    target_position
+                    (target * vel_incr_per_rev as f64) as i32
                 } else {
                     0
                 };
                 el7062
                     .set_target_velocity(EL7062Port::Ch1, target_v)
                     .expect("Failed to write target velocity");
-            } else if statusword.operation_enabled {
+            } else if mode_clock {
+                // One 6 deg step per second, forever, like a seconds hand. The
+                // step is small enough that the drive tracks it in one cycle
+                // (1/60 rev = 17476 increments = 3.3 full steps).
+                if current_cycle.wrapping_sub(last_step_cycle) >= CLOCK_STEP_PERIOD_MS {
+                    last_step_cycle = current_cycle;
+                    step_count += 1;
+                    go_to += incr_per_rev as f64 / CLOCK_STEPS_PER_REV;
+                }
+                el7062
+                    .set_target_position(EL7062Port::Ch1, go_to as i32)
+                    .expect("Failed to write target position");
+            } else {
                 ramp.advance(go_to, dt);
-                // Always publish the setpoint. Before enable this pins the target to
-                // the seed so the drive never sees a stale/zero target the moment it
-                // enables.
+                // Published unconditionally, not only when enabled: the ramp
+                // starts at the terminal's own position, so the target is a
+                // no-op before enable and the drive never sees a stale value
+                // when it enables.
                 el7062
                     .set_target_position(EL7062Port::Ch1, ramp.position() as i32)
                     .expect("Failed to write target position");
 
                 if (go_to - ramp.position()).abs() < 0.5 {
                     go_to = if (go_to - seed_position).abs() < 0.5 {
-                        seed_position + target_position as f64
+                        seed_position + target_incr as f64
                     } else {
                         seed_position
                     };
-                    debug!("Target position toggled: {}", go_to);
                 }
             }
         }
@@ -876,11 +1125,31 @@ fn main() {
                 .get_position(EL7062Port::Ch1)
                 .expect("Failed to read position");
 
+            // Measured velocity from the position delta over the real master
+            // cycle count. This is exact (both are the same clock) and avoids a
+            // mailbox SDO inside the cyclic loop, which fails there anyway and
+            // would add jitter to a 1 kHz task.
+            let measured_rev_per_s =
+                if last_position_cycle != 0 && current_cycle > last_position_cycle {
+                    (position as f64 - last_position as f64)
+                        / (current_cycle - last_position_cycle) as f64
+                        / incr_per_rev as f64
+                        * 1000.0
+                } else {
+                    f64::NAN
+                };
+            last_position = position;
+            last_position_cycle = current_cycle;
+
             if mode_csv {
                 info!(
-                    "Cycle {}: Position={}, Operation Enabled={}, Fault={}",
+                    "Cycle {}: Position={} incr ({:.3} rev), measured={:.3} rev/s (commanded \
+                     {:.3} rev/s), Operation Enabled={}, Fault={}",
                     current_cycle,
                     position,
+                    position as f64 / incr_per_rev as f64,
+                    measured_rev_per_s,
+                    target,
                     statusword.operation_enabled,
                     statusword.fault
                 );
@@ -894,40 +1163,36 @@ fn main() {
                     .channel_1
                     .amplifier
                     .following_error_window;
-                if fe_window != u32::MAX && (following_error as i64).abs() > fe_window as i64 {
+                if (following_error as i64).abs() > fe_window as i64 {
                     warn!(
-                        "Following error exceeded threshold! Error={}, Threshold={}",
-                        following_error, fe_window
+                        "Following error exceeded threshold! Error={} incr ({:.3} rev), \
+                         Threshold={} incr",
+                        following_error,
+                        following_error as f64 / incr_per_rev as f64,
+                        fe_window
                     );
                 }
 
                 info!(
-                    "Cycle {}: Position={}, Following Error={}, Operation Enabled={}, Fault={}",
+                    "Cycle {}: Position={} incr ({:.3} rev), target={:.3} rev, setpoint={:.3} rev \
+                     at {:.3} rev/s, measured={:.3} rev/s, cycle_us={}, Following Error={} incr, \
+                     Operation Enabled={}, Fault={}{}",
                     current_cycle,
                     position,
+                    position as f64 / incr_per_rev as f64,
+                    go_to / incr_per_rev as f64,
+                    ramp.position() / incr_per_rev as f64,
+                    ramp.velocity() / incr_per_rev as f64,
+                    measured_rev_per_s,
+                    eth_handle.get_cycle_time_us(),
                     following_error,
                     statusword.operation_enabled,
-                    statusword.fault
-                );
-            }
-        }
-
-        let probe_cycle = current_cycle.wrapping_sub(last_probe_cycle) >= 2000;
-        if probe_cycle {
-            last_probe_cycle = current_cycle;
-            if let Some(addr) = el7062_address {
-                let chan = &eth_control.channel;
-                let velocity = chan.sdo_read::<i32>(addr, 0x6010, 0x07).ok();
-                let torque = chan.sdo_read::<i16>(addr, 0x6010, 0x08).ok();
-                let dc_link = chan.sdo_read::<u16>(addr, 0x6010, 0x18).ok();
-                let rated_ma = el7062.configuration.channel_1.motor.rated_current;
-                let v = velocity.map_or(f64::NAN, |v| v as f64);
-                let t = torque.map_or(f64::NAN, |t| t as f64);
-                let t_ma = t * rated_ma as f64 / 1000.0;
-                let dc = dc_link.map_or(f64::NAN, |v| v as f64);
-                info!(
-                    "Drive probe: velocity_actual={} inc/s, torque_actual={} ({} mA), dc_link={} mV, warning={}",
-                    v, t, t_ma, dc, statusword.warning,
+                    statusword.fault,
+                    if mode_clock {
+                        format!(", clock step {} of 60", step_count % 60)
+                    } else {
+                        String::new()
+                    },
                 );
             }
         }
