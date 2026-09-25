@@ -1,5 +1,5 @@
 use crate::EtherCATThreadChannel;
-use log::{debug, info};
+use log::{debug, error, info};
 use std::time::Duration;
 
 /// Escape alias listing for the EL7062's DiagMessages facility so the ESI
@@ -48,20 +48,38 @@ pub fn diag_name(text_id: u16) -> Option<&'static str> {
 /// Mailbox reads are retried because they can race the cyclic frames in OP.
 pub fn dump_diag_messages(channel: &EtherCATThreadChannel, addr: u16) {
     let read_u8 = |sub: u8| -> Option<u8> {
-        for _ in 0..3 {
-            if let Ok(v) = channel.sdo_read::<u8>(addr, 0x10F3, sub) {
-                return Some(v);
+        for attempt in 1..=3 {
+            match channel.sdo_read::<u8>(addr, 0x10F3, sub) {
+                Ok(v) => return Some(v),
+                Err(e) => {
+                    debug!(
+                        "  0x10F3:0x{:02X} read failed (attempt {}/3): {}",
+                        sub, attempt, e
+                    );
+                    std::thread::sleep(Duration::from_millis(2));
+                }
             }
-            std::thread::sleep(Duration::from_millis(2));
         }
         None
     };
-    let new_available = read_u8(0x04).unwrap_or(0);
-    let count = read_u8(0x00).unwrap_or(0);
-    let newest = read_u8(0x02).unwrap_or(0);
+    let new_available = read_u8(0x04);
+    let count = read_u8(0x00);
+    let newest = read_u8(0x02);
+    if count.is_none() || newest.is_none() {
+        error!(
+            "DiagMessages (0x10F3): header read failed, so no history is available. The \
+             terminal only services mailbox SDOs in Init/PreOp/SafeOp, so this dump must not be \
+             attempted while the bus is still in Op."
+        );
+        return;
+    }
+    let count = count.unwrap();
+    let newest = newest.unwrap();
     info!(
         "DiagMessages (0x10F3): slots={} newest_index={} new_available={}",
-        count, newest, new_available
+        count,
+        newest,
+        new_available.unwrap_or(0)
     );
     if count == 0 {
         return;

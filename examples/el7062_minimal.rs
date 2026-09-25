@@ -864,6 +864,7 @@ fn main() {
     let mut ramp = SetpointRamp::new(initial_position, singleturn_bits);
     let mut go_to: f64 = seed_position;
     let mut last_control_cycle = eth_handle.get_current_cycle();
+    let mut control_steps: u32 = 0;
     let mut last_step_cycle = eth_handle.get_current_cycle();
     let mut step_count: u64 = 0;
 
@@ -883,6 +884,7 @@ fn main() {
     let mut prev_fault = false;
     let mut fault_cooldown_cycles: u32 = 0;
     let mut fault_episodes: u32 = 0;
+    let mut pending_diag_dump = false;
     const FAULT_COOLDOWN_CYCLES: u32 = 600;
     const FAULT_ABORT_AFTER_EPISODES: u32 = 3;
     // `get_current_cycle()` counts master cycles, i.e. `cycle_time_us` apart, so
@@ -941,16 +943,14 @@ fn main() {
                 prev_fault = true;
                 fault_episodes += 1;
                 warn!(
-                    "Fault detected (episode {}/{}): statusword=0x{:04X}",
+                    "Fault detected (episode {}/{}): statusword=0x{:04X}; DiagMessages deferred \
+                     to the shutdown dump, because a blocking 0x10F3 mailbox read inside this \
+                     loop starves cyclic process data and trips the drive PD watchdog",
                     fault_episodes,
                     FAULT_ABORT_AFTER_EPISODES,
                     statusword.as_raw()
                 );
-                if fault_episodes == 1 {
-                    if let Some(addr) = el7062_address {
-                        dump_diag_messages(&eth_control.channel, addr);
-                    }
-                }
+                pending_diag_dump = true;
                 el7062
                     .set_controlword(
                         EL7062Port::Ch1,
@@ -1017,12 +1017,12 @@ fn main() {
 
         if statusword.warning && !prev_warning {
             warn!(
-                "Drive warning active (statusword=0x{:04X})",
+                "Drive warning active (statusword=0x{:04X}); DiagMessages deferred to the \
+                 shutdown dump, because a blocking 0x10F3 mailbox read inside this loop starves \
+                 cyclic process data and trips the drive PD watchdog",
                 statusword.as_raw()
             );
-            if let Some(addr) = el7062_address {
-                dump_diag_messages(&eth_control.channel, addr);
-            }
+            pending_diag_dump = true;
             log::logger().flush();
         }
         prev_warning = statusword.warning;
@@ -1051,8 +1051,15 @@ fn main() {
         // gate the ramp and the clock both run at CPU speed.
         let new_control_cycle = current_cycle != last_control_cycle;
         if new_control_cycle {
+            // Scale dt by the master cycles that actually elapsed, not by one
+            // nominal cycle. The loop body is slower than the 1 kHz master
+            // cycle, so an iteration only sees every Nth cycle change; adding a
+            // single nominal dt per iteration would run the whole profile at
+            // 1/N of real time.
+            let elapsed_cycles = current_cycle.wrapping_sub(last_control_cycle).max(1);
             last_control_cycle = current_cycle;
-            let dt = (eth_handle.get_cycle_time_us().max(1) as f64) * 1e-6;
+            let dt = elapsed_cycles as f64 * (eth_handle.get_cycle_time_us().max(1) as f64) * 1e-6;
+            control_steps += 1;
 
             if mode_csv {
                 // Velocity uses the coarser 0x9010:20 unit, not the position
@@ -1121,6 +1128,9 @@ fn main() {
 
         if current_cycle.wrapping_sub(last_cycle) >= 1000 {
             last_cycle = current_cycle;
+            // Should be ~1000. Anything much lower means the loop body is
+            // missing master cycles, which is what made the profile run slow.
+            let control_steps_this_second = std::mem::take(&mut control_steps);
             let position = el7062
                 .get_position(EL7062Port::Ch1)
                 .expect("Failed to read position");
@@ -1175,8 +1185,9 @@ fn main() {
 
                 info!(
                     "Cycle {}: Position={} incr ({:.3} rev), target={:.3} rev, setpoint={:.3} rev \
-                     at {:.3} rev/s, measured={:.3} rev/s, cycle_us={}, Following Error={} incr, \
-                     Operation Enabled={}, Fault={}{}",
+                     at {:.3} rev/s, measured={:.3} rev/s, cycle_us={}, ctrl_steps={}, \
+                     Following Error={} incr, Internal Limit Active={}, Operation Enabled={}, \
+                     Fault={}{}",
                     current_cycle,
                     position,
                     position as f64 / incr_per_rev as f64,
@@ -1185,7 +1196,9 @@ fn main() {
                     ramp.velocity() / incr_per_rev as f64,
                     measured_rev_per_s,
                     eth_handle.get_cycle_time_us(),
+                    control_steps_this_second,
                     following_error,
+                    statusword.internal_limit_active,
                     statusword.operation_enabled,
                     statusword.fault,
                     if mode_clock {
@@ -1235,9 +1248,23 @@ fn main() {
             break;
         }
     }
+    if eth_handle.get_state() != EtherCATState::PreOp {
+        warn!(
+            "Bus did not reach PreOp within 2 s (still {:?}); the DiagMessages dump below needs \
+             PreOp, because mailbox SDOs are not serviced reliably in Op.",
+            eth_handle.get_state()
+        );
+    }
 
     if let Some(addr) = el7062_address {
-        info!("Post-shutdown DiagMessages dump:");
+        if pending_diag_dump {
+            info!(
+                "Post-shutdown DiagMessages dump (includes this session's fault/warning events, \
+                 latched in 0x10F3):"
+            );
+        } else {
+            info!("Post-shutdown DiagMessages dump:");
+        }
         dump_diag_messages(&eth_control.channel, addr);
     }
     info!("Clean shutdown complete");
