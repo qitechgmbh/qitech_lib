@@ -9,6 +9,7 @@ tokio = { version = "1.49.0", features = ["sync","rt-multi-thread","macros","sig
 tokio-serial = "5.0"
 tokio-modbus = "0.17.0"
 anyhow = "1.0.102"
+tracing = "0.1.44"
 common = {path = "../common"}
 [lib]
 

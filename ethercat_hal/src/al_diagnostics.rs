@@ -14,8 +14,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::{
-    DiagnosticRequest, DiagnosticResponse, EtherCATController, EtherCATState, MAX_SUBDEVICES,
-    Mailbox, TripleBufProducer,
+    DiagnosticRequest, DiagnosticResponse, EtherCATController, EtherCATState, EthercatErr,
+    MAX_SUBDEVICES, Mailbox, TripleBufProducer,
 };
 
 const MAX_REPORTS: usize = 32;
@@ -330,7 +330,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         maindevice: &MainDevice<'_>,
         started: Instant,
         result: Result<T, E>,
-    ) -> Result<T, anyhow::Error> {
+    ) -> Result<T, EthercatErr> {
         let error = result.as_ref().err().map(|e| format!("{e:?}"));
         let succeeded = error.is_none();
         let devices = self.diagnostic_devices(maindevice).await;
@@ -352,7 +352,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         let message = report.to_string();
         self.transition_log.push(report);
 
-        result.map_err(|_| anyhow::anyhow!(message))
+        result.map_err(|_| EthercatErr::Custom(message))
     }
 
     /// Run a one-shot state transition, recording it either way. Recording successes gives the
@@ -362,7 +362,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         transition: EtherCATTransition,
         maindevice: &MainDevice<'_>,
         op: impl Future<Output = Result<T, E>>,
-    ) -> Result<T, anyhow::Error> {
+    ) -> Result<T, EthercatErr> {
         let started = Instant::now();
         let result = op.await;
         self.record(transition, maindevice, started, result).await
@@ -375,7 +375,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         transition: EtherCATTransition,
         maindevice: &MainDevice<'_>,
         op: impl Future<Output = Result<T, E>>,
-    ) -> Result<T, anyhow::Error> {
+    ) -> Result<T, EthercatErr> {
         let started = Instant::now();
         match op.await {
             Ok(value) => Ok(value),

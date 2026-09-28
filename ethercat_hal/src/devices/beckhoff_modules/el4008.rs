@@ -43,15 +43,15 @@ impl AnalogVoltageOutputDevice for EL4008 {
         8
     }
 
-    fn get_minimum_output(&self) -> ElectricPotential {
+    fn get_minimum_voltage(&self) -> ElectricPotential {
         ElectricPotential::new::<volt>(0.0)
     }
 
-    fn get_maximum_output(&self) -> ElectricPotential {
+    fn get_maximum_voltage(&self) -> ElectricPotential {
         ElectricPotential::new::<volt>(10.0)
     }
 
-    fn set_output_relative(&mut self, port: usize, value: f64) {
+    fn set_voltage_relative(&mut self, port: usize, value: f64) {
         let option = match port {
             0 => self.rxpdo.channel1.as_mut(),
             1 => self.rxpdo.channel2.as_mut(),

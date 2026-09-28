@@ -42,7 +42,7 @@ pub struct Wago750_531RxPdo {
 
 impl DigitalOutputDevice for Wago750_531 {
     fn set_output(&mut self, port: usize, value: bool) {
-        let output_value: bool = value.into();
+        let output_value: bool = value;
         match port {
             0 => self.rx_pdo.port1 = output_value,
             1 => self.rx_pdo.port2 = output_value,

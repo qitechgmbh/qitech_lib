@@ -5,6 +5,7 @@ use super::{
     wago_750_501::{self, WAGO_750_501_MODULE_IDENT, WAGO_750_501_PRODUCT_ID},
     wago_750_530::{self, WAGO_750_530_MODULE_IDENT, WAGO_750_530_PRODUCT_ID},
     wago_750_531::{self, WAGO_750_531_MODULE_IDENT, WAGO_750_531_PRODUCT_ID},
+    wago_750_554::{self, WAGO_750_554_MODULE_IDENT, WAGO_750_554_PRODUCT_ID},
     wago_750_652::{self, WAGO_750_652_MODULE_IDENT, WAGO_750_652_PRODUCT_ID},
     wago_750_671::{self, WAGO_750_671_MODULE_IDENT, WAGO_750_671_PRODUCT_ID},
     wago_750_672::{self, WAGO_750_672_MODULE_IDENT, WAGO_750_672_PRODUCT_ID},
@@ -182,7 +183,7 @@ impl Wago750_354 {
         }
 
         let mut mappings_without_coupler: Vec<u32> = vec![];
-        for i in start_subindex..count_mappings {
+        for i in start_subindex..=count_mappings {
             let pdo_index = ecat_channel.sdo_read(device_address, index.0, i)?;
             let pdo_map_count = ecat_channel.sdo_read::<u8>(device_address, pdo_index, 0)?;
             for j in 0..pdo_map_count {
@@ -291,6 +292,11 @@ impl Wago750_354 {
                     module.has_rx = true;
                     module.name = "750-652".to_string();
                 }
+                WAGO_750_554_PRODUCT_ID => {
+                    module.has_tx = false;
+                    module.has_rx = true;
+                    module.name = "750-554".to_string();
+                }
                 WAGO_750_402_PRODUCT_ID => {
                     module.has_tx = true;
                     module.has_rx = false;
@@ -380,6 +386,7 @@ impl Wago750_354 {
                         WAGO_750_531_MODULE_IDENT => Box::new(wago_750_531::Wago750_531::new()),
                         WAGO_750_1506_MODULE_IDENT => Box::new(wago_750_1506::Wago750_1506::new()),
                         WAGO_750_652_MODULE_IDENT => Box::new(wago_750_652::Wago750_652::new()),
+                        WAGO_750_554_MODULE_IDENT => Box::new(wago_750_554::Wago750_554::new()),
                         WAGO_750_402_MODULE_IDENT => Box::new(wago_750_402::Wago750_402::new()),
                         WAGO_750_430_MODULE_IDENT => Box::new(wago_750_430::Wago750_430::new()),
                         WAGO_750_671_MODULE_IDENT => Box::new(wago_750_671::Wago750_671::new()),

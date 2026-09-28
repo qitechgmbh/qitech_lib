@@ -15,6 +15,7 @@ use al_diagnostics::{TransitionLog, TransitionReport};
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
 use std::cell::UnsafeCell;
+use std::fmt;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
@@ -24,6 +25,30 @@ use std::time::{Duration, Instant};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Mutex;
 use triple_buffer::{Input, Output};
+
+#[derive(Debug)]
+pub enum EthercatErr {
+    Custom(String),
+    PreopTransitionFailed,
+    SafeopTransitionFailed,
+    OpTransitionFailed,
+    WorkingCounterErr,
+}
+
+impl fmt::Display for EthercatErr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EthercatErr::Custom(msg) => write!(f, "Ethercat-error: {}", msg),
+            EthercatErr::PreopTransitionFailed => write!(f, "Failed to transition to PREOP state"),
+            EthercatErr::SafeopTransitionFailed => {
+                write!(f, "Failed to transition to SAFEOP state")
+            }
+            EthercatErr::OpTransitionFailed => write!(f, "Failed to transition to OP state"),
+            EthercatErr::WorkingCounterErr => write!(f, "Working counter error (WKC)"),
+        }
+    }
+}
+impl std::error::Error for EthercatErr {}
 
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -384,8 +409,8 @@ pub type StdEcatHandle = EtherCATAppHandle<TripleBufConsumer, Arc<Mailbox>>;
 pub type MockEcatHandle = EtherCATAppHandle<MockConsumer, MockProducer>;
 pub type StdEcatController = EtherCATController<Arc<Mailbox>, TripleBufProducer>;
 
-/*Metadata for a Subdevice Contains start and end of the given subdevices pdu*/
-#[derive(Clone, Copy, Debug)]
+/// Metadata for a Subdevice Contains start and end of the given subdevices pdu
+#[derive(Clone, Copy)]
 pub struct MetaSubdevice {
     pub name: [u8; 128],
     pub product_id: u32,
@@ -400,6 +425,26 @@ pub struct MetaSubdevice {
     // Device address first one would be 0x1000, so 4096
     pub device_address: u16,
     pub initialized: bool,
+}
+
+impl std::fmt::Debug for MetaSubdevice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MetaSubdevice")
+            .field(
+                "name",
+                &self.get_name().unwrap_or("<non-uft8-name>".to_string()),
+            )
+            .field("product_id", &self.product_id)
+            .field("revision", &self.revision)
+            .field("vendor", &self.vendor)
+            .field("start_tx", &self.start_tx)
+            .field("end_tx", &self.end_tx)
+            .field("start_rx", &self.start_rx)
+            .field("end_rx", &self.end_rx)
+            .field("device_address", &self.device_address)
+            .field("initialized", &self.initialized)
+            .finish()
+    }
 }
 
 impl MetaSubdevice {
