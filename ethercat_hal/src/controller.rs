@@ -131,7 +131,7 @@ fn handle_channel_requests(
                 _ => false,
             };
         }
-        // Not yet implemented 
+        // Not yet implemented
         ChannelRequests::Shutdown() => false,
         ChannelRequests::SdoWriteRequest(request) => {
             let res = sdo_write(maindev, preop_group, request);
