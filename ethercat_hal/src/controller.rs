@@ -583,7 +583,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                             EtherCATState::PreOp => (),
                             _ => continue,
                         },
-                        ChannelRequests::Shutdown() => return Ok(()), // We CAN safely shutdonw in Init
+                        // Not implemented yet
+                        ChannelRequests::Shutdown() => continue,
                         _ => continue,
                     }
 
