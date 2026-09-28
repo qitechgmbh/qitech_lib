@@ -131,7 +131,8 @@ fn handle_channel_requests(
                 _ => false,
             };
         }
-        ChannelRequests::Shutdown() => true,
+        // Not yet implemented 
+        ChannelRequests::Shutdown() => false,
         ChannelRequests::SdoWriteRequest(request) => {
             let res = sdo_write(maindev, preop_group, request);
             send_response(msg.response_channel, ChannelResponse::SdoWriteResponse(res));
