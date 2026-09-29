@@ -10,9 +10,6 @@
 
     0x10F3 is read once during startup, in PreOp, never from the control loop: a
     blocking mailbox SDO there starves process data and trips the PD watchdog.
-
-    See USAGE below for the profiles. For a stripped-down 1 rev/min clock, see
-    examples/el7062_minimal.rs.
 */
 
 use bitvec::slice::BitSlice;
@@ -43,10 +40,9 @@ use std::{
 };
 
 const USAGE: &str = concat!(
-    "el7062_maximal interface_name cycle_time_us target [csp|csv|clock|probe] [commutation_type]\n",
+    "el7062_maximal interface_name cycle_time_us target [csp|csv|probe] [commutation_type]\n",
     "  csp   = position jog: ramps <target> revs out, holds, ramps back, repeats\n",
     "  csv   = constant velocity, target in revolutions per second\n",
-    "  clock = 1 revolution per minute, one 6 deg step per second (target unused)\n",
     "  probe = write config + read back + dump 0x10F3 in PreOp, then exit. Never requests\n",
     "          Op, never enables the axis, so no current can flow. For encoder-based\n",
     "          commutation types. Defaults to commutation type 17.\n",
@@ -56,10 +52,6 @@ const USAGE: &str = concat!(
     " example: ./target/release/examples/el7062_maximal enp4s0 1000 1 csv\n",
     " example: ./target/release/examples/el7062_maximal enp4s0 1000 0 probe",
 );
-
-/// Seconds hand: one sixtieth of a revolution per step. `target` is unused.
-const CLOCK_STEPS_PER_REV: f64 = 60.0;
-const CLOCK_STEP_PERIOD_MS: u64 = 1_000;
 
 fn apply_rt() {
     let id = core_affinity::CoreId { id: 2 };
@@ -98,10 +90,9 @@ fn main() {
         .expect("target must be a valid f64 (revolutions, or revolutions/s in csv)");
     let mode_arg = env::args().nth(4);
     let mode_csv = matches!(mode_arg.as_deref(), Some("csv"));
-    let mode_clock = matches!(mode_arg.as_deref(), Some("clock"));
     let mode_probe = matches!(mode_arg.as_deref(), Some("probe"));
     match mode_arg.as_deref() {
-        None | Some("csp") | Some("csv") | Some("clock") | Some("probe") => {}
+        None | Some("csp") | Some("csv") | Some("probe") => {}
         Some(_) => {
             eprintln!("{fail}");
             std::process::exit(2);
@@ -134,13 +125,11 @@ fn main() {
             )
         } else if mode_csv {
             "CSV (constant velocity)".to_string()
-        } else if mode_clock {
-            "CSP (clock: 1 rev/min, one 6 deg step per second)".to_string()
         } else {
             "CSP (position jog)".to_string()
         }
     );
-    if !mode_probe && !mode_clock {
+    if !mode_probe {
         info!("Target: {} rev", target);
     }
 
@@ -903,16 +892,6 @@ fn main() {
             initial_position,
             initial_position as f64 / incr_per_rev as f64,
         );
-    } else if mode_clock {
-        info!(
-            "Starting EL7062 CSP clock smoke test: cycle {} µs, 1 rev/min, one {:.0} deg step \
-             every {} ms from initial position {} increments ({:.4} rev)",
-            cycle_time_us,
-            360.0 / CLOCK_STEPS_PER_REV,
-            CLOCK_STEP_PERIOD_MS,
-            initial_position,
-            initial_position as f64 / incr_per_rev as f64,
-        );
     } else {
         info!(
             "Starting EL7062 CSP jog smoke test: cycle {} µs, ramping {} rev ({} increments) out \
@@ -929,8 +908,6 @@ fn main() {
     let mut go_to: f64 = seed_position;
     let mut last_control_cycle = eth_handle.get_current_cycle();
     let mut control_steps: u32 = 0;
-    let mut last_step_cycle = eth_handle.get_current_cycle();
-    let mut step_count: u64 = 0;
 
     info!(
         "Starting control loop with cycle time: {} µs",
@@ -1228,18 +1205,6 @@ fn main() {
                     .axis(EL7062Port::Ch1)
                     .set_target_velocity(target_v)
                     .expect("Failed to write target velocity");
-            } else if mode_clock {
-                // One step per second. Negated for clockwise from the drive face;
-                // inverting 0x8008:01 instead would also flip CSV and the jog.
-                if current_cycle.wrapping_sub(last_step_cycle) >= CLOCK_STEP_PERIOD_MS {
-                    last_step_cycle = current_cycle;
-                    step_count += 1;
-                    go_to -= incr_per_rev as f64 / CLOCK_STEPS_PER_REV;
-                }
-                el7062
-                    .axis(EL7062Port::Ch1)
-                    .set_target_position(go_to as i32)
-                    .expect("Failed to write target position");
             } else {
                 ramp.advance(go_to, dt);
                 // Published unconditionally: the ramp starts at the terminal's
@@ -1342,7 +1307,7 @@ fn main() {
                     "Cycle {}: Position={} incr ({:.3} rev), target={:.3} rev, setpoint={:.3} rev \
                      at {:.3} rev/s, measured={:.3} rev/s, cycle_us={}, ctrl_steps={}, \
                      Following Error={} incr, Internal Limit Active={}, Operation Enabled={}, \
-                     Fault={}{}",
+                     Fault={}",
                     current_cycle,
                     position,
                     position as f64 / incr_per_rev as f64,
@@ -1356,11 +1321,6 @@ fn main() {
                     statusword.internal_limit_active,
                     statusword.operation_enabled,
                     statusword.fault,
-                    if mode_clock {
-                        format!(", clock step {} of 60", step_count % 60)
-                    } else {
-                        String::new()
-                    },
                 );
             }
         }
