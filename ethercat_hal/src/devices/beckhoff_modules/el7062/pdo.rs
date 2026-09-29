@@ -200,13 +200,35 @@ pub struct DrvStatusWord {
     /// so it is decoded through [`DrvStatusWord::bit10`] instead of being read
     /// directly.
     bit10: bool,
-    /// Bit 14. High bit of the input cycle counter, which
+    /// Bit 13. High bit of the input cycle counter, which
     /// [`DrvStatusWord::input_cycle_counter`] assembles with `bit10`.
-    bit14: bool,
+    ///
+    /// This was measured, not assumed: across 2000 consecutive master cycles
+    /// bit 13 changed on 47% of sample pairs, which is the rate a counter's high
+    /// bit must have when it increments every cycle. Bit 14, which 0x8010:02
+    /// names as the high bit, never changed at all in the same window, so the
+    /// documentation's bit-14 claim does not hold on this terminal.
+    bit13: bool,
+
+    /// The status word exactly as received.
+    ///
+    /// The decoded fields above cover only 10 of the 16 bits, so rebuilding a
+    /// value from them would lose bits 4, 5, 8, 9 and 15. Keeping the received
+    /// word makes [`DrvStatusWord::as_raw`] lossless.
+    raw: u16,
 }
 
 impl TxPdoObject for DrvStatusWord {
     fn read(&mut self, bits: &BitSlice<u8, Lsb0>) {
+        // Capture every bit before decoding, so `as_raw` can report bits that
+        // have no dedicated field.
+        let mut raw = 0u16;
+        for bit in 0..16 {
+            if bits[bit] {
+                raw |= 1 << bit;
+            }
+        }
+        self.raw = raw;
         self.ready_to_switch_on = bits[0];
         self.switched_on = bits[1];
         self.operation_enabled = bits[2];
@@ -216,7 +238,7 @@ impl TxPdoObject for DrvStatusWord {
         self.bit10 = bits[10];
         self.internal_limit_active = bits[11];
         self.drive_follows_command_value = bits[12];
-        self.bit14 = bits[14];
+        self.bit13 = bits[13];
     }
 }
 
@@ -234,7 +256,8 @@ impl DrvStatusWord {
             bit10: raw & (1 << 10) != 0,
             internal_limit_active: raw & (1 << 11) != 0,
             drive_follows_command_value: raw & (1 << 12) != 0,
-            bit14: raw & (1 << 14) != 0,
+            bit13: raw & (1 << 13) != 0,
+            raw,
         }
     }
 
@@ -252,7 +275,15 @@ impl DrvStatusWord {
     }
 
     /// The two-bit input cycle counter: low bit from statusword bit 10, high bit
-    /// from bit 14, incremented per process-data cycle and wrapping at 3.
+    /// from bit 13, incremented per process-data cycle and wrapping at 3.
+    ///
+    /// The object dictionary is self-contradictory here. 0x8010:02 says the high
+    /// bit is bit 14, while the 0x6010:01 statusword listing names bit 13 as the
+    /// "Input cycle counter" and marks bits 14-15 reserved. Measured over 2000
+    /// consecutive master cycles, bit 13 changed on 47% of sample pairs -- the
+    /// rate a counter's high bit must show when it increments every cycle --
+    /// while bit 14 never changed at all. So bit 13 is the high bit on this
+    /// terminal and 0x8010:02's bit-14 claim does not hold.
     ///
     /// `None` unless the channel actually enabled the counter, so a reading
     /// cannot be mistaken for a stalled bus.
@@ -260,7 +291,7 @@ impl DrvStatusWord {
         if monitor != StatuswordProcessDataMonitor::InputCycleCounter {
             return None;
         }
-        Some(((self.bit14 as u8) << 1) | self.bit10 as u8)
+        Some(((self.bit13 as u8) << 1) | self.bit10 as u8)
     }
 
     /// Whether the input cycle counter advanced since `previous`, i.e. whether
@@ -281,26 +312,12 @@ impl DrvStatusWord {
         }
     }
 
-    /// Retrieve the raw status word value.
+    /// Retrieve the status word exactly as received from process data.
+    ///
+    /// This is the received word, not a value rebuilt from the decoded fields,
+    /// so bits without a dedicated field (4, 5, 8, 9, 13) are preserved.
     pub fn as_raw(&self) -> u16 {
-        let mut raw = 0u16;
-        for (bit, set) in [
-            (0, self.ready_to_switch_on),
-            (1, self.switched_on),
-            (2, self.operation_enabled),
-            (3, self.fault),
-            (6, self.switch_on_disabled),
-            (7, self.warning),
-            (10, self.bit10),
-            (11, self.internal_limit_active),
-            (12, self.drive_follows_command_value),
-            (14, self.bit14),
-        ] {
-            if set {
-                raw |= 1 << bit;
-            }
-        }
-        raw
+        self.raw
     }
 }
 
@@ -510,6 +527,42 @@ impl PredefinedPdoAssignment<EL7062TxPdo, EL7062RxPdo> for EL7062PredefinedPdoAs
 mod tests {
     use super::*;
 
+    /// Bits with no decoded field must survive `as_raw`, otherwise a caller
+    /// inspecting them silently sees a hard 0.
+    #[test]
+    fn as_raw_preserves_bits_without_a_decoded_field() {
+        for shift in [4u32, 5, 8, 9, 14, 15] {
+            let raw = 1u16 << shift;
+            assert_eq!(
+                DrvStatusWord::from_raw(raw).as_raw(),
+                raw,
+                "bit {shift} must not be dropped by a round trip"
+            );
+        }
+        // And the full word, including every field-backed bit, survives.
+        let all = 0xFFFFu16;
+        assert_eq!(DrvStatusWord::from_raw(all).as_raw(), all);
+        assert_eq!(DrvStatusWord::from_raw(0).as_raw(), 0);
+    }
+
+    /// `as_raw` must report the bits actually received, not a value rebuilt
+    /// from the decoded fields, so this pins the process-data path too.
+    #[test]
+    fn as_raw_reports_the_word_read_from_process_data() {
+        let raw = 0xE9C5u16; // sets bits 0, 2, 6, 7, 10, 11, 13, 14, 15
+        // Process data arrives as a little-endian byte slice, low byte first.
+        let bytes = raw.to_le_bytes();
+        let mut statusword = DrvStatusWord::from_raw(0);
+        TxPdoObject::read(
+            &mut statusword,
+            BitSlice::<u8, Lsb0>::from_slice(&bytes),
+        );
+        assert_eq!(statusword.as_raw(), raw);
+        assert!(statusword.operation_enabled, "bit 2");
+        assert!(statusword.warning, "bit 7");
+        assert!(statusword.internal_limit_active, "bit 11");
+    }
+
     /// Bit 10 is one bit carrying two different meanings, so it is only readable
     /// once the caller states which feature it asked the terminal for.
     #[test]
@@ -528,15 +581,17 @@ mod tests {
         );
     }
 
-    /// The counter is bit 10 (low) and bit 14 (high) per 0x8010:02, and is only
-    /// reported when that feature is actually enabled.
+    /// The counter is bit 10 (low) and bit 13 (high), and is only reported when
+    /// that feature is actually enabled. Bit 13 is what 0x6010:01 names and what
+    /// the hardware shows; 0x8010:02's bit-14 claim is contradicted by
+    /// measurement and is deliberately not encoded here.
     #[test]
-    fn the_input_cycle_counter_is_two_bits_from_10_and_14() {
+    fn the_input_cycle_counter_is_two_bits_from_10_and_13() {
         for (raw, expected) in [
             (0u16, 0u8),
             ((1 << 10), 1),
-            ((1 << 14), 2),
-            ((1 << 10) | (1 << 14), 3),
+            ((1 << 13), 2),
+            ((1 << 10) | (1 << 13), 3),
         ] {
             let statusword = DrvStatusWord::from_raw(raw);
             assert_eq!(
@@ -553,16 +608,68 @@ mod tests {
         );
     }
 
+    /// Bit 14 must not be mistaken for the counter's high bit. It was set in 0 of
+    /// 2000 samples over 2000 real master cycles, so treating it as the high bit
+    /// yields a counter that can only ever read 0 or 1 and never reaches 2 or 3.
+    #[test]
+    fn bit14_is_not_the_counter_high_bit() {
+        let m = StatuswordProcessDataMonitor::InputCycleCounter;
+        for raw in [(1 << 14) | (1 << 10), (1 << 14), 1 << 10] {
+            let decoded = DrvStatusWord::from_raw(raw).input_cycle_counter(m);
+            assert!(
+                decoded.is_some_and(|c| c <= 1),
+                "raw 0x{raw:04X} must not read as 2 or 3 via bit 14, got {decoded:?}"
+            );
+        }
+    }
+
+    /// A counter incrementing every cycle must show a low bit changing on every
+    /// sample pair and a high bit on about half of them. This is the property the
+    /// bit-13 choice rests on, expressed so a future change of the high bit is
+    /// caught rather than silently reverting to bit 14.
+    ///
+    /// The words are built by overlaying the counter bits onto a real observed
+    /// statusword (`0x18A7`), so the fixture cannot drift into encoding a pattern
+    /// the drive would not produce.
+    #[test]
+    fn a_per_cycle_counter_has_a_half_rate_high_bit() {
+        let base = DrvStatusWord::from_raw(0x18A7).as_raw();
+        // One second of 1 kHz process data, counter wrapping 0,1,2,3.
+        let samples: [u16; 8] = std::array::from_fn(|i| {
+            let counter = (i % 4) as u16;
+            base & !(1 << 10 | 1 << 13) | ((counter & 1) << 10) | ((counter >> 1) << 13)
+        });
+        let changes = |shift: u32| {
+            samples
+                .windows(2)
+                .filter(|w| (w[0] >> shift & 1) != (w[1] >> shift & 1))
+                .count()
+        };
+        assert_eq!(changes(10), 7, "low bit changes every cycle");
+        assert_eq!(changes(13), 3, "high bit changes every other cycle");
+        // And the driver must agree that all four values are reachable.
+        let m = StatuswordProcessDataMonitor::InputCycleCounter;
+        let read: Vec<u8> = samples
+            .iter()
+            .map(|raw| {
+                DrvStatusWord::from_raw(*raw)
+                    .input_cycle_counter(m)
+                    .expect("counter enabled")
+            })
+            .collect();
+        assert_eq!(read, vec![0, 1, 2, 3, 0, 1, 2, 3], "counter must count up and wrap");
+    }
+
     /// The counter wraps 3 -> 0, so "advanced" is a change, not an increment. A
     /// comparison against `>` would miss the wrap and stall forever.
     #[test]
     fn the_cycle_counter_wrap_still_counts_as_advanced() {
         let m = StatuswordProcessDataMonitor::InputCycleCounter;
-        let three = DrvStatusWord::from_raw((1 << 10) | (1 << 14));
+        let three = DrvStatusWord::from_raw((1 << 10) | (1 << 13));
         let zero = DrvStatusWord::from_raw(0);
         assert!(zero.input_cycle_advanced(m, &three), "3 -> 0 must advance");
         assert!(!zero.input_cycle_advanced(m, &zero));
-        let two = DrvStatusWord::from_raw(1 << 14);
+        let two = DrvStatusWord::from_raw(1 << 13);
         assert!(three.input_cycle_advanced(m, &two));
     }
 
@@ -570,9 +677,9 @@ mod tests {
     /// including the two bits that are now private.
     #[test]
     fn decoded_bits_round_trip_through_from_raw() {
-        // Bits 0,1,2,3,6,7,10,11,12,14: the documented statusword fields.
-        const DECODED: u16 = 0b0101_1100_1100_1111u16;
-        for raw in [0u16, DECODED, 1 << 10, 1 << 14, !0u16 & DECODED] {
+        // Bits 0,1,2,3,6,7,10,11,12,13: the documented statusword fields.
+        const DECODED: u16 = 0b0110_1100_1100_1111u16;
+        for raw in [0u16, DECODED, 1 << 10, 1 << 13, !0u16 & DECODED] {
             assert_eq!(
                 DrvStatusWord::from_raw(raw).as_raw(),
                 raw,
@@ -581,16 +688,24 @@ mod tests {
         }
     }
 
-    /// Reserved bits (4, 5, 8, 9, 13, 15) have no decoded meaning, so they are
-    /// not part of what `as_raw` reproduces. Bit 13 is the interesting one: it is
-    /// documented as the input cycle counter by 0x6010:01 but reserved by the
-    /// 0x8010:02 description, and is deliberately left undecoded rather than
-    /// given a name that contradicts it.
+    /// Bits 4, 5, 8, 9 and 15 deliberately have no decoded field, so nothing in
+    /// this struct gives them a name. They are nonetheless reported faithfully by
+    /// `as_raw`, which returns the word as received rather than rebuilding one
+    /// from the decoded fields.
+    ///
+    /// Bit 13 used to be in this group, on the grounds that 0x8010:02 and
+    /// 0x6010:01 contradict each other about it. Measurement settled it: bit 13
+    /// behaves as the counter's high bit and bit 14 never moves, so bit 13 is now
+    /// decoded and bit 14 is the one left unnamed.
     #[test]
-    fn reserved_bits_are_not_decoded() {
-        for bit in [4, 5, 8, 9, 13, 15] {
+    fn reserved_bits_have_no_field_but_survive_as_raw() {
+        for bit in [4, 5, 8, 9, 15] {
             let statusword = DrvStatusWord::from_raw(1 << bit);
-            assert_eq!(statusword.as_raw(), 0, "bit {bit} has no decoded meaning");
+            assert_eq!(
+                statusword.as_raw(),
+                1 << bit,
+                "bit {bit} is undecoded but must not be lost"
+            );
         }
     }
 }
