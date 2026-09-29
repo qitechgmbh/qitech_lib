@@ -130,10 +130,52 @@ impl TxPdoObject for FbPosition {
     }
 }
 
+/// # Statusword bit 10 and bit 14
+/// What the terminal is allowed to report in the otherwise-unused statusword
+/// bits, set by `0x8010:01` / `0x8110:01` and `0x8010:02` / `0x8110:02`.
+///
+/// These are two booleans in the datasheet but one bit on the wire, so they
+/// cannot be set independently: both features drive bit 10, and only the
+/// counter additionally uses bit 14. A terminal asked for both gives a bit 10
+/// that could be either, which is why the terminal's own `Enable input cycle
+/// counter` wins and this is a single choice here.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StatuswordProcessDataMonitor {
+    /// Neither feature: bit 10 carries no documented meaning and reads 0.
+    #[default]
+    None,
+    /// `0x8010:01` = 1. Bit 10 is the TxPDO toggle.
+    TxPdoToggle,
+    /// `0x8010:02` = 1. Bit 10 is the low bit and bit 14 the high bit of a
+    /// two-bit counter that increments per process-data cycle and wraps at 3.
+    InputCycleCounter,
+}
+
+impl StatuswordProcessDataMonitor {
+    /// Value of `0x8010:01` ("Enable TxPDOToggle").
+    pub fn enable_txpdo_toggle(self) -> bool {
+        matches!(self, Self::TxPdoToggle)
+    }
+
+    /// Value of `0x8010:02` ("Enable input cycle counter").
+    pub fn enable_input_cycle_counter(self) -> bool {
+        matches!(self, Self::InputCycleCounter)
+    }
+}
+
 /// # `DrvStatusWord`
 /// CiA402 status word, 16 bits.
 ///
 /// Mapped from `0x6010:01` (Ch. 1) / `0x6110:01` (Ch. 2).
+///
+/// Bits 10 and 14 are decoded with [`StatuswordProcessDataMonitor`], so a caller
+/// states which feature it enabled rather than reading an ambiguous bit.
+///
+/// The datasheet disagrees with itself here. `0x6010:01` documents bit 13 as
+/// "Input cycle counter" with bit 14-15 reserved, while `0x8010:02` says the
+/// two-bit counter sits in bit 10 (low) and bit 14 (high). This follows
+/// `0x8010:02`, because that parameter is what actually turns the feature on;
+/// bit 13 is left undecoded rather than given a name that contradicts it.
 #[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
 #[pdo_object(bits = 16)]
 pub struct DrvStatusWord {
@@ -149,19 +191,18 @@ pub struct DrvStatusWord {
     pub switch_on_disabled: bool,
     /// Bit 7: Warning
     pub warning: bool,
-    /// Bit 10: TxPDOToggle (enabled via 0x8010:01) *or* the low bit of the input
-    /// cycle counter (enabled via 0x8010:02). Both claim this bit, so enabling
-    /// the two features at once makes the readings ambiguous.
-    pub txpdo_toggle: bool,
     /// Bit 11: Internal limit active
     pub internal_limit_active: bool,
     /// Bit 12: Drive follows the command value
     pub drive_follows_command_value: bool,
-    /// Bit 13: Input cycle counter (as documented for 0x6010:01)
-    pub input_cycle_counter: bool,
-    /// Bit 14: High bit of the two-bit input cycle counter that 0x8010:02 places
-    /// in bit 10 (low) and bit 14 (high). Only valid when 0x8010:02 is enabled.
-    pub input_cycle_counter_high: bool,
+
+    /// Bit 10. Meaning depends on the monitor the channel was configured with,
+    /// so it is decoded through [`DrvStatusWord::bit10`] instead of being read
+    /// directly.
+    bit10: bool,
+    /// Bit 14. High bit of the input cycle counter, which
+    /// [`DrvStatusWord::input_cycle_counter`] assembles with `bit10`.
+    bit14: bool,
 }
 
 impl TxPdoObject for DrvStatusWord {
@@ -172,50 +213,92 @@ impl TxPdoObject for DrvStatusWord {
         self.fault = bits[3];
         self.switch_on_disabled = bits[6];
         self.warning = bits[7];
-        self.txpdo_toggle = bits[10];
+        self.bit10 = bits[10];
         self.internal_limit_active = bits[11];
         self.drive_follows_command_value = bits[12];
-        self.input_cycle_counter = bits[13];
-        self.input_cycle_counter_high = bits[14];
+        self.bit14 = bits[14];
     }
 }
 
 impl DrvStatusWord {
+    /// Decode a raw status word, for tests and for callers that already have
+    /// the 16 bits from somewhere else.
+    pub fn from_raw(raw: u16) -> Self {
+        Self {
+            ready_to_switch_on: raw & (1 << 0) != 0,
+            switched_on: raw & (1 << 1) != 0,
+            operation_enabled: raw & (1 << 2) != 0,
+            fault: raw & (1 << 3) != 0,
+            switch_on_disabled: raw & (1 << 6) != 0,
+            warning: raw & (1 << 7) != 0,
+            bit10: raw & (1 << 10) != 0,
+            internal_limit_active: raw & (1 << 11) != 0,
+            drive_follows_command_value: raw & (1 << 12) != 0,
+            bit14: raw & (1 << 14) != 0,
+        }
+    }
+
+    /// Bit 10, read as whatever the channel's
+    /// [`StatuswordProcessDataMonitor`] asked the terminal to report.
+    ///
+    /// `None` yields `false`, which is what the terminal reports when neither
+    /// feature is enabled.
+    pub fn bit10(&self, monitor: StatuswordProcessDataMonitor) -> bool {
+        match monitor {
+            StatuswordProcessDataMonitor::None => false,
+            StatuswordProcessDataMonitor::TxPdoToggle
+            | StatuswordProcessDataMonitor::InputCycleCounter => self.bit10,
+        }
+    }
+
+    /// The two-bit input cycle counter: low bit from statusword bit 10, high bit
+    /// from bit 14, incremented per process-data cycle and wrapping at 3.
+    ///
+    /// `None` unless the channel actually enabled the counter, so a reading
+    /// cannot be mistaken for a stalled bus.
+    pub fn input_cycle_counter(&self, monitor: StatuswordProcessDataMonitor) -> Option<u8> {
+        if monitor != StatuswordProcessDataMonitor::InputCycleCounter {
+            return None;
+        }
+        Some(((self.bit14 as u8) << 1) | self.bit10 as u8)
+    }
+
+    /// Whether the input cycle counter advanced since `previous`, i.e. whether
+    /// the terminal has consumed a new set of process data.
+    ///
+    /// The counter wraps from 3 to 0, so this is a change in the counter rather
+    /// than a simple `>`; that also treats a two-cycle stall as an advance.
+    pub fn input_cycle_advanced(
+        &self,
+        monitor: StatuswordProcessDataMonitor,
+        previous: &Self,
+    ) -> bool {
+        match self.input_cycle_counter(monitor) {
+            Some(now) => Some(now) != previous.input_cycle_counter(monitor),
+            // No counter configured: fall back to the raw bit changing, which is
+            // the TxPDO toggle when that is what the channel enabled.
+            None => self.bit10 != previous.bit10,
+        }
+    }
+
     /// Retrieve the raw status word value.
     pub fn as_raw(&self) -> u16 {
         let mut raw = 0u16;
-        if self.ready_to_switch_on {
-            raw |= 1 << 0;
-        }
-        if self.switched_on {
-            raw |= 1 << 1;
-        }
-        if self.operation_enabled {
-            raw |= 1 << 2;
-        }
-        if self.fault {
-            raw |= 1 << 3;
-        }
-        if self.switch_on_disabled {
-            raw |= 1 << 6;
-        }
-        if self.warning {
-            raw |= 1 << 7;
-        }
-        if self.txpdo_toggle {
-            raw |= 1 << 10;
-        }
-        if self.internal_limit_active {
-            raw |= 1 << 11;
-        }
-        if self.drive_follows_command_value {
-            raw |= 1 << 12;
-        }
-        if self.input_cycle_counter {
-            raw |= 1 << 13;
-        }
-        if self.input_cycle_counter_high {
-            raw |= 1 << 14;
+        for (bit, set) in [
+            (0, self.ready_to_switch_on),
+            (1, self.switched_on),
+            (2, self.operation_enabled),
+            (3, self.fault),
+            (6, self.switch_on_disabled),
+            (7, self.warning),
+            (10, self.bit10),
+            (11, self.internal_limit_active),
+            (12, self.drive_follows_command_value),
+            (14, self.bit14),
+        ] {
+            if set {
+                raw |= 1 << bit;
+            }
         }
         raw
     }
@@ -419,6 +502,95 @@ impl PredefinedPdoAssignment<EL7062TxPdo, EL7062RxPdo> for EL7062PredefinedPdoAs
                 ch2_target_torque: Some(DrvTargetTorque::default()),
                 ch2_commutation_angle: Some(DrvCommutationAngle::default()),
             },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Bit 10 is one bit carrying two different meanings, so it is only readable
+    /// once the caller states which feature it asked the terminal for.
+    #[test]
+    fn bit10_is_read_as_whatever_the_channel_enabled() {
+        let raw = (1u16 << 10) | (1 << 3);
+        let statusword = DrvStatusWord::from_raw(raw);
+        assert!(statusword.fault);
+        assert!(statusword.bit10(StatuswordProcessDataMonitor::TxPdoToggle));
+        assert!(
+            statusword.bit10(StatuswordProcessDataMonitor::InputCycleCounter),
+            "the same bit is the counter's low bit"
+        );
+        assert!(
+            !statusword.bit10(StatuswordProcessDataMonitor::None),
+            "with no monitor enabled the bit has no documented meaning"
+        );
+    }
+
+    /// The counter is bit 10 (low) and bit 14 (high) per 0x8010:02, and is only
+    /// reported when that feature is actually enabled.
+    #[test]
+    fn the_input_cycle_counter_is_two_bits_from_10_and_14() {
+        for (raw, expected) in [
+            (0u16, 0u8),
+            ((1 << 10), 1),
+            ((1 << 14), 2),
+            ((1 << 10) | (1 << 14), 3),
+        ] {
+            let statusword = DrvStatusWord::from_raw(raw);
+            assert_eq!(
+                statusword.input_cycle_counter(StatuswordProcessDataMonitor::InputCycleCounter),
+                Some(expected),
+                "raw 0x{raw:04X}"
+            );
+        }
+        let statusword = DrvStatusWord::from_raw(0b11);
+        assert_eq!(
+            statusword.input_cycle_counter(StatuswordProcessDataMonitor::TxPdoToggle),
+            None,
+            "no counter was enabled, so there is no reading to misread"
+        );
+    }
+
+    /// The counter wraps 3 -> 0, so "advanced" is a change, not an increment. A
+    /// comparison against `>` would miss the wrap and stall forever.
+    #[test]
+    fn the_cycle_counter_wrap_still_counts_as_advanced() {
+        let m = StatuswordProcessDataMonitor::InputCycleCounter;
+        let three = DrvStatusWord::from_raw((1 << 10) | (1 << 14));
+        let zero = DrvStatusWord::from_raw(0);
+        assert!(zero.input_cycle_advanced(m, &three), "3 -> 0 must advance");
+        assert!(!zero.input_cycle_advanced(m, &zero));
+        let two = DrvStatusWord::from_raw(1 << 14);
+        assert!(three.input_cycle_advanced(m, &two));
+    }
+
+    /// Every decoded field must survive a round trip through the raw word,
+    /// including the two bits that are now private.
+    #[test]
+    fn decoded_bits_round_trip_through_from_raw() {
+        // Bits 0,1,2,3,6,7,10,11,12,14: the documented statusword fields.
+        const DECODED: u16 = 0b0101_1100_1100_1111u16;
+        for raw in [0u16, DECODED, 1 << 10, 1 << 14, !0u16 & DECODED] {
+            assert_eq!(
+                DrvStatusWord::from_raw(raw).as_raw(),
+                raw,
+                "raw 0x{raw:04X}"
+            );
+        }
+    }
+
+    /// Reserved bits (4, 5, 8, 9, 13, 15) have no decoded meaning, so they are
+    /// not part of what `as_raw` reproduces. Bit 13 is the interesting one: it is
+    /// documented as the input cycle counter by 0x6010:01 but reserved by the
+    /// 0x8010:02 description, and is deliberately left undecoded rather than
+    /// given a name that contradicts it.
+    #[test]
+    fn reserved_bits_are_not_decoded() {
+        for bit in [4, 5, 8, 9, 13, 15] {
+            let statusword = DrvStatusWord::from_raw(1 << bit);
+            assert_eq!(statusword.as_raw(), 0, "bit {bit} has no decoded meaning");
         }
     }
 }

@@ -7,6 +7,8 @@ use crate::{
     SdoType, al_diagnostics::SubDeviceAlStatus, get_async_runtime,
     machine_ident_read::MachineDeviceInfo,
 };
+#[cfg(not(feature = "mock"))]
+use anyhow::Context;
 use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
 };
@@ -18,6 +20,18 @@ use std::time::Duration;
 /// timing out here.
 #[cfg(not(feature = "mock"))]
 const DIAGNOSTIC_TIMEOUT: Duration = Duration::from_millis(1500);
+
+/// Render an SDO target the way CoE documentation writes it: `0x8108:0x13`.
+///
+/// `ethercrab`'s `MailboxError::Aborted` formats the sub-index with `{}`, which is
+/// decimal, so an abort on `0x8108:13` is reported as `0x8108:19`. That reads
+/// like a sub-index the object does not have, and sends you looking for the wrong
+/// parameter. The index and sub-index are known here, so they are attached in
+/// hex and the upstream decimal rendering is left in the cause chain.
+#[cfg(not(feature = "mock"))]
+fn sdo_target(index: u16, sub_index: u8) -> String {
+    format!("0x{index:04X}:0x{sub_index:02X}")
+}
 
 pub trait EthercatResponseTypedResult: Sized {
     fn from_bool(_v: bool) -> anyhow::Result<Self> {
@@ -322,7 +336,12 @@ impl EtherCATThreadChannel {
             ChannelResponse::SdoResponseI32(r) => T::from_i32(r?),
             _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
         };
-        return res;
+        res.with_context(|| {
+            format!(
+                "sdo_read {} on subdevice 0x{device_address:04X}",
+                sdo_target(index, sub_index)
+            )
+        })
     }
 
     /// Read an SDO object as a raw byte blob, for objects whose size is not one
@@ -356,7 +375,12 @@ impl EtherCATThreadChannel {
         };
 
         match response {
-            ChannelResponse::SdoResponseRaw(r) => r,
+            ChannelResponse::SdoResponseRaw(r) => r.with_context(|| {
+                format!(
+                    "sdo_read_raw {} on subdevice 0x{device_address:04X}",
+                    sdo_target(index, sub_index)
+                )
+            }),
             _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
         }
     }
@@ -498,7 +522,12 @@ impl EtherCATThreadChannel {
             Err(e) => return Err(anyhow::anyhow!(e)),
         };
         match response {
-            ChannelResponse::SdoWriteResponse(result) => result,
+            ChannelResponse::SdoWriteResponse(result) => result.with_context(|| {
+                format!(
+                    "sdo_write {} on subdevice 0x{device_address:04X}",
+                    sdo_target(index, sub_index)
+                )
+            }),
             _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
         }
     }
@@ -801,4 +830,45 @@ pub fn configure_oversampling(
             device_address
         ))
     })
+}
+
+#[cfg(all(test, not(feature = "mock")))]
+mod tests {
+    use super::*;
+
+    /// CoE sub-indices are conventionally written in hex, and `0x13` (encoder
+    /// increments per revolution) is decimal 19. This is the exact confusion that
+    /// made an abort on `0x8108:13` look like it was reported against a
+    /// sub-index the object does not contain.
+    #[test]
+    fn sdo_targets_are_rendered_in_hex() {
+        assert_eq!(sdo_target(0x8108, 0x13), "0x8108:0x13");
+        assert_eq!(sdo_target(0x8000, 0x00), "0x8000:0x00");
+        assert_eq!(sdo_target(0x1C32, 0x0A), "0x1C32:0x0A");
+    }
+
+    /// Pinned against the real upstream formatter so the dependency cannot
+    /// silently change the rendering this exists to correct: `ethercrab` prints
+    /// the sub-index with `{}`, so `0x8108:13` comes back as `0x8108:19`.
+    #[test]
+    fn the_upstream_abort_message_reports_the_sub_index_in_decimal() {
+        use ethercrab::error::{CoeAbortCode, MailboxError};
+
+        let rendered = MailboxError::Aborted {
+            // The abort the EL7062 actually returned for 0x8108:13 = 0.
+            code: CoeAbortCode::ValueTooSmall,
+            address: 0x8108,
+            sub_index: 0x13,
+        }
+        .to_string();
+
+        assert!(
+            rendered.contains("0x8108:19"),
+            "upstream rendering changed: {rendered}"
+        );
+        assert!(
+            !rendered.contains("0x8108:0x13"),
+            "if ethercrab now prints hex, this workaround should be removed: {rendered}"
+        );
+    }
 }

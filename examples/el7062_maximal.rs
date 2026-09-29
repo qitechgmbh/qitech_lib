@@ -43,12 +43,10 @@ use ethercat_hal::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
         beckhoff_modules::el7062::{
             EL7062, EL7062_PRODUCT_ID, EL7062Port,
+            coe::{Commutation, EncoderConfig, EncoderType, FollowingErrorMonitor},
             diagnostics::dump_diag_messages,
-            motion::{
-                DEFAULT_MAX_REV_PER_S, DEFAULT_MAX_REV_PER_S2, SetpointRamp,
-                increments_per_revolution,
-            },
-            pdo::{DrvControlWord, EL7062PredefinedPdoAssignment},
+            motion::{DEFAULT_MAX_REV_PER_S, DEFAULT_MAX_REV_PER_S2, PositionScale, SetpointRamp},
+            pdo::{DrvControlWord, EL7062PredefinedPdoAssignment, StatuswordProcessDataMonitor},
         },
     },
     init_ethercat, set_current_thread_rt_priority,
@@ -136,20 +134,20 @@ fn main() {
     // drive's own step counter, 17 the incremental encoder, 18 FOC. `probe`
     // exists to validate an encoder-based type without ever enabling the axis,
     // so it defaults to 17; the motion modes default to 16.
-    let commutation_type: u8 = match env::args().nth(5) {
-        Some(v) => v
-            .parse()
-            .expect("commutation_type must be a number: 16, 17 or 18"),
-        None if mode_probe => 17,
-        None => 16,
+    let commutation_type: Commutation = match env::args().nth(5).as_deref() {
+        Some("16") => Commutation::StepperWithInternalCounter,
+        Some("17") => Commutation::StepperWithEncoder,
+        Some("18") => Commutation::StepperFocWithEncoder,
+        Some(other) => {
+            eprintln!("commutation_type must be 16, 17 or 18, got {other}");
+            std::process::exit(2);
+        }
+        None if mode_probe => Commutation::StepperWithEncoder,
+        None => Commutation::StepperWithInternalCounter,
     };
-    if !matches!(commutation_type, 16 | 17 | 18) {
-        eprintln!("commutation_type must be 16, 17 or 18, got {commutation_type}");
-        std::process::exit(2);
-    }
 
     log::logger().flush();
-    info!("Starting EL7062 minimal example");
+    info!("Starting EL7062 maximal example");
     info!("Interface: {}", interface);
     info!("Cycle time: {} µs", cycle_time_us);
     info!(
@@ -167,7 +165,7 @@ fn main() {
             "CSP (position jog)".to_string()
         }
     );
-    if !mode_probe {
+    if !mode_probe && !mode_clock {
         info!("Target: {} rev", target);
     }
 
@@ -273,26 +271,26 @@ fn main() {
         el7062.configuration.pdo_assignment =
             EL7062PredefinedPdoAssignment::CyclicSynchronousVelocity;
     }
-    el7062.configuration.channel_1.feedback.encoder_type = 1; // RS422 differential
-    el7062
-        .configuration
-        .channel_1
-        .feedback
+    el7062.configuration.channel_1.feedback.encoder = EncoderConfig::wired(
+        // RS422 differential
+        EncoderType::Rs422Differential,
         // 0x8008:13 is the resolution AFTER 4-fold evaluation, so a 500 CPR
         // encoder is 2000 here. Putting the raw 500 in scales the encoder 4x slow.
-        .encoder_increments_per_revolution = 2000;
-    // Type 16 closes the loop around the drive's own step counter, so the encoder
-    // is monitored but not used for commutation. Types 17/18 use the encoder, and
-    // need 0x8008:01 to agree with the motor direction or the loop has positive
-    // feedback. Selected on the CLI (see USAGE) so `probe` can validate a type
-    // without committing it to the motion modes.
-    el7062.configuration.channel_1.amplifier.commutation_type = commutation_type;
+        2000,
+    )
+    .expect("encoder resolution must be non-zero");
+    // StepperWithInternalCounter closes the loop around the drive's own step
+    // counter, so the encoder is monitored but not used for commutation. The
+    // encoder-based types need 0x8008:01 to agree with the motor direction or the
+    // loop has positive feedback. Selected on the CLI (see USAGE) so `probe` can
+    // validate a type without committing it to the motion modes.
+    el7062.configuration.channel_1.amplifier.commutation = commutation_type;
     el7062.configuration.channel_1.motor.rated_current = 1800; // 1.8 A per phase
     el7062
         .configuration
         .channel_1
         .motor
-        .configured_motor_current = 1800;
+        .configured_motor_current = 1000;
     el7062
         .configuration
         .channel_1
@@ -300,70 +298,58 @@ fn main() {
         .motor_full_steps_per_revolution = 200;
 
     debug!(
-        "EL7062 configuration: encoder_type={}, CPR={}, commutation_type={}",
-        el7062.configuration.channel_1.feedback.encoder_type,
+        "EL7062 configuration: encoder_type={:?}, CPR={}, commutation={:?}",
         el7062
             .configuration
             .channel_1
             .feedback
-            .encoder_increments_per_revolution,
-        el7062.configuration.channel_1.amplifier.commutation_type
+            .encoder
+            .encoder_type(),
+        el7062
+            .configuration
+            .channel_1
+            .feedback
+            .encoder
+            .increments_per_revolution()
+            .unwrap_or(0),
+        el7062.configuration.channel_1.amplifier.commutation
     );
 
     // Derive the position scale from what we just asked the terminal for, rather
     // than assuming a value: every command value below is converted with it.
     // The terminal is read back after the config is written to confirm it agrees.
-    let singleturn_bits = el7062.configuration.channel_1.feedback.singleturn_bits;
-    let multiturn_bits = el7062.configuration.channel_1.feedback.multiturn_bits;
-    assert_eq!(
-        singleturn_bits as u16 + multiturn_bits as u16,
-        32,
-        "0x8000:12 + 0x8000:13 must be 32 or the terminal rejects the process \
-         data format (diag 0x8423)"
-    );
-    let incr_per_rev = increments_per_revolution(singleturn_bits);
+    // The sum-to-32 rule needs no runtime check here, because PositionScale is
+    // the only way to hold a scale in the first place.
+    let scale = el7062.configuration.channel_1.feedback.position_scale;
+    let incr_per_rev = scale.increments_per_revolution();
+    let full_steps_per_rev = el7062
+        .configuration
+        .channel_1
+        .motor
+        .motor_full_steps_per_revolution;
     info!(
         "Position scale: {} singleturn bits + {} multiturn bits -> {} increments per motor \
          revolution ({} increments per full step at {} steps/rev)",
-        singleturn_bits,
-        multiturn_bits,
+        scale.singleturn_bits(),
+        scale.multiturn_bits(),
         incr_per_rev,
-        incr_per_rev as f64
-            / el7062
-                .configuration
-                .channel_1
-                .motor
-                .motor_full_steps_per_revolution as f64,
-        el7062
-            .configuration
-            .channel_1
-            .motor
-            .motor_full_steps_per_revolution,
+        scale.increments_per_step(full_steps_per_rev),
+        full_steps_per_rev,
     );
     let target_incr = (target * incr_per_rev as f64) as i32;
 
     // Safety limits for the smoke test (tune later).
     //
-    // 0x8010:01 and 0x8010:02 both drive statusword bit 10, so only one of them
-    // can be interpreted at a time. The example wants the cycle counter; leave
-    // the TxPDO toggle off so bit 10 unambiguously carries the counter's low bit.
-    el7062.configuration.channel_1.amplifier.enable_txpdo_toggle = false;
-    el7062
-        .configuration
-        .channel_1
-        .amplifier
-        .enable_input_cycle_counter = true; // statusword bits 10/14, display only
+    // 0x8010:01 and 0x8010:02 both drive statusword bit 10, so they cannot both
+    // be on. The example wants the cycle counter, so that is the single choice;
+    // the TxPDO toggle stays off and bit 10 unambiguously carries the counter.
+    el7062.configuration.channel_1.amplifier.statusword_monitor =
+        StatuswordProcessDataMonitor::InputCycleCounter; // statusword bits 10/14
     el7062.configuration.channel_1.amplifier.velocity_limitation = 300; // 1/min (rev-equivalent)
-    el7062
-        .configuration
-        .channel_1
-        .amplifier
-        .following_error_window = incr_per_rev; // trip only if a full rev of lag
-    el7062
-        .configuration
-        .channel_1
-        .amplifier
-        .following_error_timeout = 100; // ms
+    // Trip only if a full revolution of lag persists for 100 ms.
+    el7062.configuration.channel_1.amplifier.following_error =
+        FollowingErrorMonitor::enabled(incr_per_rev, 100)
+            .expect("following error window must be a usable threshold");
     el7062
         .configuration
         .channel_1
@@ -378,7 +364,8 @@ fn main() {
             .configuration
             .channel_1
             .amplifier
-            .following_error_window,
+            .following_error
+            .window(),
         el7062
             .configuration
             .channel_1
@@ -456,22 +443,89 @@ fn main() {
                         .sdo_read::<u32>(addr, index, sub)
                         .map(|v| format!("0x{v:08x} ({v} dec)"))
                         .unwrap_or_else(|e| format!("read failed: {e}")),
+                    'x' => chan
+                        .sdo_read::<bool>(addr, index, sub)
+                        .map(|v| format!("{v}"))
+                        .unwrap_or_else(|e| format!("read failed: {e}")),
                     _ => format!("bad type tag '{t}'"),
                 }
             };
             // Confirms the SDO writes in write_config actually landed, instead of
             // assuming they did.
+            //
+            // This list mirrors write_config entry for entry, in the order
+            // write_config writes them. When an object was written but not
+            // listed here, nothing confirmed it reached the drive, and the
+            // parameters that mattered most were the ones missing: the two
+            // statusword-monitor flags, the following-error window and timeout,
+            // and the encoder direction that encoder commutation depends on.
+            // `expected` is what write_config sent, so a disagreement between
+            // the two columns is a failed write, not just a quiet log line.
+            let h1 = |v: u8| format!("0x{v:02x} ({v} dec)");
+            let h2 = |v: u16| format!("0x{v:04x} ({v} dec)");
+            let h4 = |v: u32| format!("0x{v:08x} ({v} dec)");
+            // One preformatted `expected` per object write_config performs, named
+            // for its object and sub-index so the table below cannot silently
+            // drift from coe.rs the way a shorter list did.
+            let fb = &el7062.configuration.channel_1.feedback;
+            let amp = &el7062.configuration.channel_1.amplifier;
+            let mot = &el7062.configuration.channel_1.motor;
+            let fb_11 = Some(h4(fb.device_type));
+            let fb_12 = Some(h1(scale.singleturn_bits()));
+            let fb_13 = Some(h1(scale.multiturn_bits()));
+            let fb_14 = Some(h2(fb.observer_bandwidth_hz));
+            let fb_15 = Some(h1(fb.observer_feed_forward));
+            let fb_801 = Some(fb.invert_feedback_direction.to_string());
+            let fb_812 = Some(h2(fb.encoder.encoder_type().as_raw()));
+            let fb_813 = fb.encoder.increments_per_revolution().map(h4);
+            let mon = amp.statusword_monitor;
+            let amp_01 = Some(mon.enable_txpdo_toggle().to_string());
+            let amp_02 = Some(mon.enable_input_cycle_counter().to_string());
+            let amp_31 = Some(h4(amp.velocity_limitation));
+            let amp_50 = Some(h4(amp.following_error.window()));
+            let amp_51 = Some(h2(amp.following_error.timeout()));
+            let amp_64 = Some(h1(amp.commutation.as_raw()));
+            let amp_73 = Some(h4(amp.acceleration_limitation));
+            let mot_12 = Some(h4(mot.rated_current));
+            let mot_33 = Some(h4(mot.motor_full_steps_per_revolution));
+            let mot_34 = Some(h4(mot.configured_motor_current));
             info!("Config readback (what the drive actually stored):");
-            for (t, idx, sub, name) in [
-                ('b', 0x8000u16, 0x12u8, "singleturn bits"),
-                ('w', 0x8008, 0x12, "encoder type (1=RS422, 0=disabled)"),
-                ('d', 0x8008, 0x13, "encoder incr/rev (after 4-fold)"),
-                ('b', 0x8010, 0x64, "commutation type (16=internal)"),
-                ('d', 0x8011, 0x12, "rated current [mA]"),
-                ('d', 0x8011, 0x33, "motor fullsteps/rev"),
-                ('d', 0x8011, 0x34, "configured motor current [mA]"),
+            for (t, idx, sub, name, expected) in [
+                // 0x8000 / 0x8008, El7062FeedbackConfiguration
+                ('d', 0x8000u16, 0x11u8, "device type", fb_11),
+                ('b', 0x8000, 0x12, "singleturn bits", fb_12),
+                ('b', 0x8000, 0x13, "multiturn bits", fb_13),
+                ('w', 0x8000, 0x14, "observer bandwidth [Hz]", fb_14),
+                ('b', 0x8000, 0x15, "observer feed forward", fb_15),
+                ('x', 0x8008, 0x01, "invert feedback direction", fb_801),
+                ('w', 0x8008, 0x12, "encoder type (1=RS422, 0=off)", fb_812),
+                ('d', 0x8008, 0x13, "encoder incr/rev (after 4-fold)", fb_813),
+                // 0x8010, El7062AmplifierConfiguration
+                ('x', 0x8010, 0x01, "enable TxPDO toggle", amp_01),
+                ('x', 0x8010, 0x02, "enable input cycle counter", amp_02),
+                ('d', 0x8010, 0x31, "velocity limitation [1/min]", amp_31),
+                ('d', 0x8010, 0x50, "following error window [incr]", amp_50),
+                ('w', 0x8010, 0x51, "following error timeout [ms]", amp_51),
+                ('b', 0x8010, 0x64, "commutation type (16=internal)", amp_64),
+                ('d', 0x8010, 0x73, "acceleration limitation", amp_73),
+                // 0x8011, El7062MotorConfiguration
+                ('d', 0x8011, 0x12, "rated current [mA]", mot_12),
+                ('d', 0x8011, 0x33, "motor fullsteps/rev", mot_33),
+                ('d', 0x8011, 0x34, "configured motor current [mA]", mot_34),
             ] {
-                info!("  {name} ({idx:#06X}:{sub:#04x}): {}", rd(t, idx, sub));
+                match expected {
+                    Some(expected) => info!(
+                        "  {name} ({idx:#06X}:{sub:#04x}): {}  [wrote {expected}]",
+                        rd(t, idx, sub)
+                    ),
+                    // 0x8008:13 has a non-zero minimum in the terminal, so
+                    // write_config skips it when the encoder is disabled.
+                    // Reading it back would show whatever the terminal happens
+                    // to hold, which confirms nothing.
+                    None => {
+                        info!("  {name} ({idx:#06X}:{sub:#04x}): not written (encoder disabled)")
+                    }
+                }
             }
             info!("SM sync params readback:");
             for (t, idx, sub, name) in [
@@ -630,25 +684,45 @@ fn main() {
     if let Some(addr) = el7062_address {
         let stb = eth_control.channel.sdo_read::<u8>(addr, 0x8000, 0x12).ok();
         let mtb = eth_control.channel.sdo_read::<u8>(addr, 0x8000, 0x13).ok();
+        // Hex and decimal together: these are bit counts, and a bare "12" is
+        // ambiguous between 0x12 and 0x0C. 0x13 as a sub-index is 19 decimal,
+        // which is the same confusion sdo_target() exists to correct in errors.
+        let opt_hex = |v: Option<u8>| match v {
+            Some(v) => format!("0x{v:02x} ({v} dec)"),
+            None => "unreadable".to_string(),
+        };
         info!(
-            "Position scale readback: 0x8000:12 singleturn bits = {:?}, 0x8000:13 multiturn bits \
-             = {:?} (asked for {} / {})",
-            stb, mtb, singleturn_bits, multiturn_bits
+            "Position scale readback: 0x8000:0x12 singleturn bits = {}, 0x8000:0x13 multiturn \
+             bits = {} (asked for {} / {})",
+            opt_hex(stb),
+            opt_hex(mtb),
+            opt_hex(Some(scale.singleturn_bits())),
+            opt_hex(Some(scale.multiturn_bits()))
         );
-        if let Some(stb) = stb {
-            let readback_incr = increments_per_revolution(stb);
-            if readback_incr != incr_per_rev {
-                error!(
-                    "Position scale mismatch: terminal reports {} singleturn bits \
-                     ({} incr/rev) but this example is commanding with {} incr/rev. \
-                     Commands would be off by a factor of {}.",
-                    stb,
-                    readback_incr,
-                    incr_per_rev,
-                    readback_incr as f64 / incr_per_rev as f64
-                );
+        // Rebuild the terminal's answer as a PositionScale rather than shifting
+        // the raw singleturn count, so a terminal reporting an out-of-range value
+        // is reported as such instead of silently scaling to 1 incr/rev.
+        match stb.zip(mtb).map(|(s, m)| PositionScale::new(s, m)) {
+            Some(Ok(readback)) => {
+                let readback_incr = readback.increments_per_revolution();
+                if readback_incr != incr_per_rev {
+                    error!(
+                        "Position scale mismatch: terminal reports {} singleturn bits \
+                         ({} incr/rev) but this example is commanding with {} incr/rev. \
+                         Commands would be off by a factor of {}.",
+                        readback.singleturn_bits(),
+                        readback_incr,
+                        incr_per_rev,
+                        readback_incr as f64 / incr_per_rev as f64
+                    );
+                    return;
+                }
+            }
+            Some(Err(e)) => {
+                error!("Position scale readback: terminal reports an unusable scale: {e}");
                 return;
             }
+            None => {}
         }
         for (idx, sub, name) in [
             (
@@ -687,13 +761,16 @@ fn main() {
         let pos_rev = eth_control.channel.sdo_read::<u32>(addr, 0x9010, 0x16).ok();
         match (phys_incr, pos_incr, pos_rev) {
             (Some(enc), Some(inc), Some(rev)) => {
-                let scale_incr = increments_per_revolution(singleturn_bits);
+                let scale_incr = incr_per_rev;
                 if inc == scale_incr {
                     info!(
                         "0x9010:15 reports {} incr/rev, which is the process-data position scale \
                          (2^{} = {}), as expected -- it is not the physical encoder resolution and \
                          says nothing about whether 0x8008:13 = {} is correct.",
-                        inc, singleturn_bits, scale_incr, enc
+                        inc,
+                        scale.singleturn_bits(),
+                        scale_incr,
+                        enc
                     );
                 } else if inc == enc {
                     // Unreachable on this terminal while 0x8000:12 is 20: 0x9010:15
@@ -754,21 +831,35 @@ fn main() {
             return;
         };
         dump_diag_messages(&eth_control.channel, addr);
+        let next_step = if commutation_type == Commutation::StepperWithInternalCounter {
+            "Commutation type 16 counts steps internally and never reads the encoder, so there is no \
+             encoder question to answer here. Go straight to a control mode: \
+             el7062_maximal <if> <cycle> 0 clock"
+        } else {
+            "The encoder is only evaluated once the feedback path closes in Op, so the only \
+             meaningful test is a control mode: el7062_maximal <if> <cycle> 0 clock. Check that \
+             operation_enabled comes up and that 0x10F3 gained no new 0x83xx entries."
+        };
         info!(
             "PROBE verdict -- how to read the history above:\n  \
-             REJECTION CHECK: 0x8301 encoder increments not configured / 0x8304 encoder comms \
-             error / 0x840F commutation type needs an encoder / 0x8442 encoder resolution \
-             insufficient / 0x8443 type+mode invalid. Any of these means the drive REJECTED the \
-             configuration.\n  \
-             Silence is NOT proof of a working encoder: 0x8442 is worded \"insufficient\" and may \
-             only fire when the resolution is too LOW, so a 4x scaling error passes unnoticed, and \
-             the absence of 0x1303/0x1304 is expected in PreOp rather than bad news -- the drive \
-             has not closed the feedback path, so it never evaluated the encoder.\n  \
-             BEST DISCRIMINATOR: compare 0x6060:17 ready_to_enable and 0x6060:18 ready in the DMC \
-             readback above against the same two lines from `probe 16`. ready=false here AND ready=true \
-             under type 16 means the encoder/commutation config is blocking enable and must be fixed \
-             before the axis can ever be switched on. ready=false under BOTH is a PreOp artifact. \
-             To run the control: el7062_maximal <if> <cycle> 0 probe 16"
+             The labels above are TextIDs from the ESI, which is what a 0x10F3 record reports in \
+             bytes 6..7. Do not confuse them with the 32-bit Diag Codes tabulated in the \
+             diagnostics reference; the two namespaces overlap numerically but are not the same \
+             field.\n  \
+             REJECTION CHECK, for an encoder-based commutation type: 0x840F Commutation Type \
+             requires an encoder, but feedback is disabled / 0x8442 Encoder-Resolution \
+             insufficient / 0x8443 Combination of Mode of Operation and Commutation Type is \
+             invalid / 0x840B Commutation error / 0x840C Motor not connected / 0x8422 Drive \
+             configuration missing. Any of these means the drive REJECTED the configuration.\n  \
+             Silence is NOT proof of a working encoder. These fire while the configuration is \
+             written, so they catch an absent or out-of-range value rather than a plausible-looking \
+             wrong one: a 0x8008:13 scaled 4x low is still a legal number and will be accepted.\n  \
+             Do not use 0x6060:17 ready_to_enable or 0x6060:18 ready as a discriminator. They are \
+             read back here in PreOp, where the axis has never been enabled and no current can \
+             flow, and they read false under type 16 and type 17 alike. A false in this probe is \
+             not evidence of an encoder fault.\n  \
+             {}",
+            next_step
         );
         log::logger().flush();
         return;
@@ -876,8 +967,11 @@ fn main() {
                 }
             }
         }
-        let position = el7062.get_position(EL7062Port::Ch1).unwrap_or(0);
-        let statusword = el7062.get_statusword(EL7062Port::Ch1).unwrap_or_default();
+        let position = el7062.axis(EL7062Port::Ch1).position().unwrap_or(0);
+        let statusword = el7062
+            .axis(EL7062Port::Ch1)
+            .statusword()
+            .unwrap_or_default();
         info!(
             "Initial position: {} increments ({:.4} rev), statusword=0x{:04X} (ready_to_switch_on={}, switched_on={}, operation_enabled={}, fault={})",
             position,
@@ -937,7 +1031,7 @@ fn main() {
         );
     }
 
-    let mut ramp = SetpointRamp::new(initial_position, singleturn_bits);
+    let mut ramp = SetpointRamp::new(initial_position, scale);
     let mut go_to: f64 = seed_position;
     let mut last_control_cycle = eth_handle.get_current_cycle();
     let mut control_steps: u32 = 0;
@@ -996,19 +1090,24 @@ fn main() {
         }
 
         let statusword = el7062
-            .get_statusword(EL7062Port::Ch1)
+            .axis(EL7062Port::Ch1)
+            .statusword()
             .expect("Failed to read statusword");
         if log_cycle_state {
+            // Bit 10 is only meaningful together with the monitor the channel was
+            // configured with, so it is decoded here rather than read raw.
+            let monitor = el7062.axis(EL7062Port::Ch1).statusword_monitor();
             debug!(
-                "Statusword: 0x{:04X} (ready_to_switch_on={}, switched_on={}, operation_enabled={}, drive_follows={}, fault={}, cycle_counter={}{})",
+                "Statusword: 0x{:04X} (ready_to_switch_on={}, switched_on={}, operation_enabled={}, drive_follows={}, fault={}, monitor={:?}, bit10={}, cycle_counter={:?})",
                 statusword.as_raw(),
                 statusword.ready_to_switch_on,
                 statusword.switched_on,
                 statusword.operation_enabled,
                 statusword.drive_follows_command_value,
                 statusword.fault,
-                statusword.input_cycle_counter_high as u8,
-                statusword.txpdo_toggle as u8,
+                monitor,
+                statusword.bit10(monitor) as u8,
+                statusword.input_cycle_counter(monitor),
             );
         }
 
@@ -1026,13 +1125,11 @@ fn main() {
                 );
                 pending_diag_dump = true;
                 el7062
-                    .set_controlword(
-                        EL7062Port::Ch1,
-                        DrvControlWord {
-                            fault_reset: true,
-                            ..Default::default()
-                        },
-                    )
+                    .axis(EL7062Port::Ch1)
+                    .set_controlword(DrvControlWord {
+                        fault_reset: true,
+                        ..Default::default()
+                    })
                     .expect("Failed to write fault reset");
                 fault_cooldown_cycles = FAULT_COOLDOWN_CYCLES;
                 if fault_episodes >= FAULT_ABORT_AFTER_EPISODES {
@@ -1058,14 +1155,12 @@ fn main() {
                 }
                 if fault_cooldown_cycles == 0 {
                     el7062
-                        .set_controlword(
-                            EL7062Port::Ch1,
-                            DrvControlWord {
-                                enable_voltage: true,
-                                quick_stop: true,
-                                ..Default::default()
-                            },
-                        )
+                        .axis(EL7062Port::Ch1)
+                        .set_controlword(DrvControlWord {
+                            enable_voltage: true,
+                            quick_stop: true,
+                            ..Default::default()
+                        })
                         .expect("Failed to write shutdown word");
                 }
             } else if fault_cooldown_cycles > 0 {
@@ -1073,18 +1168,17 @@ fn main() {
                 // During the cooldown the drive is held in the CiA402 "Shutdown"
                 // word (0x0006); it must not leave Switch-on-disabled again yet.
                 el7062
-                    .set_controlword(
-                        EL7062Port::Ch1,
-                        DrvControlWord {
-                            enable_voltage: true,
-                            quick_stop: true,
-                            ..Default::default()
-                        },
-                    )
+                    .axis(EL7062Port::Ch1)
+                    .set_controlword(DrvControlWord {
+                        enable_voltage: true,
+                        quick_stop: true,
+                        ..Default::default()
+                    })
                     .expect("Failed to write shutdown word");
             } else {
                 el7062
-                    .apply_controlword(EL7062Port::Ch1, &statusword)
+                    .axis(EL7062Port::Ch1)
+                    .apply_controlword(&statusword)
                     .expect("Failed to write controlword");
             }
         }
@@ -1145,7 +1239,8 @@ fn main() {
                     0
                 };
                 el7062
-                    .set_target_velocity(EL7062Port::Ch1, target_v)
+                    .axis(EL7062Port::Ch1)
+                    .set_target_velocity(target_v)
                     .expect("Failed to write target velocity");
             } else if mode_clock {
                 // One 6 deg step per second, forever, like a seconds hand. Negated
@@ -1158,7 +1253,8 @@ fn main() {
                     go_to -= incr_per_rev as f64 / CLOCK_STEPS_PER_REV;
                 }
                 el7062
-                    .set_target_position(EL7062Port::Ch1, go_to as i32)
+                    .axis(EL7062Port::Ch1)
+                    .set_target_position(go_to as i32)
                     .expect("Failed to write target position");
             } else {
                 ramp.advance(go_to, dt);
@@ -1167,7 +1263,8 @@ fn main() {
                 // no-op before enable and the drive never sees a stale value
                 // when it enables.
                 el7062
-                    .set_target_position(EL7062Port::Ch1, ramp.position() as i32)
+                    .axis(EL7062Port::Ch1)
+                    .set_target_position(ramp.position() as i32)
                     .expect("Failed to write target position");
 
                 if (go_to - ramp.position()).abs() < 0.5 {
@@ -1207,7 +1304,8 @@ fn main() {
             // missing master cycles, which is what made the profile run slow.
             let control_steps_this_second = std::mem::take(&mut control_steps);
             let position = el7062
-                .get_position(EL7062Port::Ch1)
+                .axis(EL7062Port::Ch1)
+                .position()
                 .expect("Failed to read position");
 
             // Measured velocity from the position delta over the real master
@@ -1240,14 +1338,16 @@ fn main() {
                 );
             } else {
                 let following_error = el7062
-                    .get_following_error(EL7062Port::Ch1)
+                    .axis(EL7062Port::Ch1)
+                    .following_error()
                     .expect("Failed to read following error");
 
                 let fe_window = el7062
                     .configuration
                     .channel_1
                     .amplifier
-                    .following_error_window;
+                    .following_error
+                    .window();
                 if (following_error as i64).abs() > fe_window as i64 {
                     warn!(
                         "Following error exceeded threshold! Error={} incr ({:.3} rev), \
@@ -1293,11 +1393,13 @@ fn main() {
     info!("Graceful stop requested; commanding Ch.1 off and exiting...");
     if mode_csv {
         el7062
-            .set_target_velocity(EL7062Port::Ch1, 0)
+            .axis(EL7062Port::Ch1)
+            .set_target_velocity(0)
             .expect("Failed to write zero target velocity");
     }
     el7062
-        .set_controlword(EL7062Port::Ch1, DrvControlWord::default())
+        .axis(EL7062Port::Ch1)
+        .set_controlword(DrvControlWord::default())
         .expect("Failed to write shutdown controlword");
     if let Some(outputs) = eth_handle.write_outputs() {
         for subdevice in &subdevices {

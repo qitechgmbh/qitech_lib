@@ -29,7 +29,8 @@ use ethercat_hal::{
     devices::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
         beckhoff_modules::el7062::{
-            EL7062, EL7062_PRODUCT_ID, EL7062Port, motion::increments_per_revolution,
+            EL7062, EL7062_PRODUCT_ID, EL7062Port,
+            coe::{EncoderConfig, EncoderType, FollowingErrorMonitor},
         },
     },
     init_ethercat,
@@ -55,14 +56,17 @@ const SPIN_HEADROOM_US: u64 = 100;
 /// before giving up, rather than spinning at 100% forever.
 const STALL_TIMEOUT: Duration = Duration::from_millis(500);
 
-/// The motor this example assumes: 200 full steps/rev, 1.8 A/phase. Both the
-/// rated and the configured current are set to this, overriding the library
-/// default of 3000 mA, which is 1.67x the rating and makes the motor run hot.
+/// The motor this example assumes: 200 full steps/rev, 1.8 A/phase. The
+/// rated current is set to this, overriding the library default of 3000 mA.
 const MOTOR_RATED_MA: u32 = 1800;
 
-/// 0x8008:12 encoder type. 1 = RS422 differential, which the WEDL5541-A14 is.
+/// Motor runs rather hot when running at the rated current of 1800 mA.
+/// so we're running it at 1A instead
+const MOTOR_CONFIGURED_MA: u32 = 1000;
+
+/// 0x8008:12 encoder type. RS422 differential, which the WEDL5541-A14 is.
 /// The library default of 0 disables the encoder entirely.
-const ENCODER_TYPE: u16 = 1;
+const ENCODER_TYPE: EncoderType = EncoderType::Rs422Differential;
 
 /// 0x8008:13 is the resolution AFTER 4-fold evaluation, per the Beckhoff
 /// parameter documentation, so 500 CPR from the encoder data sheet is 2000
@@ -90,17 +94,20 @@ fn main() {
     let mut el7062 = EL7062::new();
     let channel1 = &mut el7062.configuration.channel_1;
     channel1.motor.rated_current = MOTOR_RATED_MA;
-    channel1.motor.configured_motor_current = MOTOR_RATED_MA;
-    channel1.feedback.encoder_type = ENCODER_TYPE;
-    channel1.feedback.encoder_increments_per_revolution = ENCODER_INCR_PER_REV;
+    channel1.motor.configured_motor_current = MOTOR_CONFIGURED_MA;
+    channel1.feedback.encoder =
+        EncoderConfig::wired(ENCODER_TYPE, ENCODER_INCR_PER_REV).expect("non-zero resolution");
 
     let amp = &mut channel1.amplifier;
     amp.velocity_limitation = VELOCITY_LIMIT_REV_PER_MIN;
     amp.acceleration_limitation = ACCEL_LIMIT_0_1_RAD_PER_S2;
     // One full revolution of following error before the drive gives up, in the
     // same increments everything downstream uses.
-    amp.following_error_window = increments_per_revolution(channel1.feedback.singleturn_bits);
-    amp.following_error_timeout = 100;
+    amp.following_error = FollowingErrorMonitor::enabled(
+        channel1.feedback.position_scale.increments_per_revolution(),
+        100,
+    )
+    .expect("usable following error window");
 
     let ch1 = &el7062.configuration.channel_1;
     println!(
@@ -117,13 +124,16 @@ fn main() {
         ch1.motor.rated_current,
         ch1.motor.configured_motor_current,
         ch1.motor.motor_full_steps_per_revolution,
-        ch1.feedback.encoder_type,
-        ch1.feedback.encoder_increments_per_revolution,
-        ch1.amplifier.commutation_type,
+        ch1.feedback.encoder.encoder_type().as_raw(),
+        ch1.feedback
+            .encoder
+            .increments_per_revolution()
+            .unwrap_or(0),
+        ch1.amplifier.commutation.as_raw(),
         ch1.amplifier.velocity_limitation,
         ch1.amplifier.acceleration_limitation as f64 / 10.0,
-        ch1.amplifier.following_error_window,
-        ch1.amplifier.commutation_type,
+        ch1.amplifier.following_error.window(),
+        ch1.amplifier.commutation.as_raw(),
     );
 
     let dc_config = DcConfiguration {
@@ -189,8 +199,12 @@ fn main() {
 
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
 
-    let incr_per_rev =
-        increments_per_revolution(el7062.configuration.channel_1.feedback.singleturn_bits) as f64;
+    let incr_per_rev = el7062
+        .configuration
+        .channel_1
+        .feedback
+        .position_scale
+        .increments_per_revolution() as f64;
     // Negated so the hand runs clockwise as seen from the drive face. Inverting
     // 0x8008:01 (the feedback direction) instead would also flip the sign of
     // velocity in CSV mode and of the position jog. Flip this back if the motor
@@ -244,9 +258,10 @@ fn main() {
         }
 
         // Walks the CiA402 state machine up to operation enabled, and resets a
-        // latched fault on the way.
-        let statusword = el7062.get_statusword(CH).unwrap();
-        el7062.apply_controlword(CH, &statusword).unwrap();
+        // latched fault on the way. The axis is borrowed once so the getter and
+        // the setter cannot end up on different channels.
+        let statusword = el7062.axis(CH).statusword().unwrap();
+        el7062.axis(CH).apply_controlword(&statusword).unwrap();
 
         if statusword.fault && !faulted {
             println!(
@@ -264,7 +279,7 @@ fn main() {
         // would be a jump of however many revolutions the axis happens to be
         // away from zero.
         if !seeded {
-            target = el7062.get_position(CH).unwrap();
+            target = el7062.axis(CH).position().unwrap();
             seeded = true;
         }
 
@@ -282,7 +297,7 @@ fn main() {
             if steps > 0 {
                 // The motor has had a full step period to catch up, so this is
                 // the closed-loop error of the previous step.
-                let actual = el7062.get_position(CH).unwrap();
+                let actual = el7062.axis(CH).position().unwrap();
                 let err = actual - target;
                 println!(
                     "step {steps:>3}: target {:.4} rev, actual {:.4} rev, error {err} incr \
@@ -296,7 +311,7 @@ fn main() {
             steps += 1;
             target += step_incr;
         }
-        el7062.set_target_position(CH, target).unwrap();
+        el7062.axis(CH).set_target_position(target).unwrap();
 
         if let Some(outputs) = eth_handle.write_outputs() {
             for subdevice in &subdevices {

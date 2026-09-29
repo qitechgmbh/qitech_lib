@@ -2,22 +2,39 @@ use crate::EtherCATThreadChannel;
 use log::{debug, error, info};
 use std::time::Duration;
 
-/// Escape alias listing for the EL7062's DiagMessages facility so the ESI
+/// TextID alias listing for the EL7062's DiagMessages facility so the ESI
 /// TextID table does not get duplicated into every consumer.
+///
+/// Every entry is the English `MessageText` (`LcId="1033"`) for that TextId in
+/// the device's own `EL7062.xml` ESI, and the table covers all 49 TextIds the
+/// ESI defines. Keep it in sync when the ESI is updated.
+///
+/// Note that a TextID (16-bit, bytes 6..7 of a `0x10F3` record) is a different
+/// namespace from the 32-bit Diag Code (bytes 0..3) tabulated in
+/// `resources/EL7062 EtherCAT Diagnostics + CoE Params.md`. Several values
+/// appear in both namespaces with the same numeric value, but the drive reports
+/// Diag Codes that this table cannot resolve, and vice versa.
 pub fn diag_name(text_id: u16) -> Option<&'static str> {
     match text_id {
         0x4101 => Some("Amplifier-Overtemperature"),
         0x4102 => Some("PDO-configuration is incompatible to the selected mode of operation"),
         0x4103 => Some("Undervoltage Us"),
         0x4104 => Some("Overvoltage Us"),
+        0x410B => Some("Error detected, but disabled by suppression mask"),
         0x4400 => Some("Calibration data corrupted or missing"),
         0x4411 => Some("DC-Link undervoltage"),
         0x4412 => Some("DC-Link overvoltage"),
+        0x441E => Some("Invalid configuration of touchprobe inputs"),
+        0x4424 => Some("Modes of operation invalid"),
         0x8103 => Some("Undervoltage Us"),
         0x8104 => Some("Amplifier-Overtemperature"),
         0x8105 => Some("PD-Watchdog"),
         0x8144 => Some("Hardware fault"),
         0x817F => Some("Error"),
+        0x81B0 => Some("Content of PDO 0x%X is invalid: Item 0x%X:%X cannot be mapped"),
+        0x81B1 => Some(
+            "Content of PDO 0x%X is invalid: Item 0x%X:%X has an unsupported length (%d bit)",
+        ),
         0x8404 => Some("Overcurrent"),
         0x8406 => Some("Undervoltage DC-Link"),
         0x8407 => Some("Overvoltage DC-Link"),
@@ -28,15 +45,28 @@ pub fn diag_name(text_id: u16) -> Option<&'static str> {
         0x8415 => Some("Invalid modulo range"),
         0x8417 => Some("Maximum rotating field velocity exceeded"),
         0x841F => Some("Torque limitation too low"),
+        0x8420 => Some("Teach-In Process (%d) failed"),
+        0x8421 => Some("Teach-In Process Timeout (DC-Link, ...)"),
         0x8422 => Some("Drive configuration missing"),
         0x8423 => Some("Invalid process data format (singleturn+multiturn bits != 32)"),
         0x8441 => Some("Maximum following error distance exceeded"),
         0x8442 => Some("Encoder-Resolution insufficient"),
         0x8443 => Some("Combination of Mode of Operation and Commutation Type is invalid"),
+        0x8449 => Some("Target position not in modulo range"),
+        0x8450 => Some("Invalid start type 0x%x"),
+        0x8451 => Some("Invalid limit switch level"),
         0x8452 => Some("Drive error during positioning"),
+        0x8453 => Some("Latch unit will be used by multiple modules"),
+        0x8454 => Some("Drive not in control"),
+        0x8455 => Some("Invalid value for \"Target acceleration\""),
+        0x8456 => Some("Invalid value for \"Target deceleration\""),
         0x8457 => Some("Invalid value for Target velocity"),
         0x8458 => Some("Invalid value for Target position"),
         0x8459 => Some("Emergency stop active"),
+        0x845A => Some("Target position exceeds Modulofactor"),
+        0x845B => Some("Drive must be disabled"),
+        0x845D => Some("Modulo factor invalid"),
+        0x845E => Some("Invalid target position window"),
         _ => None,
     }
 }
