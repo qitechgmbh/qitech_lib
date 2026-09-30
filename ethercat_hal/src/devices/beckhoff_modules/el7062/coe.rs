@@ -264,6 +264,19 @@ pub struct El7062AmplifierConfiguration {
     /// How the terminal determines the motor's commutation angle.
     pub commutation: Commutation,
 
+    /// # 8010:72 / 8110:72
+    /// Current applied at standstill, in thousandths of the motor's nominal
+    /// current, so `1000` is the full nominal current and `0` is no holding
+    /// torque at all (default: `32767`, far above anything reachable, i.e. no
+    /// standstill reduction).
+    ///
+    /// The reduction only applies while the target velocity is inside the
+    /// standstill window `0x8010:33`, and the terminal documents this parameter
+    /// as effective only for [`Commutation::StepperWithInternalCounter`] and
+    /// [`Commutation::StepperWithEncoder`]. Under
+    /// [`Commutation::StepperFocWithEncoder`] it has no effect.
+    pub stand_still_torque_limitation: u16,
+
     /// # 8010:73 / 8110:73
     /// Acceleration limitation in 0.1 rad/s² (default: `62832`).
     pub acceleration_limitation: u32,
@@ -277,6 +290,7 @@ impl Default for El7062AmplifierConfiguration {
             velocity_limitation: 0x000186A0, // 100000 1/min
             following_error: FollowingErrorMonitor::Disabled,
             commutation: Commutation::StepperWithInternalCounter,
+            stand_still_torque_limitation: 0x7FFF, // 32767 (thousandths of nominal)
             acceleration_limitation: 0x0000F570, // 62832 (0.1 rad/s²)
         }
     }
@@ -442,6 +456,12 @@ impl El7062AmplifierConfiguration {
             self.following_error.timeout(),
         )?;
         ecat_channel.sdo_write(device_address, base_index, 0x64, self.commutation.as_raw())?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x72,
+            self.stand_still_torque_limitation,
+        )?;
         ecat_channel.sdo_write(
             device_address,
             base_index,
