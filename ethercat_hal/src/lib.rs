@@ -496,7 +496,6 @@ pub enum SdoType {
     U32,
     I16,
     I32,
-    Raw,
 }
 
 #[derive(Debug)]

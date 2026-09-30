@@ -7,8 +7,6 @@ use crate::{
     SdoType, al_diagnostics::SubDeviceAlStatus, get_async_runtime,
     machine_ident_read::MachineDeviceInfo,
 };
-#[cfg(not(feature = "mock"))]
-use anyhow::Context;
 use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
 };
@@ -20,18 +18,6 @@ use std::time::Duration;
 /// timing out here.
 #[cfg(not(feature = "mock"))]
 const DIAGNOSTIC_TIMEOUT: Duration = Duration::from_millis(1500);
-
-/// Render an SDO target the way CoE documentation writes it: `0x8108:0x13`.
-///
-/// `ethercrab`'s `MailboxError::Aborted` formats the sub-index with `{}`, which is
-/// decimal, so an abort on `0x8108:13` is reported as `0x8108:19`. That reads
-/// like a sub-index the object does not have, and sends you looking for the wrong
-/// parameter. The index and sub-index are known here, so they are attached in
-/// hex and the upstream decimal rendering is left in the cause chain.
-#[cfg(not(feature = "mock"))]
-fn sdo_target(index: u16, sub_index: u8) -> String {
-    format!("0x{index:04X}:0x{sub_index:02X}")
-}
 
 pub trait EthercatResponseTypedResult: Sized {
     fn from_bool(_v: bool) -> anyhow::Result<Self> {
@@ -336,53 +322,7 @@ impl EtherCATThreadChannel {
             ChannelResponse::SdoResponseI32(r) => T::from_i32(r?),
             _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
         };
-        res.with_context(|| {
-            format!(
-                "sdo_read {} on subdevice 0x{device_address:04X}",
-                sdo_target(index, sub_index)
-            )
-        })
-    }
-
-    /// Read an SDO object as a raw byte blob, for objects whose size is not one
-    /// of the fixed wire types (e.g. long diagnostic records from the EL7062).
-    pub fn sdo_read_raw(
-        &self,
-        device_address: u16,
-        index: u16,
-        sub_index: u8,
-    ) -> Result<Vec<u8>, anyhow::Error> {
-        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
-        let sdo_request: SdoReadRequest = SdoReadRequest {
-            device_address,
-            index,
-            sub_index: sub_index as u16,
-            type_flag: SdoType::Raw,
-        };
-        let req: ChannelRequest = ChannelRequest {
-            channel_request: crate::ChannelRequests::SdoReadRequest(sdo_request),
-            response_channel: EtherCATThreadResponseChannel(tx),
-        };
-
-        match self.0.send(req) {
-            Ok(_) => (),
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
-        let res = rx.recv_timeout(Duration::from_millis(500));
-        let response: ChannelResponse = match res {
-            Ok(res) => res,
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
-
-        match response {
-            ChannelResponse::SdoResponseRaw(r) => r.with_context(|| {
-                format!(
-                    "sdo_read_raw {} on subdevice 0x{device_address:04X}",
-                    sdo_target(index, sub_index)
-                )
-            }),
-            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
-        }
+        return res;
     }
 
     /// Read a raw ESC register from a subdevice, e.g.
@@ -522,12 +462,7 @@ impl EtherCATThreadChannel {
             Err(e) => return Err(anyhow::anyhow!(e)),
         };
         match response {
-            ChannelResponse::SdoWriteResponse(result) => result.with_context(|| {
-                format!(
-                    "sdo_write {} on subdevice 0x{device_address:04X}",
-                    sdo_target(index, sub_index)
-                )
-            }),
+            ChannelResponse::SdoWriteResponse(result) => result,
             _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
         }
     }
@@ -724,11 +659,6 @@ pub fn sdo_write(
                     let b: bool = request.data[0] == 1;
                     runtime.block_on(device.sdo_write(request.index, request.sub_index as u8, b))
                 }
-                SdoType::Raw => {
-                    return Err(anyhow::anyhow!(
-                        "Raw SDO writes are not supported"
-                    ));
-                }
             };
             return Ok(res?);
         }
@@ -750,27 +680,6 @@ where
             let res: Result<T, ethercrab::error::Error> =
                 runtime.block_on(device.sdo_read::<T>(request.index, request.sub_index as u8));
             return Ok(res?);
-        }
-    }
-    Err(anyhow::anyhow!("Unknown Subdevice"))
-}
-
-/// Read an SDO object as a raw byte blob, for objects whose size is not one of
-/// the fixed wire types (e.g. long diagnostic records).
-pub fn sdo_read_raw(
-    maindevice: &MainDevice,
-    group: &SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
-    request: SdoReadRequest,
-) -> Result<Vec<u8>, anyhow::Error> {
-    for device in group.iter(maindevice) {
-        if device.configured_address() == request.device_address {
-            let runtime = get_async_runtime();
-            let res: Result<heapless::Vec<u8, 128>, ethercrab::error::Error> =
-                runtime.block_on(device.sdo_read::<heapless::Vec<u8, 128>>(
-                    request.index,
-                    request.sub_index as u8,
-                ));
-            return Ok(res?.into_iter().collect());
         }
     }
     Err(anyhow::anyhow!("Unknown Subdevice"))
