@@ -61,8 +61,7 @@ const SPIN_HEADROOM_US: u64 = 100;
 /// before giving up, rather than spinning at 100% forever.
 const STALL_TIMEOUT: Duration = Duration::from_millis(500);
 
-/// The motor this example assumes: 200 full steps/rev, 1.8 A/phase. The
-/// rated current is set to this, overriding the library default of 3000 mA.
+/// The motor this example assumes: 200 full steps/rev, 1.8 A/phase.
 const MOTOR_RATED_MA: u32 = 1800;
 
 /// Motor runs rather hot when running at the rated current of 1800 mA.
@@ -77,13 +76,10 @@ const ENCODER_TYPE: EncoderType = EncoderType::Rs422Differential;
 /// here. The library default of 4096 belongs to a different encoder.
 const ENCODER_INCR_PER_REV: u32 = 2_000;
 
-/// 0x8010:31 velocity limitation, in rev/min. The library default of 100000 is
-/// effectively no limit at all.
+/// 0x8010:31 velocity limitation, in rev/min.
 const VELOCITY_LIMIT_REV_PER_MIN: u32 = 300;
 
-/// 0x8010:73 acceleration limitation, in 0.1 rad/s2, so 2000 = 200 rad/s2. The
-/// library default of 62832 (6283.2 rad/s2) is 31x higher and makes each step of
-/// the clock a full-power lurch.
+/// 0x8010:73 acceleration limitation, in 0.1 rad/s2, so 2000 = 200 rad/s2.
 const ACCEL_LIMIT_0_1_RAD_PER_S2: u32 = 2000;
 
 /// 0x8010:72 standstill current, in thousandths of nominal current, so 1000 is
@@ -128,9 +124,7 @@ fn main() {
          acceleration_limit={} rad/s^2, standstill_current={}/1000 of nominal, \
          following_error_window={} increments. At commutation \
          type {} the encoder closes the position loop, so the error printed each step is where \
-         the shaft really is. The library defaults (6283.2 rad/s^2, 100000 \
-         rev/min) are deliberately overridden: they make each clock step a full-power lurch \
-         that is loud and runs the motor hot. Check every value against your own hardware.",
+         the shaft really is. Check every value against your own hardware.",
         ch1.motor.motor_full_steps_per_revolution,
         ch1.motor.rated_current,
         ch1.motor.configured_motor_current,

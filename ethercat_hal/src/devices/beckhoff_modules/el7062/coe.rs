@@ -252,7 +252,7 @@ pub struct El7062AmplifierConfiguration {
     pub statusword_monitor: StatuswordProcessDataMonitor,
 
     /// # 8010:31 / 8110:31
-    /// Velocity limitation in 1/min (default: `100000`).
+    /// Velocity limitation in 1/min (default: `3000`, datasheet `100000`).
     pub velocity_limitation: u32,
 
     /// # 8010:50 + 8010:51 / 8110:50 + 8110:51
@@ -267,8 +267,8 @@ pub struct El7062AmplifierConfiguration {
     /// # 8010:72 / 8110:72
     /// Current applied at standstill, in thousandths of the motor's nominal
     /// current, so `1000` is the full nominal current and `0` is no holding
-    /// torque at all (default: `32767`, far above anything reachable, i.e. no
-    /// standstill reduction).
+    /// torque at all (default: `500`; the datasheet's `32767` is above anything
+    /// reachable and so applies no reduction).
     ///
     /// The reduction only applies while the target velocity is inside the
     /// standstill window `0x8010:33`, and the terminal documents this parameter
@@ -278,20 +278,21 @@ pub struct El7062AmplifierConfiguration {
     pub stand_still_torque_limitation: u16,
 
     /// # 8010:73 / 8110:73
-    /// Acceleration limitation in 0.1 rad/s² (default: `62832`).
+    /// Acceleration limitation in 0.1 rad/s² (default: `6283`, datasheet
+    /// `62832`).
     pub acceleration_limitation: u32,
 }
 
 impl Default for El7062AmplifierConfiguration {
-    /// Defaults according to the datasheet
+    /// Datasheet defaults, except the three motion limits, which are lower.
     fn default() -> Self {
         Self {
             statusword_monitor: StatuswordProcessDataMonitor::None,
-            velocity_limitation: 0x000186A0, // 100000 1/min
+            velocity_limitation: 3000, // 1/min
             following_error: FollowingErrorMonitor::Disabled,
             commutation: Commutation::StepperWithInternalCounter,
-            stand_still_torque_limitation: 0x7FFF, // 32767 (thousandths of nominal)
-            acceleration_limitation: 0x0000F570, // 62832 (0.1 rad/s²)
+            stand_still_torque_limitation: 500, // thousandths of nominal
+            acceleration_limitation: 6283,      // 0.1 rad/s²
         }
     }
 }
@@ -478,7 +479,7 @@ impl El7062AmplifierConfiguration {
 #[derive(Debug, Clone)]
 pub struct El7062MotorConfiguration {
     /// # 8011:12 / 8111:12
-    /// Rated current of the motor in mA (default: `3000`).
+    /// Rated current of the motor in mA (default: `500`, datasheet `3000`).
     pub rated_current: u32,
 
     /// # 8011:33 / 8111:33
@@ -486,17 +487,18 @@ pub struct El7062MotorConfiguration {
     pub motor_full_steps_per_revolution: u32,
 
     /// # 8011:34 / 8111:34
-    /// Configured motor current in mA (default: `3000`).
+    /// Configured motor current in mA (default: `500`, datasheet `3000`).
     pub configured_motor_current: u32,
 }
 
 impl Default for El7062MotorConfiguration {
-    /// Defaults according to the datasheet
+    /// Datasheet defaults, except the currents, which are lower. The drive
+    /// limits to the smaller of the two, so set both to the motor's value.
     fn default() -> Self {
         Self {
-            rated_current: 0x00000BB8,                   // 3000 mA
+            rated_current: 500,                          // mA
             motor_full_steps_per_revolution: 0x000000C8, // 200
-            configured_motor_current: 0x00000BB8,        // 3000 mA
+            configured_motor_current: 500,               // mA
         }
     }
 }
@@ -622,7 +624,8 @@ pub struct EL7062Configuration {
 }
 
 impl Default for EL7062Configuration {
-    /// Defaults according to the datasheet
+    /// Datasheet defaults, except that each channel's current and motion limits
+    /// are lower.
     fn default() -> Self {
         Self {
             channel_1: El7062ChannelConfiguration::default(),
