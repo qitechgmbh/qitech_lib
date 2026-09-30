@@ -10,6 +10,10 @@
 
     0x10F3 is read once during startup, in PreOp, never from the control loop: a
     blocking mailbox SDO there starves process data and trips the PD watchdog.
+
+    There is no signal handling. The loop runs until the process is killed, and
+    de-energising is left to the drive's PD watchdog, which fires as soon as
+    cyclic exchange stops. Expect 0x8105 in the next run's 0x10F3 history.
 */
 
 use bitvec::slice::BitSlice;
@@ -30,14 +34,7 @@ use ethercat_hal::{
     init_ethercat, set_current_thread_rt_priority,
 };
 use log::{debug, error, info, warn};
-use std::{
-    env,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
-};
+use std::{env, time::Duration};
 
 const USAGE: &str = concat!(
     "el7062_maximal interface_name cycle_time_us target [csp|csv|probe] [commutation_type]\n",
@@ -65,15 +62,6 @@ fn main() {
         .init();
 
     debug!("Logger initialized successfully");
-
-    let stop_requested = Arc::new(AtomicBool::new(false));
-    {
-        let flag = Arc::clone(&stop_requested);
-        ctrlc::set_handler(move || {
-            flag.store(true, Ordering::Relaxed);
-        })
-        .expect("Failed to install Ctrl-C handler");
-    }
 
     let fail = format!("{}:\n{}", "Invalid arguments", USAGE);
     let interface = env::args().nth(1).expect(&fail);
@@ -241,6 +229,13 @@ fn main() {
         2000,
     )
     .expect("encoder resolution must be non-zero");
+    // Encoder counts the opposite way to the motor on this setup. Without this,
+    // commutation 17 closes the loop with positive feedback and runs away.
+    el7062
+        .configuration
+        .channel_1
+        .feedback
+        .invert_feedback_direction = true;
     el7062.configuration.channel_1.amplifier.commutation = commutation_type;
     el7062.configuration.channel_1.motor.rated_current = 1800; // 1.8 A per phase
     el7062
@@ -923,7 +918,6 @@ fn main() {
     let mut prev_fault = false;
     let mut fault_cooldown_cycles: u32 = 0;
     let mut fault_episodes: u32 = 0;
-    let mut pending_diag_dump = false;
     const FAULT_COOLDOWN_CYCLES: u32 = 600;
     const FAULT_ABORT_AFTER_EPISODES: u32 = 3;
     // These thresholds are master cycles, i.e. milliseconds only at 1 kHz.
@@ -941,9 +935,6 @@ fn main() {
     let mut counter_burst_start_cycle = 0u64;
 
     loop {
-        if stop_requested.load(Ordering::Relaxed) {
-            break;
-        }
         while !eth_handle.check_inputs_ready() {}
 
         if let Some(inputs) = eth_handle.get_inputs() {
@@ -1096,7 +1087,6 @@ fn main() {
                     FAULT_ABORT_AFTER_EPISODES,
                     statusword.as_raw()
                 );
-                pending_diag_dump = true;
                 el7062
                     .axis(EL7062Port::Ch1)
                     .set_controlword(DrvControlWord {
@@ -1158,7 +1148,6 @@ fn main() {
                 "Drive warning active (statusword=0x{:04X})",
                 statusword.as_raw()
             );
-            pending_diag_dump = true;
             log::logger().flush();
         }
         prev_warning = statusword.warning;
@@ -1325,39 +1314,4 @@ fn main() {
             }
         }
     }
-
-    // De-energising is left to the drive's PD watchdog, which fires as soon as
-    // cyclic exchange stops; this just starts the CiA 402 transition one cycle
-    // earlier.
-    info!("Graceful stop requested; commanding Ch.1 off and exiting...");
-    if mode_csv {
-        el7062
-            .axis(EL7062Port::Ch1)
-            .set_target_velocity(0)
-            .expect("Failed to write zero target velocity");
-    }
-    el7062
-        .axis(EL7062Port::Ch1)
-        .set_controlword(DrvControlWord::default())
-        .expect("Failed to write shutdown controlword");
-    if let Some(outputs) = eth_handle.write_outputs() {
-        for subdevice in &subdevices {
-            if subdevice.product_id == EL7062_PRODUCT_ID {
-                el7062
-                    .output_pre_process()
-                    .expect("Failed to prepare output");
-                let output = &mut outputs[subdevice.start_rx..subdevice.end_rx];
-                el7062
-                    .output(BitSlice::from_slice_mut(output))
-                    .expect("Failed to write output");
-            }
-        }
-    }
-    eth_handle.send_outputs();
-
-    info!("Exiting. The bus is not returned to SafeOp/PreOp, so cyclic exchange stops here.");
-    if pending_diag_dump {
-        info!("0x10F3 keeps its history, so the next run prints it during startup.");
-    }
-    log::logger().flush();
 }
