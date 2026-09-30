@@ -521,7 +521,6 @@ dependencies = [
  "futures",
  "heapless 0.8.0",
  "libc",
- "log",
  "rand",
  "smol",
  "spin_sleep",

@@ -20,13 +20,11 @@ use bitvec::slice::BitSlice;
 use ethercat_hal::{
     DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig,
     coe::ConfigurableDevice,
-    debugging::dump_dc_registers,
     devices::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
         beckhoff_modules::el7062::{
             EL7062, EL7062_PRODUCT_ID, EL7062Port,
             coe::{Commutation, EncoderConfig, EncoderType, FollowingErrorMonitor},
-            diagnostics::dump_diag_messages,
             motion::{DEFAULT_MAX_REV_PER_S, DEFAULT_MAX_REV_PER_S2, PositionScale, SetpointRamp},
             pdo::{DrvControlWord, EL7062PredefinedPdoAssignment, StatuswordProcessDataMonitor},
         },
@@ -551,7 +549,6 @@ fn main() {
                 Ok(v) => info!("  DiagMessages (0x10F3:2) latest index: {}", v),
                 Err(e) => info!("  DiagMessages (0x10F3:2): read failed: {e}"),
             }
-            dump_diag_messages(&eth_control.channel, subdevice.device_address);
             for (idx, sub, name) in [
                 (0xF900u16, 0x12u8, "DC link voltage (0xF900:18) [mV]"),
                 (0xF900, 0x13, "Supply voltage Up (0xF900:19) [mV]"),
@@ -742,7 +739,6 @@ fn main() {
             error!("PROBE: no EL7062 subdevice on the bus, nothing to probe.");
             return;
         };
-        dump_diag_messages(&eth_control.channel, addr);
         log::logger().flush();
         return;
     }
@@ -806,7 +802,6 @@ fn main() {
                     Ok(code) => debug!("EL7062 @{} AL status code (0x0134): 0x{:04x}", addr, code),
                     Err(e) => debug!("EL7062 AL status code read failed: {}", e),
                 }
-                dump_dc_registers(&eth_control.channel, addr);
             }
             if let Some(report) = eth_handle.get_last_transition_failure() {
                 warn!("Last failed transition: {}", report);

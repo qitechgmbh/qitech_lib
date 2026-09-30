@@ -1,13 +1,11 @@
 use coe::EL7062Configuration;
 use ethercat_hal_derive::EthercatDevice;
-use log::warn;
 
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::pdo::{PredefinedPdoAssignment, RxPdo, TxPdo};
 use anyhow::anyhow;
 
 pub mod coe;
-pub mod diagnostics;
 pub mod motion;
 pub mod pdo;
 
@@ -226,7 +224,7 @@ impl Axis<'_> {
         statusword: &pdo::DrvStatusWord,
     ) -> Result<(), anyhow::Error> {
         if statusword.fault {
-            warn!(
+            println!(
                 "Fault detected! Applying fault reset to EL7062 ({:?})",
                 self.channel
             );
