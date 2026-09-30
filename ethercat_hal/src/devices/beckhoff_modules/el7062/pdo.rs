@@ -1,3 +1,9 @@
+//! TxPDO/RxPDO objects and PDO assignments for the EL7062.
+//!
+//! Indices, bit layouts and permitted values are from the EL7062 user manual
+//! (Beckhoff Infosys, ch. 8.1). Where the manual contradicts itself, the
+//! conflict is recorded on the object it affects.
+
 use crate::pdo::{PredefinedPdoAssignment, RxPdoObject, TxPdoObject};
 use bitvec::prelude::*;
 use ethercat_hal_derive::{PdoObject, RxPdo, TxPdo};
@@ -13,7 +19,8 @@ pub struct DrvControlWord {
     pub switch_on: bool,
     /// Bit 1: Enable voltage
     pub enable_voltage: bool,
-    /// Bit 2: Quick stop
+    /// Bit 2. Quick stop in CiA 402, but `0x7010:01` in the manual marks it
+    /// reserved, so this is written blind.
     pub quick_stop: bool,
     /// Bit 3: Enable operation
     pub enable_operation: bool,
@@ -32,8 +39,8 @@ impl RxPdoObject for DrvControlWord {
 }
 
 impl DrvControlWord {
-    /// CiA402 402 state machine commands expressed as a plain word.
-    /// This allows the drive to be operated without the helper flags.
+    /// Build from a raw control word. Reserved bits 4-6 and 8-15 are dropped,
+    /// so unlike [`DrvStatusWord::as_raw`] this is lossy.
     pub fn from_raw(raw: u16) -> Self {
         Self {
             switch_on: raw & (1 << 0) != 0,
@@ -130,15 +137,11 @@ impl TxPdoObject for FbPosition {
     }
 }
 
-/// # Statusword bit 10 and bit 14
-/// What the terminal is allowed to report in the otherwise-unused statusword
-/// bits, set by `0x8010:01` / `0x8110:01` and `0x8010:02` / `0x8110:02`.
+/// What the terminal reports in the otherwise-unused statusword bits, set by
+/// `0x8010:01` / `0x8110:01` and `0x8010:02` / `0x8110:02`.
 ///
-/// These are two booleans in the datasheet but one bit on the wire, so they
-/// cannot be set independently: both features drive bit 10, and only the
-/// counter additionally uses bit 14. A terminal asked for both gives a bit 10
-/// that could be either, which is why the terminal's own `Enable input cycle
-/// counter` wins and this is a single choice here.
+/// Both features drive bit 10, so this is one choice rather than two
+/// booleans. The manual does not say which one wins if both are set.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum StatuswordProcessDataMonitor {
     /// Neither feature: bit 10 carries no documented meaning and reads 0.
@@ -146,7 +149,7 @@ pub enum StatuswordProcessDataMonitor {
     None,
     /// `0x8010:01` = 1. Bit 10 is the TxPDO toggle.
     TxPdoToggle,
-    /// `0x8010:02` = 1. Bit 10 is the low bit and bit 14 the high bit of a
+    /// `0x8010:02` = 1. Bit 10 is the low bit and bit 13 the high bit of a
     /// two-bit counter that increments per process-data cycle and wraps at 3.
     InputCycleCounter,
 }
@@ -168,14 +171,16 @@ impl StatuswordProcessDataMonitor {
 ///
 /// Mapped from `0x6010:01` (Ch. 1) / `0x6110:01` (Ch. 2).
 ///
-/// Bits 10 and 14 are decoded with [`StatuswordProcessDataMonitor`], so a caller
-/// states which feature it enabled rather than reading an ambiguous bit.
+/// Bits 10 and 13 only mean something alongside the channel's
+/// [`StatuswordProcessDataMonitor`], so a caller states which feature it
+/// enabled rather than reading an ambiguous bit.
 ///
-/// The datasheet disagrees with itself here. `0x6010:01` documents bit 13 as
-/// "Input cycle counter" with bit 14-15 reserved, while `0x8010:02` says the
-/// two-bit counter sits in bit 10 (low) and bit 14 (high). This follows
-/// `0x8010:02`, because that parameter is what actually turns the feature on;
-/// bit 13 is left undecoded rather than given a name that contradicts it.
+/// The manual contradicts itself on the counter's high bit: `0x6010:01` names
+/// bit 13 and reserves 14-15, while `0x8010:02` puts the high bit in bit 14.
+/// This follows `0x6010:01`, which measurement supports: with the counter
+/// enabled, bit 13 changed on 47% of consecutive sample pairs across 2000
+/// master cycles, and bit 14 never moved. `0x6000:0F` / `0x6100:0F` carry the
+/// counter as a plain BIT2, but are not PDO-mapped.
 #[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
 #[pdo_object(bits = 16)]
 pub struct DrvStatusWord {
@@ -197,24 +202,15 @@ pub struct DrvStatusWord {
     pub drive_follows_command_value: bool,
 
     /// Bit 10. Meaning depends on the monitor the channel was configured with,
-    /// so it is decoded through [`DrvStatusWord::bit10`] instead of being read
-    /// directly.
+    /// so it is read through [`DrvStatusWord::bit10`].
     bit10: bool,
-    /// Bit 13. High bit of the input cycle counter, which
-    /// [`DrvStatusWord::input_cycle_counter`] assembles with `bit10`.
-    ///
-    /// This was measured, not assumed: across 2000 consecutive master cycles
-    /// bit 13 changed on 47% of sample pairs, which is the rate a counter's high
-    /// bit must have when it increments every cycle. Bit 14, which 0x8010:02
-    /// names as the high bit, never changed at all in the same window, so the
-    /// documentation's bit-14 claim does not hold on this terminal.
+    /// Bit 13: input cycle counter high bit. See [`DrvStatusWord`].
     bit13: bool,
 
-    /// The status word exactly as received.
+    /// The status word as received.
     ///
-    /// The decoded fields above cover only 10 of the 16 bits, so rebuilding a
-    /// value from them would lose bits 4, 5, 8, 9 and 15. Keeping the received
-    /// word makes [`DrvStatusWord::as_raw`] lossless.
+    /// The decoded fields cover only 10 of the 16 bits, so rebuilding a value
+    /// from them would lose bits 4, 5, 8, 9, 14 and 15.
     raw: u16,
 }
 
@@ -264,8 +260,7 @@ impl DrvStatusWord {
     /// Bit 10, read as whatever the channel's
     /// [`StatuswordProcessDataMonitor`] asked the terminal to report.
     ///
-    /// `None` yields `false`, which is what the terminal reports when neither
-    /// feature is enabled.
+    /// `None` yields `false`.
     pub fn bit10(&self, monitor: StatuswordProcessDataMonitor) -> bool {
         match monitor {
             StatuswordProcessDataMonitor::None => false,
@@ -274,19 +269,11 @@ impl DrvStatusWord {
         }
     }
 
-    /// The two-bit input cycle counter: low bit from statusword bit 10, high bit
-    /// from bit 13, incremented per process-data cycle and wrapping at 3.
+    /// The two-bit input cycle counter, or `None` unless the channel enabled
+    /// it, so a reading cannot be mistaken for a stalled bus.
     ///
-    /// The object dictionary is self-contradictory here. 0x8010:02 says the high
-    /// bit is bit 14, while the 0x6010:01 statusword listing names bit 13 as the
-    /// "Input cycle counter" and marks bits 14-15 reserved. Measured over 2000
-    /// consecutive master cycles, bit 13 changed on 47% of sample pairs -- the
-    /// rate a counter's high bit must show when it increments every cycle --
-    /// while bit 14 never changed at all. So bit 13 is the high bit on this
-    /// terminal and 0x8010:02's bit-14 claim does not hold.
-    ///
-    /// `None` unless the channel actually enabled the counter, so a reading
-    /// cannot be mistaken for a stalled bus.
+    /// Low bit from statusword bit 10, high bit from bit 13; see
+    /// [`DrvStatusWord`] for why 13 and not 14.
     pub fn input_cycle_counter(&self, monitor: StatuswordProcessDataMonitor) -> Option<u8> {
         if monitor != StatuswordProcessDataMonitor::InputCycleCounter {
             return None;
@@ -312,10 +299,8 @@ impl DrvStatusWord {
         }
     }
 
-    /// Retrieve the status word exactly as received from process data.
-    ///
-    /// This is the received word, not a value rebuilt from the decoded fields,
-    /// so bits without a dedicated field (4, 5, 8, 9, 13) are preserved.
+    /// The status word as received, not rebuilt from the decoded fields, so
+    /// bits without a field (4, 5, 8, 9, 14, 15) survive.
     pub fn as_raw(&self) -> u16 {
         self.raw
     }
@@ -581,10 +566,7 @@ mod tests {
         );
     }
 
-    /// The counter is bit 10 (low) and bit 13 (high), and is only reported when
-    /// that feature is actually enabled. Bit 13 is what 0x6010:01 names and what
-    /// the hardware shows; 0x8010:02's bit-14 claim is contradicted by
-    /// measurement and is deliberately not encoded here.
+    /// See [`DrvStatusWord`] for why the high bit is 13 and not 14.
     #[test]
     fn the_input_cycle_counter_is_two_bits_from_10_and_13() {
         for (raw, expected) in [
@@ -608,9 +590,8 @@ mod tests {
         );
     }
 
-    /// Bit 14 must not be mistaken for the counter's high bit. It was set in 0 of
-    /// 2000 samples over 2000 real master cycles, so treating it as the high bit
-    /// yields a counter that can only ever read 0 or 1 and never reaches 2 or 3.
+    /// Guards the bit-13 decision: decoding bit 14 instead leaves a counter that
+    /// can only ever read 0 or 1.
     #[test]
     fn bit14_is_not_the_counter_high_bit() {
         let m = StatuswordProcessDataMonitor::InputCycleCounter;
@@ -623,14 +604,9 @@ mod tests {
         }
     }
 
-    /// A counter incrementing every cycle must show a low bit changing on every
-    /// sample pair and a high bit on about half of them. This is the property the
-    /// bit-13 choice rests on, expressed so a future change of the high bit is
-    /// caught rather than silently reverting to bit 14.
-    ///
-    /// The words are built by overlaying the counter bits onto a real observed
-    /// statusword (`0x18A7`), so the fixture cannot drift into encoding a pattern
-    /// the drive would not produce.
+    /// Counter bits are overlaid onto an observed statusword (`0x18A7`) rather
+    /// than built from zero, so the fixture cannot encode a pattern the drive
+    /// would not produce.
     #[test]
     fn a_per_cycle_counter_has_a_half_rate_high_bit() {
         let base = DrvStatusWord::from_raw(0x18A7).as_raw();
@@ -660,8 +636,7 @@ mod tests {
         assert_eq!(read, vec![0, 1, 2, 3, 0, 1, 2, 3], "counter must count up and wrap");
     }
 
-    /// The counter wraps 3 -> 0, so "advanced" is a change, not an increment. A
-    /// comparison against `>` would miss the wrap and stall forever.
+    /// A `>` comparison would miss the 3 -> 0 wrap and stall forever.
     #[test]
     fn the_cycle_counter_wrap_still_counts_as_advanced() {
         let m = StatuswordProcessDataMonitor::InputCycleCounter;
@@ -673,8 +648,8 @@ mod tests {
         assert!(three.input_cycle_advanced(m, &two));
     }
 
-    /// Every decoded field must survive a round trip through the raw word,
-    /// including the two bits that are now private.
+    /// Every decoded field must survive a round trip, including the private bits
+    /// 10 and 13.
     #[test]
     fn decoded_bits_round_trip_through_from_raw() {
         // Bits 0,1,2,3,6,7,10,11,12,13: the documented statusword fields.
@@ -688,18 +663,13 @@ mod tests {
         }
     }
 
-    /// Bits 4, 5, 8, 9 and 15 deliberately have no decoded field, so nothing in
-    /// this struct gives them a name. They are nonetheless reported faithfully by
+    /// Bits 4, 5, 8, 9, 14 and 15 have no decoded field, so nothing in this
+    /// struct gives them a name. They are nonetheless reported faithfully by
     /// `as_raw`, which returns the word as received rather than rebuilding one
     /// from the decoded fields.
-    ///
-    /// Bit 13 used to be in this group, on the grounds that 0x8010:02 and
-    /// 0x6010:01 contradict each other about it. Measurement settled it: bit 13
-    /// behaves as the counter's high bit and bit 14 never moves, so bit 13 is now
-    /// decoded and bit 14 is the one left unnamed.
     #[test]
     fn reserved_bits_have_no_field_but_survive_as_raw() {
-        for bit in [4, 5, 8, 9, 15] {
+        for bit in [4, 5, 8, 9, 14, 15] {
             let statusword = DrvStatusWord::from_raw(1 << bit);
             assert_eq!(
                 statusword.as_raw(),

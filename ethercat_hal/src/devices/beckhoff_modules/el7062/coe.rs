@@ -1,3 +1,11 @@
+//! CoE configuration for the EL7062.
+//!
+//! Indices, permitted values and power-on defaults are from the EL7062 user
+//! manual (Beckhoff Infosys, ch. 8.1 "CoE parameters"). Diagnostic text keyed
+//! by code lives in the ESI file instead, as the manual notes in ch. 7.5.1.
+//! Fields whose value here departs from the power-on default say so in the
+//! `Default` impl rather than on the field.
+
 use super::EL7062;
 use super::motion::{DEFAULT_POSITION_SCALE, PositionScale};
 use super::pdo::{EL7062PredefinedPdoAssignment, StatuswordProcessDataMonitor};
@@ -35,14 +43,12 @@ pub struct El7062FeedbackConfiguration {
     pub invert_feedback_direction: bool,
 
     /// # 8008:12 + 8008:13 / 8108:12 + 8108:13
-    /// Encoder wiring and resolution. An unused encoder has a resolution of
-    /// zero, so "disabled" and "wired but how many counts" are one setting here
-    /// rather than a type plus a number that can disagree.
+    /// Encoder wiring and resolution. See [`EncoderConfig`].
     pub encoder: EncoderConfig,
 }
 
 impl Default for El7062FeedbackConfiguration {
-    /// Defaults according to the datasheet
+    /// Power-on defaults.
     fn default() -> Self {
         Self {
             device_type: 0x00000005, // 5 (stepper)
@@ -84,7 +90,7 @@ impl EncoderType {
 }
 
 impl Default for EncoderType {
-    /// Datasheet default: `0` = disabled.
+    /// Power-on default: `0` = disabled.
     fn default() -> Self {
         Self::Disabled
     }
@@ -92,9 +98,9 @@ impl Default for EncoderType {
 
 /// Encoder wiring and resolution for one channel (`0x8008` / `0x8108`).
 ///
-/// A disabled encoder has no resolution, so holding the type and the increment
-/// count as two independent fields would allow `Disabled` with a stale `4096`
-/// left in place, or a wired encoder reporting zero counts per revolution.
+/// One setting rather than two independent fields: otherwise `Disabled` can
+/// carry a stale 4096 in `0x8008:13`, or a wired encoder can report zero counts
+/// per revolution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncoderConfig {
     /// `0x8008:12` = 0. Resolution is written as 0.
@@ -145,14 +151,11 @@ impl EncoderConfig {
         }
     }
 
-    /// Resolution to write to `0x8008:13` / `0x8108:13`.
+    /// Resolution for `0x8008:13` / `0x8108:13`; `None` when disabled.
     ///
-    /// `None` when disabled. The parameter is documented as the encoder's
-    /// resolution after 4-fold evaluation, so with no encoder it has no value
-    /// and the subindex is left untouched. Writing zero is rejected by the
-    /// terminal (SDO abort `0x06090032`, "value of parameter written too low"),
-    /// and writing the datasheet default instead would assert a resolution
-    /// nobody measured.
+    /// `None` rather than 0: the terminal rejects 0 here with SDO abort
+    /// `0x06090032` (measured on Ch. 2), and the power-on default 4096 would
+    /// assert a resolution nobody measured.
     pub fn increments_per_revolution(self) -> Option<u32> {
         match self {
             Self::Disabled => None,
@@ -170,9 +173,9 @@ impl EncoderConfig {
 }
 
 impl Default for EncoderConfig {
-    /// Datasheet default: encoder type 0 (disabled), which is what
-    /// `0x8008:12` is `0` for. `0x8008:13` keeps the terminal's own value
-    /// instead, because it is only meaningful once an encoder is wired.
+    /// Power-on default: encoder type 0 (disabled), and `0x8008:13` left at
+    /// whatever the terminal holds, since it only means something once an
+    /// encoder is wired.
     fn default() -> Self {
         Self::Disabled
     }
@@ -247,17 +250,17 @@ impl El7062FeedbackConfiguration {
 #[derive(Debug, Clone)]
 pub struct El7062AmplifierConfiguration {
     /// # 8010:01 + 8010:02 / 8110:01 + 8110:02
-    /// Which of the terminal's diagnostic extras, if any, appear in the spare
-    /// statusword bits. See [`StatuswordProcessDataMonitor`].
+    /// Which diagnostic extra occupies statusword bit 10, if any. See
+    /// [`StatuswordProcessDataMonitor`].
     pub statusword_monitor: StatuswordProcessDataMonitor,
 
     /// # 8010:31 / 8110:31
-    /// Velocity limitation in 1/min (default: `3000`, datasheet `100000`).
+    /// Velocity limitation in 1/min (default `3000`). Only effective in CSP
+    /// and CSV.
     pub velocity_limitation: u32,
 
     /// # 8010:50 + 8010:51 / 8110:50 + 8110:51
-    /// Following error monitoring. Disabled by default, and a disabled monitor
-    /// has no window, so the two cannot be set inconsistently.
+    /// Following error monitoring (default disabled).
     pub following_error: FollowingErrorMonitor,
 
     /// # 8010:64 / 8110:64
@@ -265,26 +268,20 @@ pub struct El7062AmplifierConfiguration {
     pub commutation: Commutation,
 
     /// # 8010:72 / 8110:72
-    /// Current applied at standstill, in thousandths of the motor's nominal
-    /// current, so `1000` is the full nominal current and `0` is no holding
-    /// torque at all (default: `500`; the datasheet's `32767` is above anything
-    /// reachable and so applies no reduction).
+    /// Current reduction at standstill, in thousandths of nominal current:
+    /// `1000` is full current, `0` no holding torque (default `500`).
     ///
-    /// The reduction only applies while the target velocity is inside the
-    /// standstill window `0x8010:33`, and the terminal documents this parameter
-    /// as effective only for [`Commutation::StepperWithInternalCounter`] and
-    /// [`Commutation::StepperWithEncoder`]. Under
-    /// [`Commutation::StepperFocWithEncoder`] it has no effect.
+    /// Applies while the target velocity is within `0x8010:33`, and only for
+    /// commutation types 16 and 17.
     pub stand_still_torque_limitation: u16,
 
     /// # 8010:73 / 8110:73
-    /// Acceleration limitation in 0.1 rad/s² (default: `6283`, datasheet
-    /// `62832`).
+    /// Acceleration limitation in 0.1 rad/s² (default `6283`).
     pub acceleration_limitation: u32,
 }
 
 impl Default for El7062AmplifierConfiguration {
-    /// Datasheet defaults, except the three motion limits, which are lower.
+    /// Power-on defaults, except the three motion limits, which are lower.
     fn default() -> Self {
         Self {
             statusword_monitor: StatuswordProcessDataMonitor::None,
@@ -329,7 +326,7 @@ impl Commutation {
 }
 
 impl Default for Commutation {
-    /// Datasheet default: `16` = stepper with internal counter.
+    /// Power-on default: `16` = stepper with internal counter.
     fn default() -> Self {
         Self::StepperWithInternalCounter
     }
@@ -343,9 +340,8 @@ impl std::fmt::Display for Commutation {
 
 /// Following error monitoring for one channel (`0x8010:50` + `0x8010:51`).
 ///
-/// The datasheet disables monitoring by writing `0xFFFFFFFF` to the window and
-/// leaves the timeout meaningless, which as two plain `u32`/`u16` fields is a
-/// magic number that reads like a very large window.
+/// `0x8010:50` = `0xFFFFFFFF` disables monitoring; as a plain `u32` that reads
+/// like a very large window rather than "off".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FollowingErrorMonitor {
     /// Monitoring off. Written as window `0xFFFFFFFF`.
@@ -398,7 +394,7 @@ impl FollowingErrorMonitor {
 }
 
 impl Default for FollowingErrorMonitor {
-    /// Datasheet default: monitoring disabled.
+    /// Power-on default: monitoring disabled.
     fn default() -> Self {
         Self::Disabled
     }
@@ -479,21 +475,24 @@ impl El7062AmplifierConfiguration {
 #[derive(Debug, Clone)]
 pub struct El7062MotorConfiguration {
     /// # 8011:12 / 8111:12
-    /// Rated current of the motor in mA (default: `500`, datasheet `3000`).
+    /// Rated current of the motor in mA (default `500`).
     pub rated_current: u32,
 
     /// # 8011:33 / 8111:33
-    /// Motor full steps per revolution (default: `200`).
+    /// Motor full steps per revolution (default `200`).
     pub motor_full_steps_per_revolution: u32,
 
     /// # 8011:34 / 8111:34
-    /// Configured motor current in mA (default: `500`, datasheet `3000`).
+    /// Configured motor current in mA (default `500`).
     pub configured_motor_current: u32,
 }
 
 impl Default for El7062MotorConfiguration {
-    /// Datasheet defaults, except the currents, which are lower. The drive
-    /// limits to the smaller of the two, so set both to the motor's value.
+    /// Power-on defaults, except the currents, which follow the motor.
+    ///
+    /// The drive takes the smaller of `0x8011:12` and `0x8011:34`, so set both
+    /// to the motor's rated current. The manual also uses `0x8011:34` to share
+    /// load across the two channels, which full current on both gives up.
     fn default() -> Self {
         Self {
             rated_current: 500,                          // mA
@@ -554,10 +553,10 @@ impl El7062ChannelConfiguration {
     /// Check the settings that span more than one CoE object.
     ///
     /// # Errors
-    /// Commutation types 17 and 18 read the commutation angle from the encoder,
-    /// so asking for them with no encoder connected leaves the drive unable to
-    /// commutate. The terminal would accept both writes and then refuse to
-    /// enable, which is why this is caught before writing anything.
+    /// Commutation types 17 and 18 take the commutation angle from the encoder,
+    /// so asking for them with `0x8008:12` = 0 configures a drive that cannot
+    /// commutate. The manual does not say whether the terminal rejects that on
+    /// write or only later, so it is caught here instead.
     pub fn validate(&self) -> Result<(), ChannelConfigError> {
         if self.amplifier.commutation.requires_encoder() && !self.feedback.encoder.is_enabled() {
             return Err(ChannelConfigError::CommutationNeedsEncoder {
@@ -624,8 +623,7 @@ pub struct EL7062Configuration {
 }
 
 impl Default for EL7062Configuration {
-    /// Datasheet defaults, except that each channel's current and motion limits
-    /// are lower.
+    /// Each channel at its own defaults.
     fn default() -> Self {
         Self {
             channel_1: El7062ChannelConfiguration::default(),
@@ -697,9 +695,8 @@ impl ConfigurableDevice<EL7062Configuration> for EL7062 {
 mod tests {
     use super::*;
 
-    /// Commutation types 17 and 18 read the angle from the encoder, so accepting
-    /// them with 0x8008:12 = 0 leaves a drive that accepts the config and then
-    /// never enables.
+    /// Types 17 and 18 need the encoder, which the default channel has
+    /// disabled.
     #[test]
     fn encoder_dependent_commutation_without_an_encoder_is_rejected() {
         for commutation in [
@@ -720,14 +717,11 @@ mod tests {
         }
     }
 
-    /// The default is the internal-counter type, which works with no encoder.
     #[test]
     fn the_default_channel_configuration_is_valid() {
         assert!(El7062ChannelConfiguration::default().validate().is_ok());
     }
 
-    /// A wired encoder plus an encoder-based commutation type is exactly the
-    /// combination the check above is protecting.
     #[test]
     fn encoder_dependent_commutation_with_an_encoder_is_accepted() {
         let mut config = El7062ChannelConfiguration::default();
@@ -737,10 +731,8 @@ mod tests {
         assert!(config.validate().is_ok());
     }
 
-    /// A disabled encoder has no resolution to write. It must report `None`
-    /// rather than 0, because the terminal rejects a zero here with SDO abort
-    /// 0x06090032 ("value of parameter written too low") -- observed on real
-    /// hardware at 0x8108:13, i.e. the Channel 2 encoder.
+    /// `None` rather than 0: a zero resolution is rejected with SDO abort
+    /// `0x06090032` (measured on Ch. 2 at 0x8108:13).
     #[test]
     fn a_disabled_encoder_writes_no_resolution() {
         assert_eq!(
@@ -759,16 +751,15 @@ mod tests {
         assert!(enc.is_enabled());
     }
 
-    /// Zero counts per revolution has no valid meaning, and Disabled is not a
-    /// wiring, so neither is a constructible "wired" encoder.
+    /// Zero counts has no meaning, and `Disabled` is not a wiring.
     #[test]
     fn an_impossible_wired_encoder_is_rejected() {
         assert!(EncoderConfig::wired(EncoderType::Rs422Differential, 0).is_err());
         assert!(EncoderConfig::wired(EncoderType::Disabled, 2000).is_err());
     }
 
-    /// 0xFFFFFFFF is the terminal's own disabled value, so treating it as a
-    /// threshold would silently disable monitoring instead of enabling it.
+    /// `0xFFFFFFFF` is the terminal's own disabled value, so it must not pass
+    /// as a very large window.
     #[test]
     fn a_following_error_window_of_zero_or_max_is_rejected() {
         assert!(FollowingErrorMonitor::enabled(0, 100).is_err());
@@ -777,15 +768,13 @@ mod tests {
     }
 
     #[test]
-    fn a_disabled_following_error_monitor_writes_the_datasheet_values() {
+    fn a_disabled_following_error_monitor_writes_the_power_on_values() {
         let monitor = FollowingErrorMonitor::default();
         assert!(!monitor.is_enabled());
         assert_eq!(monitor.window(), u32::MAX);
         assert_eq!(monitor.timeout(), 0);
     }
 
-    /// The two 0x8010 booleans are one bit on the wire, so the monitor is a
-    /// choice and neither value can be set at once.
     #[test]
     fn the_statusword_monitor_maps_to_exclusive_booleans() {
         use StatuswordProcessDataMonitor::*;
@@ -795,16 +784,16 @@ mod tests {
         assert!(!InputCycleCounter.enable_txpdo_toggle());
         assert!(InputCycleCounter.enable_input_cycle_counter());
 
-        // Datasheet default: both features off.
+        // Power-on default: both features off.
         assert_eq!(
             El7062AmplifierConfiguration::default().statusword_monitor,
             None
         );
     }
 
-    /// The raw values 0x8010:64 accepts, and nothing else.
+    /// 0x8010:64 accepts 16, 17, 18 and nothing else.
     #[test]
-    fn commutation_raw_values_match_the_datasheet() {
+    fn commutation_raw_values_match_the_manual() {
         assert_eq!(Commutation::StepperWithInternalCounter.as_raw(), 16);
         assert_eq!(Commutation::StepperWithEncoder.as_raw(), 17);
         assert_eq!(Commutation::StepperFocWithEncoder.as_raw(), 18);

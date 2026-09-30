@@ -20,9 +20,9 @@
 /// The terminal's process-data position scale: 0x8000:12 / 0x8100:12
 /// ("Singleturn bits") together with 0x8000:13 / 0x8100:13 ("Multiturn bits").
 ///
-/// These are one setting rather than two. The datasheet requires their sum to be
-/// 32 and the terminal raises drive error 0x8423 if it is not, so holding them
-/// as a pair is what makes that rule unrepresentable instead of merely
+/// These are one setting rather than two. The manual requires their sum to be
+/// 32, and the ESI file lists drive error `0x8423` for a violation, so holding
+/// them as a pair is what makes that rule unrepresentable instead of merely
 /// documented.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PositionScale {
@@ -58,7 +58,7 @@ impl std::fmt::Display for PositionScaleError {
 impl std::error::Error for PositionScaleError {}
 
 impl Default for PositionScale {
-    /// Datasheet defaults.
+    /// Power-on defaults: 20 singleturn bits + 12 multiturn bits.
     fn default() -> Self {
         DEFAULT_POSITION_SCALE
     }
@@ -101,8 +101,7 @@ impl PositionScale {
         1u32 << self.singleturn_bits
     }
 
-    /// Increments per full motor step, which is the finest motion the drive can
-    /// actually emit at this scale. Anything below it is not a move.
+    /// Increments per full motor step at this scale.
     pub fn increments_per_step(self, full_steps_per_revolution: u32) -> f64 {
         self.increments_per_revolution() as f64 / full_steps_per_revolution as f64
     }
@@ -113,8 +112,7 @@ pub const DEFAULT_MAX_REV_PER_S: f64 = 5.0;
 /// Default ramp acceleration in revolutions per second squared.
 pub const DEFAULT_MAX_REV_PER_S2: f64 = 10.0;
 
-/// Generates a smooth 3-segment profile (accelerate / cruise / decelerate) so a
-/// drive is never asked to jump straight to the target position.
+/// Trapezoidal profile (accelerate / cruise / decelerate) towards a target.
 #[derive(Debug, Clone, Copy)]
 pub struct SetpointRamp {
     position: f64,
@@ -150,12 +148,12 @@ impl SetpointRamp {
         }
     }
 
-    /// Current ramp position in encoder increments.
+    /// Current ramp position in process-data increments.
     pub fn position(&self) -> f64 {
         self.position
     }
 
-    /// Current ramp velocity in encoder increments per second.
+    /// Current ramp velocity in process-data increments per second.
     pub fn velocity(&self) -> f64 {
         self.velocity
     }
@@ -208,9 +206,8 @@ mod tests {
         assert!(PositionScale::new(4, 4).is_err());
     }
 
-    /// 1u32 << 32 does not fit the process-data position, and with overflow
-    /// checks off the shift masks down to 1 increment per revolution instead of
-    /// failing. Capping singleturn_bits at 31 is what makes the shift total.
+    /// `1u32 << 32` masks down to 1 increment per revolution when overflow
+    /// checks are off, which the `1..=31` bound in `new` prevents.
     #[test]
     fn a_scale_that_overflows_the_u32_position_is_not_constructible() {
         assert!(PositionScale::new(32, 0).is_err());
@@ -229,10 +226,8 @@ mod tests {
         assert!(PositionScale::new(20, 12).is_ok());
     }
 
-    /// The EL7062 only emits a full step once the setpoint crosses
-    /// 2^singleturn_bits/steps_per_rev increments. Anything below that is not a
-    /// move at all, which is what made a "500 increment" target look like a
-    /// broken motor.
+    /// 2^20/200 = 5242.88 increments per full step, so a target of a few
+    /// hundred is far below one step of a 200-step motor.
     #[test]
     fn a_few_hundred_increments_is_well_under_one_full_step() {
         let full_steps_per_rev = 200;
@@ -244,8 +239,8 @@ mod tests {
         );
     }
 
-    /// One revolution at the default profile should take well under a second.
-    /// With limits expressed in the wrong scale this used to take hours.
+    /// About 1 s, not hours: a regression here means the limits were passed in
+    /// increments instead of revolutions.
     #[test]
     fn one_revolution_takes_about_a_second() {
         let incr_per_rev = DEFAULT_POSITION_SCALE.increments_per_revolution() as f64;

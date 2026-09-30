@@ -38,10 +38,10 @@ pub enum EL7062Port {
     Ch2,
 }
 
-/// One channel of the EL7062, borrowed from the device.
+/// One channel of the EL7062, mutably borrowed from the device.
 ///
-/// A typed view rather than a `(device, port)` pair, so a getter and a setter
-/// cannot be handed different channels and the compiler tracks the borrow.
+/// Borrowing the whole device means only one `Axis` exists at a time, so a
+/// getter and a setter cannot end up on different channels.
 pub struct Axis<'a> {
     channel: EL7062Port,
     /// The channel's own configuration, used to interpret process data.
@@ -49,8 +49,8 @@ pub struct Axis<'a> {
     position: &'a Option<pdo::FbPosition>,
     statusword: &'a Option<pdo::DrvStatusWord>,
     following_error: &'a Option<pdo::DrvFollowingError>,
-    /// The selected channel's RxPDO slots, borrowed out of the whole struct so
-    /// the getters above stay `&self`.
+    /// The selected channel's RxPDO slots, held as `&mut` alongside the `&`
+    /// fields above so setters can write while getters still read.
     rx: RxPdoSlot<'a>,
 }
 
@@ -214,11 +214,12 @@ impl Axis<'_> {
         }
     }
 
-    /// Drive the CiA402 state machine via the control word.
+    /// Step the drive towards `Operation enabled`.
     ///
-    /// Steps the drive towards `Operation enabled` (fault reset is left to the
-    /// caller, which may want to latch faults instead of auto-clearing them).
-    /// Bits on the EL7062: 0=switch on, 1=enable voltage, 3=enable operation.
+    /// A set `statusword.fault` is reset here, not left to the caller. Bits on
+    /// the EL7062: 0 = switch on, 1 = enable voltage, 2 = quick stop, 3 =
+    /// enable operation, 7 = fault reset. Bit 2 is reserved per the manual, so
+    /// see [`pdo::DrvControlWord::quick_stop`] before relying on it.
     pub fn apply_controlword(
         &mut self,
         statusword: &pdo::DrvStatusWord,
