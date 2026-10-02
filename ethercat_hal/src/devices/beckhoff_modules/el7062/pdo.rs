@@ -340,6 +340,37 @@ impl TxPdoObject for DrvVelocityActual {
     }
 }
 
+/// # `DiInputs`
+/// Digital inputs of one channel, 16 bits.
+///
+/// Mapped from `0x6020` (Ch. 1, TxPDO `0x1A10`) / `0x6120` (Ch. 2, `0x1A90`):
+/// bit 0 Input 1, bit 1 Input 2, bits 2-3 padding, bits 4-6 encoder A/B/C,
+/// bits 7-15 padding. Inputs 1 and 2 are the channel's limit switch inputs.
+#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
+#[pdo_object(bits = 16)]
+pub struct DiInputs {
+    /// `0x6n20:01` Input 1.
+    pub input_1: bool,
+    /// `0x6n20:02` Input 2.
+    pub input_2: bool,
+    /// `0x6n20:05` encoder track A level.
+    pub encoder_a: bool,
+    /// `0x6n20:06` encoder track B level.
+    pub encoder_b: bool,
+    /// `0x6n20:07` encoder track C (index) level.
+    pub encoder_c: bool,
+}
+
+impl TxPdoObject for DiInputs {
+    fn read(&mut self, bits: &BitSlice<u8, Lsb0>) {
+        self.input_1 = bits[0];
+        self.input_2 = bits[1];
+        self.encoder_a = bits[4];
+        self.encoder_b = bits[5];
+        self.encoder_c = bits[6];
+    }
+}
+
 /// # TxPDO of the EL7062.
 ///
 /// Each field corresponds to one TxPDO mapping object. The order and the
@@ -355,6 +386,8 @@ pub struct EL7062TxPdo {
     pub ch1_following_error: Option<DrvFollowingError>,
     #[pdo_object_index(0x1A02)]
     pub ch1_velocity_actual: Option<DrvVelocityActual>,
+    #[pdo_object_index(0x1A10)]
+    pub ch1_digital_inputs: Option<DiInputs>,
 
     #[pdo_object_index(0x1A80)]
     pub ch2_position: Option<FbPosition>,
@@ -364,6 +397,8 @@ pub struct EL7062TxPdo {
     pub ch2_following_error: Option<DrvFollowingError>,
     #[pdo_object_index(0x1A82)]
     pub ch2_velocity_actual: Option<DrvVelocityActual>,
+    #[pdo_object_index(0x1A90)]
+    pub ch2_digital_inputs: Option<DiInputs>,
 }
 
 /// # RxPDO of the EL7062.
@@ -434,10 +469,12 @@ impl PredefinedPdoAssignment<EL7062TxPdo, EL7062RxPdo> for EL7062PredefinedPdoAs
                 ch1_statusword: Some(DrvStatusWord::default()),
                 ch1_following_error: Some(DrvFollowingError::default()),
                 ch1_velocity_actual: None,
+                ch1_digital_inputs: Some(DiInputs::default()),
                 ch2_position: Some(FbPosition::default()),
                 ch2_statusword: Some(DrvStatusWord::default()),
                 ch2_following_error: Some(DrvFollowingError::default()),
                 ch2_velocity_actual: None,
+                ch2_digital_inputs: Some(DiInputs::default()),
             },
             Self::CyclicSynchronousVelocity
             | Self::CyclicSynchronousTorque
@@ -446,10 +483,12 @@ impl PredefinedPdoAssignment<EL7062TxPdo, EL7062RxPdo> for EL7062PredefinedPdoAs
                 ch1_statusword: Some(DrvStatusWord::default()),
                 ch1_following_error: None,
                 ch1_velocity_actual: None,
+                ch1_digital_inputs: Some(DiInputs::default()),
                 ch2_position: Some(FbPosition::default()),
                 ch2_statusword: Some(DrvStatusWord::default()),
                 ch2_following_error: None,
                 ch2_velocity_actual: None,
+                ch2_digital_inputs: Some(DiInputs::default()),
             },
         }
     }
@@ -528,6 +567,31 @@ mod tests {
         let all = 0xFFFFu16;
         assert_eq!(DrvStatusWord::from_raw(all).as_raw(), all);
         assert_eq!(DrvStatusWord::from_raw(0).as_raw(), 0);
+    }
+
+    /// Bits 2 and 3 are padding in 0x1A10, so the encoder tracks sit at 4..=6,
+    /// not straight after the two inputs.
+    #[test]
+    fn digital_inputs_follow_the_0x1a10_layout() {
+        let read = |raw: u16| {
+            let bytes = raw.to_le_bytes();
+            let mut di = DiInputs::default();
+            TxPdoObject::read(&mut di, BitSlice::<u8, Lsb0>::from_slice(&bytes));
+            di
+        };
+        assert_eq!(
+            read(0b0101_0010),
+            DiInputs {
+                input_1: false,
+                input_2: true,
+                encoder_a: true,
+                encoder_b: false,
+                encoder_c: true,
+            }
+        );
+        // Padding bits alone decode to nothing.
+        assert_eq!(read(0b1111_1111_1000_1100), DiInputs::default());
+        assert!(read(0b1).input_1);
     }
 
     /// `as_raw` must report the bits actually received, not a value rebuilt

@@ -49,6 +49,7 @@ pub struct Axis<'a> {
     position: &'a Option<pdo::FbPosition>,
     statusword: &'a Option<pdo::DrvStatusWord>,
     following_error: &'a Option<pdo::DrvFollowingError>,
+    digital_inputs: &'a Option<pdo::DiInputs>,
     /// The selected channel's RxPDO slots, held as `&mut` alongside the `&`
     /// fields above so setters can write while getters still read.
     rx: RxPdoSlot<'a>,
@@ -74,16 +75,18 @@ impl EL7062 {
             EL7062Port::Ch1 => &self.configuration.channel_1,
             EL7062Port::Ch2 => &self.configuration.channel_2,
         };
-        let (position, statusword, following_error) = match port {
+        let (position, statusword, following_error, digital_inputs) = match port {
             EL7062Port::Ch1 => (
                 &self.txpdo.ch1_position,
                 &self.txpdo.ch1_statusword,
                 &self.txpdo.ch1_following_error,
+                &self.txpdo.ch1_digital_inputs,
             ),
             EL7062Port::Ch2 => (
                 &self.txpdo.ch2_position,
                 &self.txpdo.ch2_statusword,
                 &self.txpdo.ch2_following_error,
+                &self.txpdo.ch2_digital_inputs,
             ),
         };
         let rx = match port {
@@ -104,6 +107,7 @@ impl EL7062 {
             position,
             statusword,
             following_error,
+            digital_inputs,
             rx,
         }
     }
@@ -149,6 +153,14 @@ impl Axis<'_> {
             .as_ref()
             .map(|f| f.following_error)
             .ok_or_else(|| anyhow!("Following error PDO of channel {:?} is None", self.channel))
+    }
+
+    /// Get the channel's digital inputs (limit switch inputs 1 and 2).
+    pub fn digital_inputs(&self) -> Result<pdo::DiInputs, anyhow::Error> {
+        self.digital_inputs
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| anyhow!("Digital inputs PDO of channel {:?} is None", self.channel))
     }
 
     /// Set the control word.
