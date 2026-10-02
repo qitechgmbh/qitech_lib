@@ -53,6 +53,8 @@ const USAGE: &str = "el7062_traverse <interface>\n \
 
 const CH: EL7062Port = EL7062Port::Ch1;
 
+const CYCLE_TIME_US: u64 = 1000;
+
 // --- Mechanics: check every value against your own rig -------------------
 
 /// Full steps per motor revolution (0x8011:13).
@@ -141,7 +143,7 @@ impl Scale {
 
 fn main() {
     let interface = env::args().nth(1).expect(USAGE);
-    let cycle_time_us: u64 = 1000;
+    let cycle_time_us: u64 = CYCLE_TIME_US;
 
     let mut el7062 = EL7062::new();
     let channel1 = &mut el7062.configuration.channel_1;
