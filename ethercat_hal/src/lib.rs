@@ -7,11 +7,11 @@ pub mod ethercat_helpers;
 pub mod helpers;
 pub mod interface_discovery;
 pub mod io;
-pub mod pdo;
 pub mod shared_config;
-//#[cfg(feature = "legacy_code")]
 pub mod machine_ident_read;
+
 use al_diagnostics::{TransitionLog, TransitionReport};
+use common::{SdoReadRequest, SdoRequest};
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
 use std::cell::UnsafeCell;
@@ -366,12 +366,6 @@ where
     }
 }
 
-#[derive(Hash, Eq, PartialEq, PartialOrd, Clone)]
-pub struct SdoIndex {
-    index: u32,
-    sub_index: u16,
-}
-
 #[cfg(feature = "mock")]
 #[derive(Clone)]
 pub struct TypeErasedValue {
@@ -511,33 +505,6 @@ impl From<EtherCATState> for u8 {
             _ => 6,
         }
     }
-}
-
-#[derive(Debug)]
-pub enum SdoType {
-    BOOL,
-    U8,
-    U16,
-    U32,
-    I16,
-    I32,
-}
-
-#[derive(Debug)]
-pub struct SdoRequest {
-    pub device_address: u16,
-    pub index: u16,
-    pub sub_index: u16,
-    pub data: [u8; 4],
-    pub type_flag: SdoType,
-}
-
-#[derive(Debug)]
-pub struct SdoReadRequest {
-    pub device_address: u16,
-    pub index: u16,
-    pub sub_index: u16,
-    pub type_flag: SdoType,
 }
 
 /// A diagnostic read, serviced from any master state.

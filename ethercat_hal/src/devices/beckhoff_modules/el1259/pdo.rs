@@ -1,14 +1,13 @@
 use bitvec::field::BitField;
 use bitvec::prelude::{BitSlice, Lsb0};
+use common::{EthercatSdoBytes, PdoObject, SdoIndex, SdoRequest, SmConfiguration, type_id_to_sdo_type};
 use ethercat_hal_derive::{PdoObject, RxPdo, TxPdo};
-
+use crate::coe::{RX_PDO_ASSIGNMENT_REG, TX_PDO_ASSIGNMENT_REG};
 use crate::io::multi_timestamp::MultiTimestampEvent;
-use crate::pdo::{RxPdoObject, TxPdoObject};
-
+use common::pdo::{RxPdoObject, TxPdoObject};
 const EXPECT_TEXT: &str = "All channels should be Some(_)";
 
-#[derive(Debug, RxPdo)]
-pub(super) struct EL1259RxPdo {
+/*
     #[pdo_object_index(0x1600)]
     pub(super) mto_channel1: Option<EL1259MtoRxChannel>,
     #[pdo_object_index(0x1604)]
@@ -42,6 +41,99 @@ pub(super) struct EL1259RxPdo {
     pub(super) mti_channel7: Option<EL1259MtiRxChannel>,
     #[pdo_object_index(0x1627)]
     pub(super) mti_channel8: Option<EL1259MtiRxChannel>,
+
+*/
+
+#[derive(Debug, RxPdo)]
+pub(super) struct EL1259RxPdo {
+    pub(super) mto_channel1: Option<EL1259MtoRxChannel>,
+    pub(super) mto_channel2: Option<EL1259MtoRxChannel>,
+    pub(super) mto_channel3: Option<EL1259MtoRxChannel>,
+    pub(super) mto_channel4: Option<EL1259MtoRxChannel>,
+    pub(super) mto_channel5: Option<EL1259MtoRxChannel>,
+    pub(super) mto_channel6: Option<EL1259MtoRxChannel>,
+    pub(super) mto_channel7: Option<EL1259MtoRxChannel>,
+    pub(super) mto_channel8: Option<EL1259MtoRxChannel>,
+
+    pub(super) mti_channel1: Option<EL1259MtiRxChannel>,
+    pub(super) mti_channel2: Option<EL1259MtiRxChannel>,
+    pub(super) mti_channel3: Option<EL1259MtiRxChannel>,
+    pub(super) mti_channel4: Option<EL1259MtiRxChannel>,
+    pub(super) mti_channel5: Option<EL1259MtiRxChannel>,
+    pub(super) mti_channel6: Option<EL1259MtiRxChannel>,
+    pub(super) mti_channel7: Option<EL1259MtiRxChannel>,
+    pub(super) mti_channel8: Option<EL1259MtiRxChannel>,
+}
+
+impl SmConfiguration for EL1259RxPdo {
+    // Default assignment, if you want a different one define it yourself
+    fn get_sm_assignments(
+        &self
+    ) -> Result<Vec<common::SdoIndex>, anyhow::Error>
+    {
+
+        let mut vec = vec![];
+        let mut sub_index : u16  = 0;
+        for i in 0..8 {
+            let sdo_index = SdoIndex {
+                index: 0x1600+i*4,
+                sub_index,
+            };
+            sub_index += 1;
+            vec.push(sdo_index);
+        }
+
+        for i in 8..16 {
+            let sdo_index = SdoIndex {
+                index: 0x1620+i,
+                sub_index,
+            };
+            sub_index += 1;
+            vec.push(sdo_index);
+        }
+        Ok( vec )
+    }
+    
+    fn get_sm_coe_writes(&self, device_address : u16) -> Result<Vec<SdoRequest>,anyhow::Error> {
+        let assignments = self.get_sm_assignments()?;
+        let mut writes = vec![]; 
+        let mut sub_index = 0;
+        // Set len of Mappings to 0 (reset)
+        let reset_req = SdoRequest{ 
+            device_address,
+            index: RX_PDO_ASSIGNMENT_REG, 
+            sub_index, 
+            data: [0,0,0,0],
+            type_flag: type_id_to_sdo_type::<u8>()?, 
+        };
+        sub_index += 1;
+
+        writes.push(reset_req);
+        // go through all assignments and write them
+        for i in 0..assignments.len() {
+            let req = SdoRequest{ 
+                device_address,
+                index: RX_PDO_ASSIGNMENT_REG, 
+                sub_index, 
+                data: assignments[i].index.to_bytes(),
+                type_flag: type_id_to_sdo_type::<u16>()?, 
+            };
+            writes.push(req);
+            sub_index += 1;
+        }
+
+        let reset_req = SdoRequest{ 
+            device_address,
+            index: RX_PDO_ASSIGNMENT_REG, 
+            sub_index : 0, 
+            data: sub_index.to_bytes(),
+            type_flag: type_id_to_sdo_type::<u8>()?,
+        };
+        writes.push(reset_req);
+
+        Ok(writes)
+    }
+
 }
 
 impl Default for EL1259RxPdo {
@@ -69,20 +161,6 @@ impl Default for EL1259RxPdo {
 }
 
 impl EL1259RxPdo {
-    // pub(super) fn get_mti(&self, channel: usize) -> &EL1259MtiRxChannel {
-    //     match channel {
-    //         0 => self.mti_channel1.as_ref().expect(EXPECT_TEXT),
-    //         1 => self.mti_channel2.as_ref().expect(EXPECT_TEXT),
-    //         2 => self.mti_channel3.as_ref().expect(EXPECT_TEXT),
-    //         3 => self.mti_channel4.as_ref().expect(EXPECT_TEXT),
-    //         4 => self.mti_channel5.as_ref().expect(EXPECT_TEXT),
-    //         5 => self.mti_channel6.as_ref().expect(EXPECT_TEXT),
-    //         6 => self.mti_channel7.as_ref().expect(EXPECT_TEXT),
-    //         7 => self.mti_channel8.as_ref().expect(EXPECT_TEXT),
-    //         _ => panic!("Channel index out of range {}", channel),
-    //     }
-    // }
-
     pub(super) fn get_mti_mut(&mut self, channel: usize) -> &mut EL1259MtiRxChannel {
         match channel {
             0 => self.mti_channel1.as_mut().expect(EXPECT_TEXT),
@@ -96,20 +174,6 @@ impl EL1259RxPdo {
             _ => panic!("Channel index out of range {}", channel),
         }
     }
-
-    // pub(super) fn get_mto(&self, channel: usize) -> &EL1259MtoRxChannel {
-    //     match channel {
-    //         0 => self.mto_channel1.as_ref().expect(EXPECT_TEXT),
-    //         1 => self.mto_channel2.as_ref().expect(EXPECT_TEXT),
-    //         2 => self.mto_channel3.as_ref().expect(EXPECT_TEXT),
-    //         3 => self.mto_channel4.as_ref().expect(EXPECT_TEXT),
-    //         4 => self.mto_channel5.as_ref().expect(EXPECT_TEXT),
-    //         5 => self.mto_channel6.as_ref().expect(EXPECT_TEXT),
-    //         6 => self.mto_channel7.as_ref().expect(EXPECT_TEXT),
-    //         7 => self.mto_channel8.as_ref().expect(EXPECT_TEXT),
-    //         _ => panic!("Channel index out of range {}", channel),
-    //     }
-    // }
 
     pub(super) fn get_mto_mut(&mut self, channel: usize) -> &mut EL1259MtoRxChannel {
         match channel {
@@ -130,8 +194,7 @@ impl EL1259RxPdo {
 /// events to the multi-timestamp output channel.
 /// Each event consists of a timestamp showing when the
 /// event is applied and a corresponding output value.
-#[derive(Debug, Default, PdoObject)]
-#[pdo_object(bits = 384)]
+#[derive(Debug, Default)]
 pub(super) struct EL1259MtoRxChannel {
     /// If set, clear the event buffer.
     pub(super) output_buffer_reset: bool,
@@ -157,6 +220,12 @@ pub(super) struct EL1259MtoRxChannel {
     /// to this channel's internal buffer.
     /// Remaining entries will be ignored by this channel.
     pub(super) output_events: [MultiTimestampEvent; 10],
+}
+
+impl PdoObject for EL1259MtoRxChannel {
+    fn size(&self) -> usize {
+        384
+    }
 }
 
 impl RxPdoObject for EL1259MtoRxChannel {
@@ -218,39 +287,95 @@ impl RxPdoObject for EL1259MtiRxChannel {
 
 #[derive(Debug, TxPdo)]
 pub(super) struct EL1259TxPdo {
-    #[pdo_object_index(0x1A00)]
     pub(super) mto_channel1: Option<EL1259MtoTxChannel>,
-    #[pdo_object_index(0x1A01)]
     pub(super) mto_channel2: Option<EL1259MtoTxChannel>,
-    #[pdo_object_index(0x1A02)]
     pub(super) mto_channel3: Option<EL1259MtoTxChannel>,
-    #[pdo_object_index(0x1A03)]
     pub(super) mto_channel4: Option<EL1259MtoTxChannel>,
-    #[pdo_object_index(0x1A04)]
     pub(super) mto_channel5: Option<EL1259MtoTxChannel>,
-    #[pdo_object_index(0x1A05)]
     pub(super) mto_channel6: Option<EL1259MtoTxChannel>,
-    #[pdo_object_index(0x1A06)]
     pub(super) mto_channel7: Option<EL1259MtoTxChannel>,
-    #[pdo_object_index(0x1A07)]
     pub(super) mto_channel8: Option<EL1259MtoTxChannel>,
 
-    #[pdo_object_index(0x1A08)]
     pub(super) mti_channel1: Option<EL1259MtiTxChannel>,
-    #[pdo_object_index(0x1A0C)]
     pub(super) mti_channel2: Option<EL1259MtiTxChannel>,
-    #[pdo_object_index(0x1A10)]
     pub(super) mti_channel3: Option<EL1259MtiTxChannel>,
-    #[pdo_object_index(0x1A14)]
     pub(super) mti_channel4: Option<EL1259MtiTxChannel>,
-    #[pdo_object_index(0x1A18)]
     pub(super) mti_channel5: Option<EL1259MtiTxChannel>,
-    #[pdo_object_index(0x1A1C)]
     pub(super) mti_channel6: Option<EL1259MtiTxChannel>,
-    #[pdo_object_index(0x1A20)]
     pub(super) mti_channel7: Option<EL1259MtiTxChannel>,
-    #[pdo_object_index(0x1A24)]
     pub(super) mti_channel8: Option<EL1259MtiTxChannel>,
+}
+
+
+impl SmConfiguration for EL1259TxPdo {
+    // Default assignment, if you want a different one define it yourself
+    fn get_sm_assignments(
+        &self
+    ) -> Result<Vec<common::SdoIndex>, anyhow::Error>
+    {
+
+        let mut vec = vec![];
+        let mut sub_index : u16  = 0;
+        for i in 0..8 {
+            let sdo_index = SdoIndex {
+                index: 0x1600+i,
+                sub_index,
+            };
+            sub_index += 1;
+            vec.push(sdo_index);
+        }
+        for i in 8..16 {
+            let sdo_index = SdoIndex {
+                index: 0x1608+i*4,
+                sub_index,
+            };
+            sub_index += 1;
+            vec.push(sdo_index);
+        }
+
+        Ok( vec )
+    }
+    
+    fn get_sm_coe_writes(&self, device_address : u16) -> Result<Vec<SdoRequest>,anyhow::Error> {
+        let assignments = self.get_sm_assignments()?;
+        let mut writes = vec![]; 
+        let mut sub_index = 0;
+        // Set len of Mappings to 0 (reset)
+        let reset_req = SdoRequest{ 
+            device_address,
+            index: TX_PDO_ASSIGNMENT_REG, 
+            sub_index, 
+            data: [0,0,0,0],
+            type_flag: type_id_to_sdo_type::<u8>()?, 
+        };
+        sub_index += 1;
+
+        writes.push(reset_req);
+        // go through all assignments and write them
+        for i in 0..assignments.len() {
+            let req = SdoRequest{ 
+                device_address,
+                index: TX_PDO_ASSIGNMENT_REG, 
+                sub_index, 
+                data: assignments[i].index.to_bytes(),
+                type_flag: type_id_to_sdo_type::<u16>()?, 
+            };
+            writes.push(req);
+            sub_index += 1;
+        }
+
+        let reset_req = SdoRequest{ 
+            device_address,
+            index: TX_PDO_ASSIGNMENT_REG, 
+            sub_index : 0, 
+            data: sub_index.to_bytes(),
+            type_flag: type_id_to_sdo_type::<u8>()?,
+        };
+        writes.push(reset_req);
+
+        Ok(writes)
+    }
+
 }
 
 impl Default for EL1259TxPdo {
@@ -319,27 +444,12 @@ impl EL1259TxPdo {
             _ => panic!("Channel index out of range {}", channel),
         }
     }
-
-    // pub(super) fn get_mto_mut(&mut self, channel: usize) -> &mut EL1259MtoTxChannel {
-    //     match channel {
-    //         0 => self.mto_channel1.as_mut().expect(EXPECT_TEXT),
-    //         1 => self.mto_channel2.as_mut().expect(EXPECT_TEXT),
-    //         2 => self.mto_channel3.as_mut().expect(EXPECT_TEXT),
-    //         3 => self.mto_channel4.as_mut().expect(EXPECT_TEXT),
-    //         4 => self.mto_channel5.as_mut().expect(EXPECT_TEXT),
-    //         5 => self.mto_channel6.as_mut().expect(EXPECT_TEXT),
-    //         6 => self.mto_channel7.as_mut().expect(EXPECT_TEXT),
-    //         7 => self.mto_channel8.as_mut().expect(EXPECT_TEXT),
-    //         _ => panic!("Channel index out of range {}", channel),
-    //     }
-    // }
 }
 
 /// This PDO object is used read the status of the multi-timestamp output channel.
 /// Importantly, through this PDO, this channel reports back when it is again ready
 /// to receive new output events.
-#[derive(Debug, Default, PdoObject)]
-#[pdo_object(bits = 32)]
+#[derive(Debug, Default)]
 pub(super) struct EL1259MtoTxChannel {
     /// If set, this channel detected a short circuit.
     pub(super) output_short_circuit: bool,
@@ -360,6 +470,13 @@ pub(super) struct EL1259MtoTxChannel {
     /// A maximum of 32 events can be stored at a time.
     pub(super) events_in_output_buffer: u8,
 }
+
+impl PdoObject for EL1259MtoTxChannel {
+    fn size(&self) -> usize {
+        32    
+    }
+}
+
 
 impl TxPdoObject for EL1259MtoTxChannel {
     fn read(&mut self, bits: &BitSlice<u8, Lsb0>) {

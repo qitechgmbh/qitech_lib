@@ -1,17 +1,19 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::EtherCATThreadChannel;
 use crate::coe::Configuration;
-use crate::io::analog_output::{AnalogOutputDevice, AnalogOutputOutput};
-use crate::pdo::PredefinedPdoAssignment;
-use crate::pdo::RxPdo;
-use crate::pdo::TxPdo;
-use crate::pdo::el40xx::AnalogOutput;
+use crate::io::analog_output::{AnalogVoltageOutputDevice};
+use common::pdo::PredefinedPdoAssignment;
+use common::pdo::RxPdo;
+use common::pdo::TxPdo;
+use common::pdo::el40xx::AnalogOutput;
+use units::ElectricPotential;
+use units::electric_potential::volt;
 use crate::shared_config::el40xx::EL40XXChannelConfiguration;
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
+
 /// EL4002 2-channel analog output device
 ///
 /// 0-10V DC, 12-bit resolution
-
 #[derive(EthercatDevice)]
 pub struct EL4002 {
     pub configuration: EL4002Configuration,
@@ -33,7 +35,7 @@ pub struct EL4002Configuration {
 pub enum EL4002PredefinedPdoAssignment {
     Standard,
 }
-
+ 
 impl std::fmt::Debug for EL4002 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "EL4002")
@@ -66,35 +68,30 @@ impl NewEthercatDevice for EL4002 {
         }
     }
 }
-fn normalize_voltage_to_int(value: f32) -> i16 {
-    // Clamp the value between 0.0 and 10.0
-    let clamped = value.clamp(0.0, 10.0);
 
-    // Normalize to 0.0-1.0 range
-    let normalized = clamped / 10.0;
-    (normalized * 32767.0) as i16
-}
-
-impl AnalogOutputDevice for EL4002 {
-    fn set_output(&mut self, port: usize, value: AnalogOutputOutput) {
-        let value = normalize_voltage_to_int(value.0);
-        match port {
-            0 => {
-                if let Some(channel) = self.rxpdo.ao_channel1.as_mut() {
-                    channel.value = value
-                }
-            }
-            1 => {
-                if let Some(channel) = self.rxpdo.ao_channel2.as_mut() {
-                    channel.value = value
-                }
-            }
-            _ => return (),
-        }
-    }
-
+impl AnalogVoltageOutputDevice for EL4002 {
     fn get_port_count(&self) -> usize {
         2
+    }
+
+    fn get_minimum_voltage(&self) -> ElectricPotential {
+        ElectricPotential::new::<volt>(0.0)
+    }
+
+    fn get_maximum_voltage(&self) -> ElectricPotential {
+        ElectricPotential::new::<volt>(10.0)
+    }
+
+    fn set_voltage_relative(&mut self, port: usize, value: f64) {
+        let option = match port {
+            0 => self.rxpdo.ao_channel1.as_mut(),
+            1 => self.rxpdo.ao_channel2.as_mut(),
+            _ => panic!("Port {} index out of range [0, 1]", port),
+        };
+
+        option
+            .expect("All channels should be Some(_)")
+            .set_f64(value);
     }
 }
 
@@ -104,16 +101,13 @@ impl EL4002 {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
     ) -> Result<(), anyhow::Error> {
-        /*
+        
         self.configuration
             .channel1
-            .write_channel_config(subdevice, 0x8000)
-            .await?;
+            .write_channel_config(ecat_channel.clone(),device_address, 0x8000)?;
         self.configuration
             .channel1
-            .write_channel_config(subdevice, 0x8010)
-            .await?;
-        */
+            .write_channel_config(ecat_channel.clone(),device_address, 0x8010)?;
         self.configuration
             .pdo_assignment
             .txpdo_assignment()
@@ -148,7 +142,9 @@ impl PredefinedPdoAssignment<EL4002TxPdo, EL4002RxPdo> for EL4002PredefinedPdoAs
     }
 
     fn txpdo_assignment(&self) -> EL4002TxPdo {
-        EL4002TxPdo {}
+        EL4002TxPdo {
+
+        }
     }
 }
 pub const EL4002_VENDOR_ID: u32 = 0x2;

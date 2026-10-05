@@ -1,8 +1,7 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
-use crate::EtherCATThreadChannel;
-use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::multi_timestamp::{MultiTimestampInput, MultiTimestampOutput};
-use crate::pdo::{PredefinedPdoAssignment, RxPdo, TxPdo};
+use common::{Configuration, SdoRequest};
+use common::pdo::{PredefinedPdoAssignment, RxPdo, TxPdo};
 use crate::{
     BECKHOFF_VENDOR_ID,
     io::{digital_input::DigitalInputDevice, multi_timestamp::MultiTimestampEvent},
@@ -176,7 +175,7 @@ impl NewEthercatDevice for EL1259 {
     }
 }
 
-impl ConfigurableDevice<EL1259Configuration> for EL1259 {
+/*impl ConfigurableDevice<EL1259Configuration> for EL1259 {
     fn write_config(
         &mut self,
         channel: EtherCATThreadChannel,
@@ -190,23 +189,27 @@ impl ConfigurableDevice<EL1259Configuration> for EL1259 {
     fn get_config(&self) -> EL1259Configuration {
         EL1259Configuration::default()
     }
-}
+}*/
 
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct EL1259Configuration {}
 
 impl Configuration for EL1259Configuration {
-    fn write_config(
+    fn get_config_coe_writes(&self) -> Result<Vec<SdoRequest>,anyhow::Error> {
+        Ok(vec![])
+    }
+
+    /*fn write_config(
         &self,
         channel: EtherCATThreadChannel,
         device_address: u16,
     ) -> Result<(), anyhow::Error> {
-        self.txpdo_assignment()
-            .write_config(channel.clone(), device_address)?;
-        self.rxpdo_assignment()
-            .write_config(channel, device_address)?;
+        self.txpdo_assignment();
+            //.write_config(channel.clone(), device_address)?;
+        self.rxpdo_assignment();
+            //.write_config(channel, device_address)?;
         Ok(())
-    }
+    }*/
 }
 
 impl PredefinedPdoAssignment<EL1259TxPdo, EL1259RxPdo> for EL1259Configuration {

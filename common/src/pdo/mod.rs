@@ -1,13 +1,15 @@
 pub mod analog_input;
 pub mod basic;
-pub mod el252x;
-pub mod el32xx;
+pub mod oversampling;
 pub mod el40xx;
+
+/*pub mod el252x;
+pub mod el32xx;
+
 pub mod el5152;
 pub mod el70x1;
 pub mod el70x7;
-pub mod oversampling;
-use crate::coe::Configuration;
+pub mod oversampling;*/
 use bitvec::prelude::*;
 
 /// This trait allows to know the size of a PDO object in bits.
@@ -39,7 +41,7 @@ pub trait PdoObject {
     /// size in bits
     fn size(&self) -> usize;
 }
-
+  
 /// This trait adds the [`TxPdoObject::read`] method which is used to decode the PDO bit array
 ///
 /// Example:
@@ -120,7 +122,7 @@ pub trait PredefinedPdoAssignment<TXPDOA, RXPDOA> {
 ///     pub channel2: Option<BoolPdoObject>,
 /// }
 /// ```
-pub trait RxPdo: Configuration {
+pub trait RxPdo {
     /// Get objects return an array of optinal references to the PDO objects
     ///
     /// This method is commonly derived using the [`ethercat_hal_derive::RxPdo`] macro.
@@ -189,7 +191,7 @@ pub trait RxPdo: Configuration {
 ///     pub channel2: Option<BoolPdoObject>,
 /// }
 /// ```
-pub trait TxPdo: Configuration {
+pub trait TxPdo {
     /// Get objects return an array of optinal references to the PDO objects
     ///
     /// This method is commonly derived using the [`ethercat_hal_derive::TxPdo`] macro.

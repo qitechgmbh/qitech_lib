@@ -6,7 +6,7 @@ use crate::ethercat_helpers::configure_oversampling;
 use crate::ethercat_helpers::enable_dc_sync01;
 use crate::{
     ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES,
-    PDI_LEN, PDU_STORAGE, Producer, SdoType,
+    PDI_LEN, PDU_STORAGE, Producer,
     al_diagnostics::EtherCATTransition,
     ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
     get_async_runtime,
@@ -15,6 +15,7 @@ use crate::{
 };
 use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority};
 use anyhow::bail;
+use common::SdoType;
 #[cfg(target_os = "linux")]
 use common::set_irq_affinity;
 use ethercrab::std::ethercat_now;

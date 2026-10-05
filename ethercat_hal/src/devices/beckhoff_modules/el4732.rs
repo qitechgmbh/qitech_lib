@@ -1,7 +1,7 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::io::analog_output::{AnalogOutputDevice, AnalogOutputOutput};
-use crate::pdo::oversampling::{AnalogOutputOversample, CycleCount};
-use crate::pdo::{RxPdo, TxPdo};
+use common::pdo::oversampling::{AnalogOutputOversample, CycleCount};
+use common::pdo::{RxPdo, TxPdo};
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
 const SM0_START: u16 = 0x1600;
@@ -20,7 +20,6 @@ const SM1_START: u16 = 0x1700;
 #[derive(EthercatDevice)]
 pub struct EL4732 {
     pub rxpdo: EL4732RxPdo,
-    pub txpdo: EL4732TxPdo,
     is_used: bool,
     pub configuration: EL4732Configuration,
 }
@@ -175,15 +174,6 @@ impl EL4732RxPdo {
 impl Default for EL4732RxPdo {
     fn default() -> Self {
         Self::new(1)
-    }
-}
-
-#[derive(Debug, Clone, TxPdo)]
-pub struct EL4732TxPdo {}
-
-impl Default for EL4732TxPdo {
-    fn default() -> Self {
-        Self {}
     }
 }
 

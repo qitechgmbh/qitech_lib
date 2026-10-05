@@ -11,10 +11,10 @@ use ethercat_hal::{
 };
 use std::{env, time::Duration};
 const INIT_DELAY_NS: u64 = 20_000_000;
-const PULSE_DELAY_NS: u64 = 200_000;
-const PULSE_WIDTH_NS: u64 = 50_000;
-const BURST_DELAY_NS: u64 = 50_000_000;
-const PULSES_PER_BURST: usize = 5;
+const PULSE_DELAY_NS: u64 = 200_000_000;
+const PULSE_WIDTH_NS: u64 = 50_000_000_000;
+const BURST_DELAY_NS: u64 = 50_000_000_000 ;
+const PULSES_PER_BURST: usize = 1;
 const N_CHANNELS: usize = 8;
 
 #[derive(Debug, Default)]

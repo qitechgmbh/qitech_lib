@@ -1,6 +1,5 @@
 use super::{RxPdoObject, TxPdoObject};
 use bitvec::prelude::*;
-use ethercat_hal_derive::PdoObject;
 
 // ────────────────────────────────────────────────────────────────────────────
 // TxPdo objects (device → controller)
@@ -8,7 +7,7 @@ use ethercat_hal_derive::PdoObject;
 
 /// # `EncStatusCompact`
 /// 48 bits / 6 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[pdo_object(bits = 48)]
 pub struct EncStatusCompact {
     /// # 6000:01
@@ -86,7 +85,7 @@ impl TxPdoObject for EncStatusCompact {
 
 /// # `EncStatus`
 /// 80 bits / 10 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[pdo_object(bits = 80)]
 pub struct EncStatus {
     /// # 6000:01
@@ -163,7 +162,7 @@ impl TxPdoObject for EncStatus {
 
 /// # `EncTimestampCompact`
 /// 32 bits / 4 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[pdo_object(bits = 32)]
 pub struct EncTimestampCompact {
     /// # 6000:16
@@ -180,7 +179,7 @@ impl TxPdoObject for EncTimestampCompact {
 
 /// # `StmStatus`
 /// 16 bits / 2 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[pdo_object(bits = 16)]
 pub struct StmStatus {
     /// # 6010:01
@@ -269,7 +268,7 @@ impl TxPdoObject for StmStatus {
 
 /// # `StmSynchronInfoData`
 /// 32 bits / 4 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[pdo_object(bits = 32)]
 pub struct StmSynchronInfoData {
     /// # 6010:11

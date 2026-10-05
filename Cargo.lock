@@ -253,6 +253,7 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bitvec",
  "libc",
  "tokio",
 ]
@@ -488,6 +489,7 @@ dependencies = [
 name = "ethercat_hal_derive"
 version = "0.1.0"
 dependencies = [
+ "common",
  "deluxe",
  "proc-macro2",
  "quote",

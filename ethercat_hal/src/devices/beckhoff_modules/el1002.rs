@@ -1,7 +1,7 @@
 use super::{NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::devices::EthercatDeviceProcessing;
 use crate::io::digital_input::DigitalInputDevice;
-use crate::pdo::{PredefinedPdoAssignment, TxPdo, basic::BoolPdoObject};
+use common::pdo::{PredefinedPdoAssignment, TxPdo, basic::BoolPdoObject};
 use ethercat_hal_derive::{EthercatDevice, TxPdo};
 /// EL1002 2-channel digital input device
 /// 24V DC, 3ms filter

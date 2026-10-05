@@ -1,6 +1,5 @@
 use crate::pdo::{PdoObject, RxPdoObject};
 use bitvec::{field::BitField, order::Lsb0, slice::BitSlice};
-use ethercat_hal_derive::PdoObject as PdoObjectDerive;
 
 /// PDO Object for oversampling analog output terminals (e.g. EL4732)
 ///
@@ -49,10 +48,15 @@ impl RxPdoObject for AnalogOutputOversample {
 
 /// PDO Object for oversampling terminals (EL4732, etc.)
 /// Must be incremented by the master each EtherCAT cycle, or the terminal will fault.
-#[derive(Debug, Clone, Default, PdoObjectDerive, PartialEq, Eq)]
-#[pdo_object(bits = 16)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CycleCount {
     pub value: u16,
+}
+
+impl PdoObject for CycleCount {
+    fn size(&self) -> usize {
+        16
+    }
 }
 
 impl RxPdoObject for CycleCount {

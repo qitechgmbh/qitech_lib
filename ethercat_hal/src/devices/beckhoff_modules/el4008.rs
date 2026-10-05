@@ -1,16 +1,14 @@
-use crate::{io::analog_output::AnalogVoltageOutputDevice, pdo::RxPdo};
+use crate::{io::analog_output::AnalogVoltageOutputDevice};
 use ethercat_hal_derive::{EthercatDevice, RxPdo};
 use units::{ElectricPotential, electric_potential::volt};
-
 use crate::{
     devices::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple},
-    pdo::el40xx::AnalogOutput,
 };
+use common::pdo::el40xx::AnalogOutput;
+use common::pdo::RxPdo;
 
 /// EL4008 8-channel analog output device
-///
 /// 12-bit resolution, 0-10V
-///
 /// load > 5kOhm
 #[derive(EthercatDevice)]
 pub struct EL4008 {

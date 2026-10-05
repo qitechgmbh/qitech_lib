@@ -3,15 +3,16 @@ use quote::quote;
 use syn::{Data, DeriveInput, parse_macro_input};
 extern crate proc_macro;
 
-#[derive(deluxe::ExtractAttributes)]
+/*#[derive(deluxe::ExtractAttributes)]
 #[deluxe(attributes(pdo_object_index))]
 struct PdoObjectIndexAttribute(u16);
+*/
 
 fn extract_metedata_field_attributes(
     ast: &mut DeriveInput,
-) -> deluxe::Result<(Vec<syn::Ident>, Vec<u16>)> {
+) -> deluxe::Result<Vec<syn::Ident>> {
     let mut field_names = Vec::new();
-    let mut pdo_indices = Vec::new();
+    //let mut pdo_indices = Vec::new();
     if let Data::Struct(s) = &mut ast.data {
         for field in s.fields.iter_mut() {
             let field_name = field
@@ -19,12 +20,12 @@ fn extract_metedata_field_attributes(
                 .as_ref()
                 .cloned()
                 .expect("Field must have a name");
-            let attrs: PdoObjectIndexAttribute = deluxe::extract_attributes(field)?;
+            //let attrs: PdoObjectIndexAttribute = deluxe::extract_attributes(field)?;
             field_names.push(field_name);
-            pdo_indices.push(attrs.0);
+            //pdo_indices.push(attrs.0);
         }
     }
-    Ok((field_names, pdo_indices))
+    Ok(field_names)
 }
 
 #[proc_macro_derive(RxPdo, attributes(pdo_object_index))]
@@ -34,15 +35,14 @@ pub fn rxpdo_derive(item: TokenStream) -> TokenStream {
 
 fn rxpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::TokenStream> {
     let mut ast: DeriveInput = syn::parse2(item)?;
-
-    let (field_name, pdo_index): (Vec<syn::Ident>, Vec<u16>) =
+    let field_name: Vec<syn::Ident> =
         extract_metedata_field_attributes(&mut ast)?;
 
     let ident = &ast.ident;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
     let expanded = quote! {
-        impl #impl_generics crate::coe::Configuration for #ident #ty_generics #where_clause {
+       /* impl #impl_generics common::Configuration for #ident #ty_generics #where_clause {
             #[doc="Implemented by the ethercat_hal_derive::RxPdo derive macro"]
             fn write_config(
                 &self,
@@ -60,14 +60,14 @@ fn rxpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::
                 channel.sdo_write(device_address,0x1C12, 0, len)?;
                 Ok(())
             }
-        }
+        }*/
 
-        impl #impl_generics crate::pdo::RxPdo for #ident #ty_generics #where_clause {
+        impl #impl_generics common::pdo::RxPdo for #ident #ty_generics #where_clause {
             #[doc="Implemented by the ethercat_hal_derive::RxPdo derive macro"]
-            fn get_objects(&self) -> Box<[Option<&dyn crate::pdo::RxPdoObject>]> {
+            fn get_objects(&self) -> Box<[Option<&dyn common::pdo::RxPdoObject>]> {
                 Box::new([
                     #(
-                        self.#field_name.as_ref().map(|o| o as &dyn crate::pdo::RxPdoObject),
+                        self.#field_name.as_ref().map(|o| o as &dyn common::pdo::RxPdoObject),
                     )*
                 ])
             }
@@ -85,14 +85,14 @@ pub fn txpdo_derive(item: TokenStream) -> TokenStream {
 fn txpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::TokenStream> {
     let mut ast: DeriveInput = syn::parse2(item)?;
 
-    let (field_name, pdo_index): (Vec<syn::Ident>, Vec<u16>) =
+    let field_name: Vec<syn::Ident> =
         extract_metedata_field_attributes(&mut ast)?;
 
     let ident = &ast.ident;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
     let expanded = quote! {
-        impl #impl_generics crate::coe::Configuration for #ident #ty_generics #where_clause {
+       /* impl #impl_generics crate::coe::Configuration for #ident #ty_generics #where_clause {
             #[doc="Implemented by the ethercat_hal_derive::TxPdo derive macro"]
             fn write_config(
                 &self,
@@ -110,23 +110,23 @@ fn txpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::
                 channel.sdo_write(device_address,0x1C13, 0, len)?;
                 Ok(())
             }
-        }
+        }*/
 
-        impl #impl_generics crate::pdo::TxPdo for #ident #ty_generics #where_clause {
+        impl #impl_generics common::pdo::TxPdo for #ident #ty_generics #where_clause {
             #[doc="Implemented by the ethercat_hal_derive::TxPdo derive macro"]
-            fn get_objects(&self) -> Box<[Option<&dyn crate::pdo::TxPdoObject>]> {
+            fn get_objects(&self) -> Box<[Option<&dyn common::pdo::TxPdoObject>]> {
                 Box::new([
                     #(
-                        self.#field_name.as_ref().map(|o| o as &dyn crate::pdo::TxPdoObject),
+                        self.#field_name.as_ref().map(|o| o as &dyn common::pdo::TxPdoObject),
                     )*
                 ])
             }
 
             #[doc="Implemented by the ethercat_hal_derive::TxPdo derive macro"]
-            fn get_objects_mut(&mut self) -> Box<[Option<&mut dyn crate::pdo::TxPdoObject>]> {
+            fn get_objects_mut(&mut self) -> Box<[Option<&mut dyn common::pdo::TxPdoObject>]> {
                 Box::new([
                     #(
-                        self.#field_name.as_mut().map(|o| o as &mut dyn crate::pdo::TxPdoObject),
+                        self.#field_name.as_mut().map(|o| o as &mut dyn common::pdo::TxPdoObject),
                     )*
                 ])
             }
@@ -144,14 +144,12 @@ struct PdoObjectAttribute {
 
 fn pdo_object_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::TokenStream> {
     let mut ast: DeriveInput = syn::parse2(item)?;
-
     let PdoObjectAttribute { bits } = deluxe::extract_attributes(&mut ast)?;
-
     let ident = &ast.ident;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
     let expanded = quote! {
-        impl #impl_generics crate::pdo::PdoObject for #ident #ty_generics #where_clause {
+        impl #impl_generics common::pdo::PdoObject for #ident #ty_generics #where_clause {
             #[doc="Implemented by the ethercat_hal_derive::PdoObject macro"]
             fn size(&self) -> usize {
                 #bits
