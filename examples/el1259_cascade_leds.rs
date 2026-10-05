@@ -1,7 +1,6 @@
 use bitvec::slice::BitSlice;
 use ethercat_hal::{
     EtherCATState,
-    coe::ConfigurableDevice,
     devices::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
         beckhoff_modules::el1259::{EL1259, EL1259_PRODUCT_ID},
@@ -16,6 +15,7 @@ const STEP_NS: u64 = 250_000_000;
 const N_CHANNELS: usize = 8;
 /// Time for one full sweep over all channels
 const PERIOD_NS: u64 = STEP_NS * N_CHANNELS as u64;
+
 #[derive(Debug, Default)]
 struct Channel {
     pulse_start_ns: u64,

@@ -1,6 +1,5 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::EtherCATThreadChannel;
-use crate::coe::Configuration;
 use crate::io::analog_output::{AnalogVoltageOutputDevice};
 use common::pdo::PredefinedPdoAssignment;
 use common::pdo::RxPdo;
@@ -108,14 +107,14 @@ impl EL4002 {
         self.configuration
             .channel1
             .write_channel_config(ecat_channel.clone(),device_address, 0x8010)?;
-        self.configuration
+        /*self.configuration
             .pdo_assignment
             .txpdo_assignment()
             .write_config(ecat_channel.clone(), device_address)?;
         self.configuration
             .pdo_assignment
             .rxpdo_assignment()
-            .write_config(ecat_channel.clone(), device_address)?;
+            .write_config(ecat_channel.clone(), device_address)?;*/
         Ok(())
     }
 }
