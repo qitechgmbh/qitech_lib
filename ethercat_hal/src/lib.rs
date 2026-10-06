@@ -11,7 +11,7 @@ pub mod shared_config;
 pub mod machine_ident_read;
 
 use al_diagnostics::{TransitionLog, TransitionReport};
-use common::{SdoReadRequest, SdoRequest};
+use common::{SdoIndex, SdoReadRequest, SdoRequest};
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
 use std::cell::UnsafeCell;
@@ -541,6 +541,7 @@ pub enum ChannelResponse {
     SdoResponseI16(Result<i16, anyhow::Error>),
     SdoResponseI32(Result<i32, anyhow::Error>),
     SdoWriteResponse(Result<(), anyhow::Error>),
+    BulkSdoWriteResponse(Vec<(SdoIndex, Option<anyhow::Error>)>),
     ChangeState(Result<(), anyhow::Error>),
     MachineDeviceInfoResponse(Result<Vec<MachineDeviceInfo>, anyhow::Error>),
     WriteMachineInfoResponse(Result<(), anyhow::Error>),
@@ -551,6 +552,7 @@ pub enum ChannelResponse {
 
 #[derive(Debug)]
 pub enum ChannelRequests {
+    BulkSdoWrite(Vec<SdoRequest>),
     SdoWriteRequest(SdoRequest),
     SdoReadRequest(SdoReadRequest),
     ChangeState(EtherCATState),
@@ -834,7 +836,28 @@ pub fn init_ethercat(
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx, diagnostic_tx);
     let join_handle = std::thread::Builder::new()
         .name("EthercatStateMachine".into())
-        .spawn(move || controller.ethercat_state_machine())
+        .spawn(move || {
+            // Nobody is guaranteed to join this thread, so report how it ended here
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                controller.ethercat_state_machine()
+            }));
+            match res {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(e)) => {
+                    eprintln!("[EthercatStateMachine] stopped with error: {e:?}");
+                    Err(e)
+                }
+                Err(payload) => {
+                    let msg = payload
+                        .downcast_ref::<&str>()
+                        .map(|s| s.to_string())
+                        .or_else(|| payload.downcast_ref::<String>().cloned())
+                        .unwrap_or_else(|| "<non-string panic payload>".to_string());
+                    eprintln!("[EthercatStateMachine] panicked: {msg}");
+                    std::panic::resume_unwind(payload);
+                }
+            }
+        })
         .expect("Failed to spawn thread");
     EtherCATControl {
         channel,

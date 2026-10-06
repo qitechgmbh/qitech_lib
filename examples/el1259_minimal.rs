@@ -29,10 +29,12 @@ fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
     let eth_control = init_ethercat(&interface, None);
     let mut eth_handle = eth_control.app_handle;
+    
     eth_control
         .channel
         .request_state_change(EtherCATState::PreOp)
         .expect("Channel was not ready");
+        
     loop {
         if matches!(eth_handle.get_state(), EtherCATState::PreOp) {
             break;

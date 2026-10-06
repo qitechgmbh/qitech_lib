@@ -4,12 +4,11 @@ use crate::{ChannelRequest, ChannelResponse, EtherCATThreadResponseChannel};
 use crate::{DiagnosticRequest, DiagnosticResponse};
 use crate::{
     EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest,
-    al_diagnostics::SubDeviceAlStatus, get_async_runtime,
-    machine_ident_read::MachineDeviceInfo,
+    al_diagnostics::SubDeviceAlStatus, get_async_runtime, machine_ident_read::MachineDeviceInfo,
 };
 use common::SdoType;
 #[cfg(not(feature = "mock"))]
-use common::{EthercatResponseTypedResult, EthercatSdoBytes, type_id_to_sdo_type};
+use common::{EthercatResponseTypedResult, EthercatSdoBytes, SdoIndex, type_id_to_sdo_type};
 use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
 };
@@ -272,6 +271,34 @@ impl EtherCATThreadChannel {
         }
     }
 
+    pub fn bulk_sdo_write(
+        &self,
+        writes: Vec<SdoRequest>,
+        timeout: Duration,
+    ) -> Result<Vec<(SdoIndex, Option<anyhow::Error>)>, anyhow::Error> {
+        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
+        let req: ChannelRequest = ChannelRequest {
+            channel_request: crate::ChannelRequests::BulkSdoWrite(writes),
+            response_channel: EtherCATThreadResponseChannel(tx),
+        };
+
+        let res = self.0.send(req);
+        match res {
+            Ok(_) => (),
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+
+        let res = rx.recv_timeout(timeout);
+        let response: ChannelResponse = match res {
+            Ok(res) => res,
+            Err(e) => return Err(anyhow::anyhow!(e)),
+        };
+        match response {
+            ChannelResponse::BulkSdoWriteResponse(result) => Ok(result),
+            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+        }
+    }
+
     pub fn sdo_write<T: 'static>(
         &self,
         device_address: u16,
@@ -285,15 +312,15 @@ impl EtherCATThreadChannel {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let bytes: [u8; 4] = T::to_bytes(&value);
         let sdo_type = type_id_to_sdo_type::<T>()?;
-
         let sdo_request: SdoRequest = SdoRequest {
             device_address,
-            index,
-            sub_index: sub_index as u16,
             data: bytes,
             type_flag: sdo_type,
+            sdo_index: SdoIndex {
+                index: index as u32,
+                sub_index: sub_index as u16,
+            },
         };
-
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::SdoWriteRequest(sdo_request),
             response_channel: EtherCATThreadResponseChannel(tx),
@@ -458,35 +485,39 @@ pub fn sdo_write(
 
             let res = match request.type_flag {
                 SdoType::U8 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
+                    request.sdo_index.index as u16,
+                    request.sdo_index.sub_index as u8,
                     request.data[0],
                 )),
                 SdoType::U16 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
+                    request.sdo_index.index as u16,
+                    request.sdo_index.sub_index as u8,
                     u16::from_le_bytes([request.data[0], request.data[1]]),
                 )),
                 SdoType::U32 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
+                    request.sdo_index.index as u16,
+                    request.sdo_index.sub_index as u8,
                     u32::from_le_bytes(request.data),
                 )),
                 SdoType::I16 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
+                    request.sdo_index.index as u16,
+                    request.sdo_index.sub_index as u8,
                     i16::from_le_bytes([request.data[0], request.data[1]]),
                 )),
                 SdoType::I32 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
+                    request.sdo_index.index as u16,
+                    request.sdo_index.sub_index as u8,
                     i32::from_le_bytes(request.data),
                 )),
                 SdoType::BOOL => {
                     let b: bool = request.data[0] == 1;
-                    runtime.block_on(device.sdo_write(request.index, request.sub_index as u8, b))
+                    runtime.block_on(device.sdo_write(
+                        request.sdo_index.index as u16,
+                        request.sdo_index.sub_index as u8,
+                        b,
+                    ))
                 }
-            };
+            };            
             return Ok(res?);
         }
     }

@@ -1,6 +1,6 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::io::multi_timestamp::{MultiTimestampInput, MultiTimestampOutput};
-use common::{Configuration, SdoRequest};
+use common::{Configuration, SdoIndex, SdoRequest, SmConfiguration};
 use common::pdo::{PredefinedPdoAssignment, RxPdo, TxPdo};
 use crate::{
     BECKHOFF_VENDOR_ID,
@@ -29,6 +29,24 @@ pub struct EL1259 {
     input_queues: [VecDeque<MultiTimestampEvent>; 8],
     output_queues: [VecDeque<MultiTimestampEvent>; 8],
     state: State,
+}
+
+impl EL1259 {
+    pub fn get_sm_assignments(&self) -> Result<Vec<SdoIndex>,anyhow::Error> {
+        let mut res = self.txpdo.get_sm_assignments()?;
+        let res2 = self.rxpdo.get_sm_assignments()?;
+        res.extend(res2); 
+        Ok(res)
+    }
+
+    pub fn get_sm_coe_writes(&self, device_address : u16) -> Result<Vec<SdoRequest>,anyhow::Error> {
+        let mut res = self.txpdo.get_sm_coe_writes(device_address)?;
+        let res2 = self.rxpdo.get_sm_coe_writes(device_address)?;
+        res.extend(res2); 
+        Ok(res)
+    }
+
+
 }
 
 impl EthercatDeviceProcessing for EL1259 {

@@ -28,11 +28,13 @@ fn main() {
     let mut el1259: EL1259 = EL1259::new();
     let interface = env::args().nth(1).expect("No Interface-name given");
     let eth_control = init_ethercat(&interface, None);
+
     let mut eth_handle = eth_control.app_handle;
     eth_control
         .channel
         .request_state_change(EtherCATState::PreOp)
         .expect("Channel was not ready");
+    
     loop {
         if matches!(eth_handle.get_state(), EtherCATState::PreOp) {
             break;
@@ -42,19 +44,23 @@ fn main() {
 
     for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
         if subdevice.product_id == EL1259_PRODUCT_ID {
-            el1259
-                .write_config(
-                    eth_control.channel.clone(),
-                    subdevice.device_address,
-                    &el1259.get_config(),
-                )
-                .expect("Failed to write config");
+            let sm_writes = el1259.get_sm_coe_writes(subdevice.device_address).unwrap();
+            //println!("{:?}",sm_writes );
+            let res = eth_control.channel.sdo_read::<u8>(subdevice.device_address, 0x1C12, 0).unwrap();
+            for i in 1..res {
+                let res = eth_control.channel.sdo_read::<u16>(subdevice.device_address, 0x1C12, i).unwrap();
+                println!("0x1C12:{} : {:X}",i,res );
+            }
+            let res = eth_control.channel.bulk_sdo_write(sm_writes,Duration::from_secs(10));
+            println!("{:?}",res );
             eth_control
                 .channel
                 .enable_dc_sync0(subdevice.device_address)
                 .expect("Failed to enable DC Sync!");
         }
     }
+
+    std::thread::sleep(Duration::from_millis(1000));
 
     eth_control
         .channel
@@ -63,11 +69,15 @@ fn main() {
 
     'outer: loop {
         std::thread::sleep(Duration::from_millis(10));
+        let res = eth_control.channel.register_read(0x1001,0x0134 as u16);
+        println!("ALSTATUS: {:?} {:?}",res,eth_control.join_handle.as_ref().unwrap().is_finished() );
+        
         for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
             if !subdevice.initialized {
                 continue 'outer;
             }
         }
+
         break;
     }
 

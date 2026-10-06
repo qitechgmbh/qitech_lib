@@ -56,13 +56,12 @@ pub struct SdoReadRequest {
 #[derive(Debug)]
 pub struct SdoRequest {
     pub device_address: u16,
-    pub index: u16,
-    pub sub_index: u16,
+    pub sdo_index : SdoIndex,
     pub data: [u8; 4],
     pub type_flag: SdoType,
 }
 
-#[derive(Hash, Eq, PartialEq, PartialOrd, Clone)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Clone,Debug,Copy)]
 pub struct SdoIndex {
     pub index: u32,
     pub sub_index: u16,

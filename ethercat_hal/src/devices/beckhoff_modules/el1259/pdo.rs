@@ -101,8 +101,7 @@ impl SmConfiguration for EL1259RxPdo {
         // Set len of Mappings to 0 (reset)
         let reset_req = SdoRequest{ 
             device_address,
-            index: RX_PDO_ASSIGNMENT_REG, 
-            sub_index, 
+            sdo_index: SdoIndex { index: RX_PDO_ASSIGNMENT_REG as u32, sub_index },
             data: [0,0,0,0],
             type_flag: type_id_to_sdo_type::<u8>()?, 
         };
@@ -113,8 +112,8 @@ impl SmConfiguration for EL1259RxPdo {
         for i in 0..assignments.len() {
             let req = SdoRequest{ 
                 device_address,
-                index: RX_PDO_ASSIGNMENT_REG, 
-                sub_index, 
+            sdo_index: SdoIndex { index: RX_PDO_ASSIGNMENT_REG as u32, sub_index },
+
                 data: assignments[i].index.to_bytes(),
                 type_flag: type_id_to_sdo_type::<u16>()?, 
             };
@@ -124,8 +123,7 @@ impl SmConfiguration for EL1259RxPdo {
 
         let reset_req = SdoRequest{ 
             device_address,
-            index: RX_PDO_ASSIGNMENT_REG, 
-            sub_index : 0, 
+            sdo_index: SdoIndex { index: RX_PDO_ASSIGNMENT_REG as u32, sub_index:0 },
             data: sub_index.to_bytes(),
             type_flag: type_id_to_sdo_type::<u8>()?,
         };
@@ -318,7 +316,7 @@ impl SmConfiguration for EL1259TxPdo {
         let mut sub_index : u16  = 0;
         for i in 0..8 {
             let sdo_index = SdoIndex {
-                index: 0x1600+i,
+                index: 0x1A00+i,
                 sub_index,
             };
             sub_index += 1;
@@ -326,7 +324,7 @@ impl SmConfiguration for EL1259TxPdo {
         }
         for i in 8..16 {
             let sdo_index = SdoIndex {
-                index: 0x1608+i*4,
+                index: 0x1A08+i*4,
                 sub_index,
             };
             sub_index += 1;
@@ -343,8 +341,7 @@ impl SmConfiguration for EL1259TxPdo {
         // Set len of Mappings to 0 (reset)
         let reset_req = SdoRequest{ 
             device_address,
-            index: TX_PDO_ASSIGNMENT_REG, 
-            sub_index, 
+            sdo_index: SdoIndex { index: TX_PDO_ASSIGNMENT_REG as u32, sub_index },
             data: [0,0,0,0],
             type_flag: type_id_to_sdo_type::<u8>()?, 
         };
@@ -355,8 +352,7 @@ impl SmConfiguration for EL1259TxPdo {
         for i in 0..assignments.len() {
             let req = SdoRequest{ 
                 device_address,
-                index: TX_PDO_ASSIGNMENT_REG, 
-                sub_index, 
+                sdo_index: SdoIndex { index: TX_PDO_ASSIGNMENT_REG as u32, sub_index },
                 data: assignments[i].index.to_bytes(),
                 type_flag: type_id_to_sdo_type::<u16>()?, 
             };
@@ -366,8 +362,7 @@ impl SmConfiguration for EL1259TxPdo {
 
         let reset_req = SdoRequest{ 
             device_address,
-            index: TX_PDO_ASSIGNMENT_REG, 
-            sub_index : 0, 
+            sdo_index: SdoIndex { index: TX_PDO_ASSIGNMENT_REG as u32, sub_index: 0 },
             data: sub_index.to_bytes(),
             type_flag: type_id_to_sdo_type::<u8>()?,
         };
