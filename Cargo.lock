@@ -18,6 +18,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "approx"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -249,15 +258,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "common"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "libc",
- "tokio",
-]
-
-[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -460,38 +460,6 @@ checksum = "aa68f1b12764fab894d2755d2518754e71b4fd80ecfb822714a1206c2aab39bf"
 dependencies = [
  "cc",
  "libc",
-]
-
-[[package]]
-name = "ethercat_hal"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitvec",
- "common",
- "core_affinity",
- "ethercat_hal_derive",
- "ethercrab",
- "futures",
- "libc",
- "rand",
- "smol",
- "spin_sleep",
- "ta",
- "tokio",
- "tracing",
- "triple_buffer",
- "units",
-]
-
-[[package]]
-name = "ethercat_hal_derive"
-version = "0.1.0"
-dependencies = [
- "deluxe",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]
@@ -1061,15 +1029,74 @@ name = "qitech_lib"
 version = "0.1.0"
 dependencies = [
  "bitvec",
- "common",
  "core_affinity",
- "ethercat_hal",
- "ethercat_hal_derive",
  "postcard",
+ "qitech_lib_common",
+ "qitech_lib_ethercat_hal",
+ "qitech_lib_ethercat_hal_derive",
+ "qitech_lib_units",
+ "qitech_lib_xtrem",
  "serde",
  "tokio",
- "units",
- "xtrem",
+]
+
+[[package]]
+name = "qitech_lib_common"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "tokio",
+]
+
+[[package]]
+name = "qitech_lib_ethercat_hal"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "approx",
+ "bitvec",
+ "core_affinity",
+ "ethercrab",
+ "futures",
+ "libc",
+ "qitech_lib_common",
+ "qitech_lib_ethercat_hal_derive",
+ "qitech_lib_units",
+ "rand",
+ "smol",
+ "spin_sleep",
+ "ta",
+ "tokio",
+ "tracing",
+ "triple_buffer",
+]
+
+[[package]]
+name = "qitech_lib_ethercat_hal_derive"
+version = "0.1.0"
+dependencies = [
+ "deluxe",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "qitech_lib_units"
+version = "0.1.0"
+dependencies = [
+ "uom",
+]
+
+[[package]]
+name = "qitech_lib_xtrem"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "qitech_lib_common",
+ "qitech_lib_units",
+ "tokio",
 ]
 
 [[package]]
@@ -1529,13 +1556,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
-name = "units"
-version = "0.1.0"
-dependencies = [
- "uom",
-]
-
-[[package]]
 name = "uom"
 version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1741,16 +1761,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
 dependencies = [
  "tap",
-]
-
-[[package]]
-name = "xtrem"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "common",
- "tokio",
- "units",
 ]
 
 [[package]]

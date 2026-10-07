@@ -4,7 +4,7 @@
 */
 
 use bitvec::{order::Lsb0, slice::BitSlice};
-use ethercat_hal::{
+use qitech_lib_ethercat_hal::{
     BECKHOFF_VENDOR_ID, EtherCATState,
     devices::{
         EthercatDevice, NewEthercatDevice,

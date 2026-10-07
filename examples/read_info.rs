@@ -1,4 +1,4 @@
-use ethercat_hal::{EtherCATState, init_ethercat};
+use qitech_lib_ethercat_hal::{EtherCATState, init_ethercat};
 use std::{env, time::Duration};
 
 /// This example reads all information from the devices that is available in PreOP

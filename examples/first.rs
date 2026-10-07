@@ -1,4 +1,4 @@
-use ethercat_hal::{EtherCATState, init_ethercat};
+use qitech_lib_ethercat_hal::{EtherCATState, init_ethercat};
 use std::{env, time::Duration};
 
 /// This example connect to the EtherCAT hardware and list the found devices

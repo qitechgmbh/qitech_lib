@@ -1,0 +1,12 @@
+[package]
+name = "qitech_lib_common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time","sync"] }
+anyhow.workspace = true
+libc.workspace = true
+
+[lib]

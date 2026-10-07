@@ -1,5 +1,5 @@
 use bitvec::slice::BitSlice;
-use ethercat_hal::{
+use qitech_lib_ethercat_hal::{
     EtherCATState,
     coe::ConfigurableDevice,
     devices::{

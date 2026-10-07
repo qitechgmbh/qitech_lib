@@ -1,25 +1,55 @@
-[package]
-name = "qitech_lib"
+[workspace]
+resolver = "3"
+members = [
+    "qitech_lib_common",
+    "qitech_lib_ethercat_hal",
+    "qitech_lib_ethercat_hal_derive",
+    "qitech_lib_units",
+    "qitech_lib_xtrem",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
+license = "LGPL-3.0-only"
+
+[workspace.dependencies]
+# Workspace crates
+qitech_lib_common = { path = "qitech_lib_common" }
+qitech_lib_ethercat_hal = { path = "qitech_lib_ethercat_hal" }
+qitech_lib_ethercat_hal_derive = { path = "qitech_lib_ethercat_hal_derive" }
+qitech_lib_units = { path = "qitech_lib_units" }
+qitech_lib_xtrem = { path = "qitech_lib_xtrem" }
+
+# External crates
+anyhow = "1.0.102"
+bitvec = "1.0.1"
+core_affinity = "0.8.3"
+libc = "0.2.186"
+tokio = "1.50.0"
+
+[package]
+name = "qitech_lib"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
-bitvec = "1.0.1"
-ethercat_hal = { path = "ethercat_hal" }
-ethercat_hal_derive = { path = "ethercat_hal_derive" }
-xtrem = { path = "xtrem" }
-units = {path = "units"}
-common = {path = "common"}
-tokio = "1.49.0"
-
+bitvec.workspace = true
+qitech_lib_common.workspace = true
+qitech_lib_ethercat_hal.workspace = true
+qitech_lib_ethercat_hal_derive.workspace = true
+qitech_lib_units.workspace = true
+qitech_lib_xtrem.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }
 postcard = { version = "1.0", features = ["alloc"] }
-core_affinity = "0.8.3"
+core_affinity.workspace = true
 
 [lib]
 
 [features]
-# This defines 'mock' at the root level and passes it to 'ethercat_hal'
-mock = ["ethercat_hal/mock"]
+# This defines 'mock' at the root level and passes it to 'qitech_lib_ethercat_hal'
+mock = ["qitech_lib_ethercat_hal/mock"]

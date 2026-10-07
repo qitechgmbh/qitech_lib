@@ -1,5 +1,5 @@
 use bitvec::slice::BitSlice;
-use ethercat_hal::{
+use qitech_lib_ethercat_hal::{
     DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig,
     devices::{
         EthercatDevice, EthercatDeviceProcessing,
@@ -85,7 +85,7 @@ fn main() {
 
     let config = MasterConfiguration {
         target_cycle_time_us: cycle_time_us as usize,
-        tx_rx_config: ethercat_hal::MasterTxRxConfig::TxRxIoUring,
+        tx_rx_config: qitech_lib_ethercat_hal::MasterTxRxConfig::TxRxIoUring,
         dc_config,
         realtime_optimizations: Some(rt),
         wkc_mismatch_threshold: 5,

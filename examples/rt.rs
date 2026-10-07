@@ -1,4 +1,4 @@
-use ethercat_hal::{
+use qitech_lib_ethercat_hal::{
     DcConfiguration, EtherCATState, EtherCATThreadChannel, MasterConfiguration,
     RtOptimizationConfig, StdEcatHandle, init_ethercat, set_current_thread_rt_priority,
 };
@@ -52,7 +52,7 @@ fn setup() -> Setup {
 
     let config = MasterConfiguration {
         target_cycle_time_us: setup.cycle_time_us as usize,
-        tx_rx_config: ethercat_hal::MasterTxRxConfig::TxRxIoUring,
+        tx_rx_config: qitech_lib_ethercat_hal::MasterTxRxConfig::TxRxIoUring,
         dc_config,
         realtime_optimizations: Some(rt),
         wkc_mismatch_threshold: 5,

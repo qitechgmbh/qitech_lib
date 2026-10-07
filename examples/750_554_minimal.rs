@@ -1,5 +1,5 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
-use ethercat_hal::{
+use qitech_lib_ethercat_hal::{
     EtherCATState,
     devices::{
         EthercatDevice, NewEthercatDevice,
@@ -11,8 +11,8 @@ use ethercat_hal::{
     init_ethercat,
     io::analog_output::AnalogCurrentOutputDevice,
 };
+use qitech_lib_units::electric_current::milliampere;
 use std::{env, time::Duration};
-use units::electric_current::milliampere;
 
 fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
