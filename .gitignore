@@ -24,3 +24,6 @@ t.sh
 # Added by cargo
 
 /target
+
+# Ai Garbage
+CLAUDE.md
