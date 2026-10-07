@@ -1,14 +1,14 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::EtherCATThreadChannel;
-use crate::io::analog_output::{AnalogVoltageOutputDevice};
+use crate::io::analog_output::AnalogVoltageOutputDevice;
+use crate::shared_config::el40xx::EL40XXChannelConfiguration;
 use common::pdo::PredefinedPdoAssignment;
 use common::pdo::RxPdo;
 use common::pdo::TxPdo;
 use common::pdo::el40xx::AnalogOutput;
+use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 use units::ElectricPotential;
 use units::electric_potential::volt;
-use crate::shared_config::el40xx::EL40XXChannelConfiguration;
-use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
 /// EL4002 2-channel analog output device
 ///
@@ -34,7 +34,7 @@ pub struct EL4002Configuration {
 pub enum EL4002PredefinedPdoAssignment {
     Standard,
 }
- 
+
 impl std::fmt::Debug for EL4002 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "EL4002")
@@ -100,13 +100,16 @@ impl EL4002 {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
     ) -> Result<(), anyhow::Error> {
-        
-        self.configuration
-            .channel1
-            .write_channel_config(ecat_channel.clone(),device_address, 0x8000)?;
-        self.configuration
-            .channel1
-            .write_channel_config(ecat_channel.clone(),device_address, 0x8010)?;
+        self.configuration.channel1.write_channel_config(
+            ecat_channel.clone(),
+            device_address,
+            0x8000,
+        )?;
+        self.configuration.channel1.write_channel_config(
+            ecat_channel.clone(),
+            device_address,
+            0x8010,
+        )?;
         /*self.configuration
             .pdo_assignment
             .txpdo_assignment()
@@ -141,9 +144,7 @@ impl PredefinedPdoAssignment<EL4002TxPdo, EL4002RxPdo> for EL4002PredefinedPdoAs
     }
 
     fn txpdo_assignment(&self) -> EL4002TxPdo {
-        EL4002TxPdo {
-
-        }
+        EL4002TxPdo {}
     }
 }
 pub const EL4002_VENDOR_ID: u32 = 0x2;

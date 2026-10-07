@@ -1,18 +1,56 @@
 use std::any::TypeId;
 
-/// This Trait is to convert a Configuration from struct representation to
-/// a list of sdo writes needed to setup device specific coe config
-pub trait Configuration {
-    fn get_config_coe_writes(&self) -> Result<Vec<SdoRequest>,anyhow::Error>;
-}
-/// This Trait Converts an SMConfig to a list of sdo writes
-pub trait SmConfiguration {
-    fn get_sm_assignments(
-        &self
-    ) -> Result<Vec<u16>, anyhow::Error>;
+use crate::pdo::{RxPdo, TxPdo};
 
-    fn get_sm_coe_writes(&self, device_address : u16, pdo_assignment_reg : u16) -> Result<Vec<SdoRequest>,anyhow::Error> {
-        let assignments = self.get_sm_assignments()?;
+pub const RX_PDO_ASSIGNMENT_REG: u16 = 0x1C12;
+pub const TX_PDO_ASSIGNMENT_REG: u16 = 0x1C13;
+
+/// Full CoE configuration of a device: device specific parameters plus the PDO assignment.
+///
+/// The config only selects which PDO structs are used, the SM assignment is derived from them
+/// (see [`SmConfiguration`]), so the written assignment always matches the decoded process image.
+pub trait Configuration {
+    type TxPdo: TxPdo + SmConfiguration;
+    type RxPdo: RxPdo + SmConfiguration;
+
+    fn txpdo_assignment(&self) -> Self::TxPdo;
+    fn rxpdo_assignment(&self) -> Self::RxPdo;
+
+    /// Device specific CoE parameters, without the PDO assignment
+    fn get_config_coe_writes(
+        &self,
+        _device_address: u16,
+    ) -> Result<Vec<SdoRequest>, anyhow::Error> {
+        Ok(vec![])
+    }
+
+    /// PDO assignment writes for 0x1C13 and 0x1C12
+    fn get_sm_coe_writes(&self, device_address: u16) -> Result<Vec<SdoRequest>, anyhow::Error> {
+        let mut writes = self.txpdo_assignment().get_sm_coe_writes(device_address)?;
+        writes.extend(self.rxpdo_assignment().get_sm_coe_writes(device_address)?);
+        Ok(writes)
+    }
+
+    /// All writes needed to configure the device, ready for a bulk sdo write
+    fn get_coe_writes(&self, device_address: u16) -> Result<Vec<SdoRequest>, anyhow::Error> {
+        let mut writes = self.get_config_coe_writes(device_address)?;
+        writes.extend(self.get_sm_coe_writes(device_address)?);
+        Ok(writes)
+    }
+}
+
+/// Converts the PDO assignment of a PDO struct to a list of sdo writes.
+///
+/// Derived by the `RxPdo`/`TxPdo` macros from the `#[pdo_object_index]` attributes.
+pub trait SmConfiguration {
+    /// [`RX_PDO_ASSIGNMENT_REG`] or [`TX_PDO_ASSIGNMENT_REG`]
+    const ASSIGNMENT_REG: u16;
+
+    fn get_sm_assignments(&self) -> Vec<u16>;
+
+    fn get_sm_coe_writes(&self, device_address: u16) -> Result<Vec<SdoRequest>, anyhow::Error> {
+        let pdo_assignment_reg = Self::ASSIGNMENT_REG;
+        let assignments = self.get_sm_assignments();
         let mut sub_index = 0;
         let mut writes = vec![];
 
@@ -21,38 +59,46 @@ pub trait SmConfiguration {
         }
 
         // Set len of Mappings to 0 (reset)
-        let reset_req = SdoRequest{ 
+        let reset_req = SdoRequest {
             device_address,
-            sdo_index: SdoIndex { index: pdo_assignment_reg as u32, sub_index },
-            data: [0,0,0,0],
-            type_flag: type_id_to_sdo_type::<u8>()?, 
+            sdo_index: SdoIndex {
+                index: pdo_assignment_reg as u32,
+                sub_index,
+            },
+            data: [0, 0, 0, 0],
+            type_flag: type_id_to_sdo_type::<u8>()?,
         };
         sub_index += 1;
 
         writes.push(reset_req);
         // go through all assignments and write them
         for i in 0..assignments.len() {
-            let req = SdoRequest{ 
+            let req = SdoRequest {
                 device_address,
-                sdo_index: SdoIndex { index: pdo_assignment_reg as u32, sub_index },
+                sdo_index: SdoIndex {
+                    index: pdo_assignment_reg as u32,
+                    sub_index,
+                },
                 data: assignments[i].to_bytes(),
-                type_flag: type_id_to_sdo_type::<u16>()?, 
+                type_flag: type_id_to_sdo_type::<u16>()?,
             };
             writes.push(req);
             sub_index += 1;
         }
 
-        let reset_req = SdoRequest{ 
+        let len_req = SdoRequest {
             device_address,
-            sdo_index: SdoIndex { index: pdo_assignment_reg as u32, sub_index: 0 },
-            data: (sub_index-1).to_bytes(),
+            sdo_index: SdoIndex {
+                index: pdo_assignment_reg as u32,
+                sub_index: 0,
+            },
+            data: ((sub_index - 1) as u8).to_bytes(),
             type_flag: type_id_to_sdo_type::<u8>()?,
         };
-        writes.push(reset_req);
+        writes.push(len_req);
 
         Ok(writes)
     }
-    
 }
 
 #[derive(Debug)]
@@ -98,12 +144,12 @@ pub struct SdoReadRequest {
 #[derive(Debug)]
 pub struct SdoRequest {
     pub device_address: u16,
-    pub sdo_index : SdoIndex,
+    pub sdo_index: SdoIndex,
     pub data: [u8; 4],
     pub type_flag: SdoType,
 }
 
-#[derive(Hash, Eq, PartialEq, PartialOrd, Clone,Debug,Copy)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Clone, Debug, Copy)]
 pub struct SdoIndex {
     pub index: u32,
     pub sub_index: u16,

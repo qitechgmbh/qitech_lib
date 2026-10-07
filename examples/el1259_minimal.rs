@@ -29,12 +29,12 @@ fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
     let eth_control = init_ethercat(&interface, None);
     let mut eth_handle = eth_control.app_handle;
-    
+
     eth_control
         .channel
         .request_state_change(EtherCATState::PreOp)
         .expect("Channel was not ready");
-        
+
     loop {
         if matches!(eth_handle.get_state(), EtherCATState::PreOp) {
             break;
@@ -44,13 +44,19 @@ fn main() {
 
     for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
         if subdevice.product_id == EL1259_PRODUCT_ID {
-            el1259
-                .write_config(
-                    eth_control.channel.clone(),
+            let results = eth_control
+                .channel
+                .write_configuration(
                     subdevice.device_address,
-                    &el1259.get_config(),
+                    el1259.get_config(),
+                    Duration::from_secs(4),
                 )
-                .expect("Failed to write config");
+                .expect("Failed to write configuration");
+            for (sdo_index, error) in results {
+                if let Some(error) = error {
+                    panic!("Failed to write {:?}: {:?}", sdo_index, error);
+                }
+            }
             eth_control
                 .channel
                 .enable_dc_sync0(subdevice.device_address)

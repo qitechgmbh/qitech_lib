@@ -1,51 +1,46 @@
+use crate::io::multi_timestamp::MultiTimestampEvent;
 use bitvec::field::BitField;
 use bitvec::prelude::{BitSlice, Lsb0};
-use common::{PdoObject, SdoIndex, SmConfiguration};
-use ethercat_hal_derive::{PdoObject, RxPdo, TxPdo};
-use crate::io::multi_timestamp::MultiTimestampEvent;
+use common::PdoObject;
 use common::pdo::{RxPdoObject, TxPdoObject};
+use ethercat_hal_derive::{PdoObject, RxPdo, TxPdo};
 const EXPECT_TEXT: &str = "All channels should be Some(_)";
 
-
 #[derive(Debug, RxPdo)]
-pub(super) struct EL1259RxPdo {
+pub struct EL1259RxPdo {
+    #[pdo_object_index(0x1600)]
     pub(super) mto_channel1: Option<EL1259MtoRxChannel>,
+    #[pdo_object_index(0x1604)]
     pub(super) mto_channel2: Option<EL1259MtoRxChannel>,
+    #[pdo_object_index(0x1608)]
     pub(super) mto_channel3: Option<EL1259MtoRxChannel>,
+    #[pdo_object_index(0x160C)]
     pub(super) mto_channel4: Option<EL1259MtoRxChannel>,
+    #[pdo_object_index(0x1610)]
     pub(super) mto_channel5: Option<EL1259MtoRxChannel>,
+    #[pdo_object_index(0x1614)]
     pub(super) mto_channel6: Option<EL1259MtoRxChannel>,
+    #[pdo_object_index(0x1618)]
     pub(super) mto_channel7: Option<EL1259MtoRxChannel>,
+    #[pdo_object_index(0x161C)]
     pub(super) mto_channel8: Option<EL1259MtoRxChannel>,
 
+    #[pdo_object_index(0x1620)]
     pub(super) mti_channel1: Option<EL1259MtiRxChannel>,
+    #[pdo_object_index(0x1621)]
     pub(super) mti_channel2: Option<EL1259MtiRxChannel>,
+    #[pdo_object_index(0x1622)]
     pub(super) mti_channel3: Option<EL1259MtiRxChannel>,
+    #[pdo_object_index(0x1623)]
     pub(super) mti_channel4: Option<EL1259MtiRxChannel>,
+    #[pdo_object_index(0x1624)]
     pub(super) mti_channel5: Option<EL1259MtiRxChannel>,
+    #[pdo_object_index(0x1625)]
     pub(super) mti_channel6: Option<EL1259MtiRxChannel>,
+    #[pdo_object_index(0x1626)]
     pub(super) mti_channel7: Option<EL1259MtiRxChannel>,
+    #[pdo_object_index(0x1627)]
     pub(super) mti_channel8: Option<EL1259MtiRxChannel>,
-}
-
-impl SmConfiguration for EL1259RxPdo {
-    // Default assignment, if you want a different one define it yourself
-    fn get_sm_assignments(
-        &self
-    ) -> Result<Vec<u16>, anyhow::Error>
-    {
-        let mut vec = vec![];
-        for i in 0..8 {
-            let sdo_index = 0x1600+i*4;
-            vec.push(sdo_index);
-        }
-
-        for i in 0..8 {
-            let sdo_index = 0x1620+i;
-            vec.push(sdo_index);
-        }
-        Ok( vec )
-    }
 }
 
 impl Default for EL1259RxPdo {
@@ -203,46 +198,40 @@ impl RxPdoObject for EL1259MtiRxChannel {
 }
 
 #[derive(Debug, TxPdo)]
-pub(super) struct EL1259TxPdo {
+pub struct EL1259TxPdo {
+    #[pdo_object_index(0x1A00)]
     pub(super) mto_channel1: Option<EL1259MtoTxChannel>,
+    #[pdo_object_index(0x1A01)]
     pub(super) mto_channel2: Option<EL1259MtoTxChannel>,
+    #[pdo_object_index(0x1A02)]
     pub(super) mto_channel3: Option<EL1259MtoTxChannel>,
+    #[pdo_object_index(0x1A03)]
     pub(super) mto_channel4: Option<EL1259MtoTxChannel>,
+    #[pdo_object_index(0x1A04)]
     pub(super) mto_channel5: Option<EL1259MtoTxChannel>,
+    #[pdo_object_index(0x1A05)]
     pub(super) mto_channel6: Option<EL1259MtoTxChannel>,
+    #[pdo_object_index(0x1A06)]
     pub(super) mto_channel7: Option<EL1259MtoTxChannel>,
+    #[pdo_object_index(0x1A07)]
     pub(super) mto_channel8: Option<EL1259MtoTxChannel>,
 
+    #[pdo_object_index(0x1A08)]
     pub(super) mti_channel1: Option<EL1259MtiTxChannel>,
+    #[pdo_object_index(0x1A0C)]
     pub(super) mti_channel2: Option<EL1259MtiTxChannel>,
+    #[pdo_object_index(0x1A10)]
     pub(super) mti_channel3: Option<EL1259MtiTxChannel>,
+    #[pdo_object_index(0x1A14)]
     pub(super) mti_channel4: Option<EL1259MtiTxChannel>,
+    #[pdo_object_index(0x1A18)]
     pub(super) mti_channel5: Option<EL1259MtiTxChannel>,
+    #[pdo_object_index(0x1A1C)]
     pub(super) mti_channel6: Option<EL1259MtiTxChannel>,
+    #[pdo_object_index(0x1A20)]
     pub(super) mti_channel7: Option<EL1259MtiTxChannel>,
+    #[pdo_object_index(0x1A24)]
     pub(super) mti_channel8: Option<EL1259MtiTxChannel>,
-}
-
-
-impl SmConfiguration for EL1259TxPdo {
-    // Default assignment, if you want a different one define it yourself
-    fn get_sm_assignments(
-        &self
-    ) -> Result<Vec<u16>, anyhow::Error>
-    {
-        let mut vec = vec![];        
-        for i in 0..8 {
-            let sdo_index = 
-                0x1A00+i;            
-            vec.push(sdo_index);
-        }
-        for i in 0..8 {
-            let sdo_index = 0x1A08+i*4;
-            vec.push(sdo_index);
-        }
-
-        Ok( vec )
-    }
 }
 
 impl Default for EL1259TxPdo {
@@ -340,10 +329,9 @@ pub(super) struct EL1259MtoTxChannel {
 
 impl PdoObject for EL1259MtoTxChannel {
     fn size(&self) -> usize {
-        32    
+        32
     }
 }
-
 
 impl TxPdoObject for EL1259MtoTxChannel {
     fn read(&mut self, bits: &BitSlice<u8, Lsb0>) {

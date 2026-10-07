@@ -7,8 +7,8 @@ pub mod ethercat_helpers;
 pub mod helpers;
 pub mod interface_discovery;
 pub mod io;
-pub mod shared_config;
 pub mod machine_ident_read;
+pub mod shared_config;
 
 use al_diagnostics::{TransitionLog, TransitionReport};
 use common::{SdoIndex, SdoReadRequest, SdoRequest};

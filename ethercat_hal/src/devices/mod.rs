@@ -5,10 +5,10 @@ use crate::MetaSubdevice;
 
 #[cfg(feature = "mock")]
 use crate::TypeErasedValue;
+use crate::devices::beckhoff_modules::el4002::EL4002_IDENTITY_A;
 use beckhoff_modules::el1002::{EL1002, EL1002_IDENTITY_A};
 use beckhoff_modules::el1259::{EL1259, EL1259_IDENTITY_A};
 use beckhoff_modules::el4002::EL4002;
-use crate::devices::beckhoff_modules::el4002::EL4002_IDENTITY_A;
 
 /*use crate::devices::beckhoff_modules::el1124::{EL1124, EL1124_IDENTITY_A};
 use crate::devices::beckhoff_modules::el1259::{EL1259, EL1259_IDENTITY_A};
@@ -172,7 +172,7 @@ pub fn device_from_subdevice_identity(
     let ident_tuple: (u32, u32, u32) = (dev.vendor, dev.product_id, dev.revision);
     match ident_tuple {
         EL1002_IDENTITY_A => Ok(Box::new(EL1002::new())),
-/*
+        /*
         WAGO_750_354_IDENTITY_A => Ok(Box::new(Wago750_354::new())),
         IP20_EC_DI8_DO8_IDENTITY => Ok(Box::new(IP20EcDi8Do8::new())),
         EK1100_IDENTITY_A => Ok(Box::new(EK1100::new())),
@@ -256,7 +256,6 @@ pub fn device_from_subdevice_identity_rc(
         EL4732_IDENTITY_A | EL4732_IDENTITY_B | EL4732_IDENTITY_C => {
             Ok(Rc::new(RefCell::new(el4732::EL4732::new())))
         }*/
-
         _ => Err(anyhow::anyhow!(
             "[{}::device_from_subdevice] No Driver: vendor_id: 0x{:x}, product_id: 0x{:x}, revision: 0x{:x}",
             module_path!(),

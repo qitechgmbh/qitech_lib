@@ -1,18 +1,13 @@
-use crate::EtherCATThreadChannel;
-/*
-/// Wraps functionality of [`Configuration`] and adds getter/setter for the config
-pub trait ConfigurableDevice<C>
-where
-    C: Configuration + Clone,
-{
-    fn write_config(
-        &mut self,
-        channel: EtherCATThreadChannel,
-        device_address: u16,
-        config: &C,
-    ) -> Result<(), anyhow::Error>;
-    fn get_config(&self) -> C;
+pub use common::{Configuration, RX_PDO_ASSIGNMENT_REG, TX_PDO_ASSIGNMENT_REG};
+
+/// A device whose CoE configuration is described by a [`Configuration`].
+///
+/// The device builds its PDO structs from the config, so the writes from
+/// [`Configuration::get_coe_writes`] always match what the device decodes.
+pub trait ConfigurableDevice {
+    type Config: Configuration;
+
+    /// Store the config and switch the device's PDOs to the config's assignment
+    fn set_config(&mut self, config: Self::Config);
+    fn get_config(&self) -> &Self::Config;
 }
-*/
-pub const TX_PDO_ASSIGNMENT_REG: u16 = 0x1C13;
-pub const RX_PDO_ASSIGNMENT_REG: u16 = 0x1C12;

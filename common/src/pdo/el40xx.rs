@@ -1,5 +1,5 @@
-use crate::PdoObject;
 use super::RxPdoObject;
+use crate::PdoObject;
 use bitvec::prelude::*;
 
 /// PDO Object for EL40xx (analog output) devices

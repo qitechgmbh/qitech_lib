@@ -8,7 +8,9 @@ use crate::{
 };
 use common::SdoType;
 #[cfg(not(feature = "mock"))]
-use common::{EthercatResponseTypedResult, EthercatSdoBytes, SdoIndex, type_id_to_sdo_type};
+use common::{
+    Configuration, EthercatResponseTypedResult, EthercatSdoBytes, SdoIndex, type_id_to_sdo_type,
+};
 use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
 };
@@ -299,6 +301,19 @@ impl EtherCATThreadChannel {
         }
     }
 
+    /// Writes the device specific CoE parameters and the PDO assignment of `config`
+    /// in one [`Self::bulk_sdo_write`]. Has to be called in PreOp.
+    pub fn write_configuration<C: Configuration>(
+        &self,
+        device_address: u16,
+        config: &C,
+        timeout: Duration,
+    ) -> Result<Vec<(SdoIndex, Option<anyhow::Error>)>, anyhow::Error> {
+        let mut writes = config.get_config_coe_writes(device_address)?;
+        writes.extend(config.get_sm_coe_writes(device_address)?);
+        self.bulk_sdo_write(writes, timeout)
+    }
+
     pub fn sdo_write<T: 'static>(
         &self,
         device_address: u16,
@@ -517,7 +532,7 @@ pub fn sdo_write(
                         b,
                     ))
                 }
-            };            
+            };
             return Ok(res?);
         }
     }

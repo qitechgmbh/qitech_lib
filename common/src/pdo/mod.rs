@@ -1,7 +1,7 @@
 pub mod analog_input;
 pub mod basic;
-pub mod oversampling;
 pub mod el40xx;
+pub mod oversampling;
 
 /*pub mod el252x;
 pub mod el32xx;
@@ -41,7 +41,7 @@ pub trait PdoObject {
     /// size in bits
     fn size(&self) -> usize;
 }
-  
+
 /// This trait adds the [`TxPdoObject::read`] method which is used to decode the PDO bit array
 ///
 /// Example:

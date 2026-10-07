@@ -1,6 +1,6 @@
-use bitvec::prelude::*;
-use crate::PdoObject;
 use super::{TxPdoObject, basic::Limit};
+use crate::PdoObject;
+use bitvec::prelude::*;
 
 /// PDO Object for EL30xx devices
 ///

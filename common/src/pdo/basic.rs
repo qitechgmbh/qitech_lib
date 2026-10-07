@@ -1,6 +1,6 @@
-use bitvec::{field::BitField, order::Lsb0, slice::BitSlice};
-use crate::pdo::PdoObject;
 use super::{RxPdoObject, TxPdoObject};
+use crate::pdo::PdoObject;
+use bitvec::{field::BitField, order::Lsb0, slice::BitSlice};
 
 /// PDO Object that is just a bool
 ///

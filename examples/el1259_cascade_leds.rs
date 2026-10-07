@@ -1,9 +1,13 @@
 use bitvec::slice::BitSlice;
 use ethercat_hal::{
-    EtherCATState, coe::{RX_PDO_ASSIGNMENT_REG, TX_PDO_ASSIGNMENT_REG}, devices::{
+    EtherCATState,
+    coe::ConfigurableDevice,
+    devices::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
         beckhoff_modules::el1259::{EL1259, EL1259_PRODUCT_ID},
-    }, init_ethercat, io::multi_timestamp::{MultiTimestampEvent, MultiTimestampOutput},
+    },
+    init_ethercat,
+    io::multi_timestamp::{MultiTimestampEvent, MultiTimestampOutput},
 };
 use std::{env, time::Duration};
 const INIT_DELAY_NS: u64 = 20_000_000;
@@ -31,7 +35,7 @@ fn main() {
         .channel
         .request_state_change(EtherCATState::PreOp)
         .expect("Channel was not ready");
-    
+
     loop {
         if matches!(eth_handle.get_state(), EtherCATState::PreOp) {
             break;
@@ -41,22 +45,19 @@ fn main() {
 
     for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
         if subdevice.product_id == EL1259_PRODUCT_ID {
-            let sm_writes = el1259.get_sm_coe_writes(subdevice.device_address).unwrap();
-//            println!("{:?}",sm_writes );
-            let res = eth_control.channel.sdo_read::<u8>(subdevice.device_address, TX_PDO_ASSIGNMENT_REG, 0).unwrap();
-            println!("tx SDO Len: {}",res);
-            for i in 1..res {
-                let res = eth_control.channel.sdo_read::<u16>(subdevice.device_address, TX_PDO_ASSIGNMENT_REG, i).unwrap();
-                println!("{}:{} : {} {:X}",TX_PDO_ASSIGNMENT_REG,i,res,res);
+            let results = eth_control
+                .channel
+                .write_configuration(
+                    subdevice.device_address,
+                    el1259.get_config(),
+                    Duration::from_secs(4),
+                )
+                .expect("Failed to write configuration");
+            for (sdo_index, error) in results {
+                if let Some(error) = error {
+                    panic!("Failed to write {:?}: {:?}", sdo_index, error);
+                }
             }
-            let res = eth_control.channel.sdo_read::<u8>(subdevice.device_address, RX_PDO_ASSIGNMENT_REG, 0).unwrap();
-            println!("rx SDO Len: {}",res);
-            for i in 1..res {
-                let res = eth_control.channel.sdo_read::<u16>(subdevice.device_address, RX_PDO_ASSIGNMENT_REG, i).unwrap();
-                println!("{}:{} : {} {:X}",RX_PDO_ASSIGNMENT_REG,i,res,res);
-            }
-            let res = eth_control.channel.bulk_sdo_write(sm_writes,Duration::from_secs(10));
-            println!("{:?}",res );
             eth_control
                 .channel
                 .enable_dc_sync0(subdevice.device_address)
@@ -73,9 +74,13 @@ fn main() {
 
     'outer: loop {
         std::thread::sleep(Duration::from_millis(10));
-        let res = eth_control.channel.register_read(0x1001,0x0134 as u16);
-        println!("ALSTATUS: {:?} {:?}",res,eth_control.join_handle.as_ref().unwrap().is_finished() );
-        
+        let res = eth_control.channel.register_read(0x1001, 0x0134 as u16);
+        println!(
+            "ALSTATUS: {:?} {:?}",
+            res,
+            eth_control.join_handle.as_ref().unwrap().is_finished()
+        );
+
         for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
             if !subdevice.initialized {
                 continue 'outer;

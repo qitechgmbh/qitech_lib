@@ -1,8 +1,12 @@
 use bitvec::slice::BitSlice;
 use ethercat_hal::{
-    BECKHOFF_VENDOR_ID, EtherCATState, devices::{
-        EthercatDevice, NewEthercatDevice, beckhoff_modules::el4002::{EL4002, EL4002_PRODUCT_ID, EL4002Configuration},
-    }, init_ethercat, io::analog_output::AnalogVoltageOutputDevice,
+    BECKHOFF_VENDOR_ID, EtherCATState,
+    devices::{
+        EthercatDevice, NewEthercatDevice,
+        beckhoff_modules::el4002::{EL4002, EL4002_PRODUCT_ID, EL4002Configuration},
+    },
+    init_ethercat,
+    io::analog_output::AnalogVoltageOutputDevice,
 };
 use std::{env, time::Duration};
 
@@ -52,7 +56,7 @@ fn main() {
     let mut el4008: EL4002 = EL4002::new();
     el4008.configuration = EL4002Configuration::default();
     let res = el4008.write_config(eth_control.channel.clone(), 0x1003);
-    println!("{:?}",res);
+    println!("{:?}", res);
 
     for iter in 0.. {
         // Tick our application.

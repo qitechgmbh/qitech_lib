@@ -221,7 +221,7 @@ fn handle_channel_requests(
                 let res = sdo_write(maindev, preop_group, write);
                 let failed_write = match res {
                     Ok(_) => continue,
-                    Err(e) => (sdo_index,Some(e))
+                    Err(e) => (sdo_index, Some(e)),
                 };
                 failed_writes.push(failed_write);
             }
@@ -230,7 +230,7 @@ fn handle_channel_requests(
                 ChannelResponse::BulkSdoWriteResponse(failed_writes),
             );
             false
-        },
+        }
     }
 }
 
@@ -354,26 +354,25 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         );
 
         // A bad DC config shows up as InvalidDcSyncConfiguration (0x0030).
-        let group_preop_pdi_dc = rt
-            .block_on(self.transition(
-                EtherCATTransition::ConfigureDcSync,
+        let group_preop_pdi_dc = rt.block_on(self.transition(
+            EtherCATTransition::ConfigureDcSync,
+            maindevice,
+            group_preop_pdi.configure_dc_sync(
                 maindevice,
-                group_preop_pdi.configure_dc_sync(
-                    maindevice,
-                    DcConfiguration {
-                        start_delay: self.current_config.dc_config.start_delay,
-                        sync0_period: self.current_config.dc_config.sync0_period,
-                        sync0_shift: self.current_config.dc_config.sync0_shift,
-                    },
-                ),
-            ));
-        
-        let group_preop_pdi_dc =  match group_preop_pdi_dc {
+                DcConfiguration {
+                    start_delay: self.current_config.dc_config.start_delay,
+                    sync0_period: self.current_config.dc_config.sync0_period,
+                    sync0_shift: self.current_config.dc_config.sync0_shift,
+                },
+            ),
+        ));
+
+        let group_preop_pdi_dc = match group_preop_pdi_dc {
             Ok(group_dc) => group_dc,
             Err(e) => {
-                //println!("Failed to move to preop_pdi_dc {}",e); 
+                //println!("Failed to move to preop_pdi_dc {}",e);
                 return Err(e);
-            },
+            }
         };
         self.state.store(EtherCATState::PreopPdi.into(), Relaxed);
         return Ok(PreopResult::PreopPdiDc(group_preop_pdi_dc));
