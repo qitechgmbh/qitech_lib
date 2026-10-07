@@ -340,19 +340,13 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
             false => return Ok(PreopResult::Preop(group)),
         };
 
-        let group_preop_pdi = rt.block_on(self.transition(
+        /*let group_preop_pdi = rt.block_on(self.transition(
             EtherCATTransition::PreOpToPreOpPdi,
             maindevice,
             group.into_pre_op_pdi(maindevice),
-        ));
-        let mut group_preop_pdi = match group_preop_pdi {
-            Ok(group_pdi) => group_pdi,
-            Err(e) => {
-                println!("Failed to move to preop_pdi_dc {}",e); 
-                return Err(e);
-            },
-        };
-        group_preop_pdi = dc_static_sync(
+        ));*/
+        let group_preop_pdi = rt.block_on(group.into_pre_op_pdi(maindevice)).expect("");
+        let group_preop_pdi = dc_static_sync(
             maindevice,
             group_preop_pdi,
             self.current_config.target_cycle_time_us as u64,
@@ -377,7 +371,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         let group_preop_pdi_dc =  match group_preop_pdi_dc {
             Ok(group_dc) => group_dc,
             Err(e) => {
-                println!("Failed to move to preop_pdi_dc {}",e); 
+                //println!("Failed to move to preop_pdi_dc {}",e); 
                 return Err(e);
             },
         };
@@ -651,7 +645,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     }
                 }
                 EtherCATState::PreOp => {
-                    println!("PreOp");
+                    //println!("PreOp");
                     let res = self.handle_preop(group, maindevice.as_ref().unwrap(), spinner)?;
                     match res {
                         PreopResult::Preop(preop_group) => group = Some(preop_group),

@@ -9,8 +9,50 @@ pub trait Configuration {
 pub trait SmConfiguration {
     fn get_sm_assignments(
         &self
-    ) -> Result<Vec<SdoIndex>, anyhow::Error>;
-    fn get_sm_coe_writes(&self,device_address : u16) -> Result<Vec<SdoRequest>,anyhow::Error>;
+    ) -> Result<Vec<u16>, anyhow::Error>;
+
+    fn get_sm_coe_writes(&self, device_address : u16, pdo_assignment_reg : u16) -> Result<Vec<SdoRequest>,anyhow::Error> {
+        let assignments = self.get_sm_assignments()?;
+        let mut sub_index = 0;
+        let mut writes = vec![];
+
+        if assignments.is_empty() {
+            return Ok(writes);
+        }
+
+        // Set len of Mappings to 0 (reset)
+        let reset_req = SdoRequest{ 
+            device_address,
+            sdo_index: SdoIndex { index: pdo_assignment_reg as u32, sub_index },
+            data: [0,0,0,0],
+            type_flag: type_id_to_sdo_type::<u8>()?, 
+        };
+        sub_index += 1;
+
+        writes.push(reset_req);
+        // go through all assignments and write them
+        for i in 0..assignments.len() {
+            let req = SdoRequest{ 
+                device_address,
+                sdo_index: SdoIndex { index: pdo_assignment_reg as u32, sub_index },
+                data: assignments[i].to_bytes(),
+                type_flag: type_id_to_sdo_type::<u16>()?, 
+            };
+            writes.push(req);
+            sub_index += 1;
+        }
+
+        let reset_req = SdoRequest{ 
+            device_address,
+            sdo_index: SdoIndex { index: pdo_assignment_reg as u32, sub_index: 0 },
+            data: (sub_index-1).to_bytes(),
+            type_flag: type_id_to_sdo_type::<u8>()?,
+        };
+        writes.push(reset_req);
+
+        Ok(writes)
+    }
+    
 }
 
 #[derive(Debug)]

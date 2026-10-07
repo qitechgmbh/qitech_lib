@@ -1,4 +1,5 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::coe::{RX_PDO_ASSIGNMENT_REG, TX_PDO_ASSIGNMENT_REG};
 use crate::io::multi_timestamp::{MultiTimestampInput, MultiTimestampOutput};
 use common::{Configuration, SdoIndex, SdoRequest, SmConfiguration};
 use common::pdo::{PredefinedPdoAssignment, RxPdo, TxPdo};
@@ -32,7 +33,7 @@ pub struct EL1259 {
 }
 
 impl EL1259 {
-    pub fn get_sm_assignments(&self) -> Result<Vec<SdoIndex>,anyhow::Error> {
+    pub fn get_sm_assignments(&self) -> Result<Vec<u16>,anyhow::Error> {
         let mut res = self.txpdo.get_sm_assignments()?;
         let res2 = self.rxpdo.get_sm_assignments()?;
         res.extend(res2); 
@@ -40,13 +41,11 @@ impl EL1259 {
     }
 
     pub fn get_sm_coe_writes(&self, device_address : u16) -> Result<Vec<SdoRequest>,anyhow::Error> {
-        let mut res = self.txpdo.get_sm_coe_writes(device_address)?;
-        let res2 = self.rxpdo.get_sm_coe_writes(device_address)?;
+        let mut res = self.txpdo.get_sm_coe_writes(device_address,TX_PDO_ASSIGNMENT_REG)?;
+        let res2 = self.rxpdo.get_sm_coe_writes(device_address,RX_PDO_ASSIGNMENT_REG)?;
         res.extend(res2); 
         Ok(res)
     }
-
-
 }
 
 impl EthercatDeviceProcessing for EL1259 {

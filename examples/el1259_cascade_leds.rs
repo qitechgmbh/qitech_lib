@@ -1,12 +1,9 @@
 use bitvec::slice::BitSlice;
 use ethercat_hal::{
-    EtherCATState,
-    devices::{
+    EtherCATState, coe::{RX_PDO_ASSIGNMENT_REG, TX_PDO_ASSIGNMENT_REG}, devices::{
         EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
         beckhoff_modules::el1259::{EL1259, EL1259_PRODUCT_ID},
-    },
-    init_ethercat,
-    io::multi_timestamp::{MultiTimestampEvent, MultiTimestampOutput},
+    }, init_ethercat, io::multi_timestamp::{MultiTimestampEvent, MultiTimestampOutput},
 };
 use std::{env, time::Duration};
 const INIT_DELAY_NS: u64 = 20_000_000;
@@ -45,11 +42,18 @@ fn main() {
     for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
         if subdevice.product_id == EL1259_PRODUCT_ID {
             let sm_writes = el1259.get_sm_coe_writes(subdevice.device_address).unwrap();
-            //println!("{:?}",sm_writes );
-            let res = eth_control.channel.sdo_read::<u8>(subdevice.device_address, 0x1C12, 0).unwrap();
+//            println!("{:?}",sm_writes );
+            let res = eth_control.channel.sdo_read::<u8>(subdevice.device_address, TX_PDO_ASSIGNMENT_REG, 0).unwrap();
+            println!("tx SDO Len: {}",res);
             for i in 1..res {
-                let res = eth_control.channel.sdo_read::<u16>(subdevice.device_address, 0x1C12, i).unwrap();
-                println!("0x1C12:{} : {:X}",i,res );
+                let res = eth_control.channel.sdo_read::<u16>(subdevice.device_address, TX_PDO_ASSIGNMENT_REG, i).unwrap();
+                println!("{}:{} : {} {:X}",TX_PDO_ASSIGNMENT_REG,i,res,res);
+            }
+            let res = eth_control.channel.sdo_read::<u8>(subdevice.device_address, RX_PDO_ASSIGNMENT_REG, 0).unwrap();
+            println!("rx SDO Len: {}",res);
+            for i in 1..res {
+                let res = eth_control.channel.sdo_read::<u16>(subdevice.device_address, RX_PDO_ASSIGNMENT_REG, i).unwrap();
+                println!("{}:{} : {} {:X}",RX_PDO_ASSIGNMENT_REG,i,res,res);
             }
             let res = eth_control.channel.bulk_sdo_write(sm_writes,Duration::from_secs(10));
             println!("{:?}",res );

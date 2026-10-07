@@ -1,48 +1,11 @@
 use bitvec::field::BitField;
 use bitvec::prelude::{BitSlice, Lsb0};
-use common::{EthercatSdoBytes, PdoObject, SdoIndex, SdoRequest, SmConfiguration, type_id_to_sdo_type};
+use common::{PdoObject, SdoIndex, SmConfiguration};
 use ethercat_hal_derive::{PdoObject, RxPdo, TxPdo};
-use crate::coe::{RX_PDO_ASSIGNMENT_REG, TX_PDO_ASSIGNMENT_REG};
 use crate::io::multi_timestamp::MultiTimestampEvent;
 use common::pdo::{RxPdoObject, TxPdoObject};
 const EXPECT_TEXT: &str = "All channels should be Some(_)";
 
-/*
-    #[pdo_object_index(0x1600)]
-    pub(super) mto_channel1: Option<EL1259MtoRxChannel>,
-    #[pdo_object_index(0x1604)]
-    pub(super) mto_channel2: Option<EL1259MtoRxChannel>,
-    #[pdo_object_index(0x1608)]
-    pub(super) mto_channel3: Option<EL1259MtoRxChannel>,
-    #[pdo_object_index(0x160C)]
-    pub(super) mto_channel4: Option<EL1259MtoRxChannel>,
-    #[pdo_object_index(0x1610)]
-    pub(super) mto_channel5: Option<EL1259MtoRxChannel>,
-    #[pdo_object_index(0x1614)]
-    pub(super) mto_channel6: Option<EL1259MtoRxChannel>,
-    #[pdo_object_index(0x1618)]
-    pub(super) mto_channel7: Option<EL1259MtoRxChannel>,
-    #[pdo_object_index(0x161C)]
-    pub(super) mto_channel8: Option<EL1259MtoRxChannel>,
-
-    #[pdo_object_index(0x1620)]
-    pub(super) mti_channel1: Option<EL1259MtiRxChannel>,
-    #[pdo_object_index(0x1621)]
-    pub(super) mti_channel2: Option<EL1259MtiRxChannel>,
-    #[pdo_object_index(0x1622)]
-    pub(super) mti_channel3: Option<EL1259MtiRxChannel>,
-    #[pdo_object_index(0x1623)]
-    pub(super) mti_channel4: Option<EL1259MtiRxChannel>,
-    #[pdo_object_index(0x1624)]
-    pub(super) mti_channel5: Option<EL1259MtiRxChannel>,
-    #[pdo_object_index(0x1625)]
-    pub(super) mti_channel6: Option<EL1259MtiRxChannel>,
-    #[pdo_object_index(0x1626)]
-    pub(super) mti_channel7: Option<EL1259MtiRxChannel>,
-    #[pdo_object_index(0x1627)]
-    pub(super) mti_channel8: Option<EL1259MtiRxChannel>,
-
-*/
 
 #[derive(Debug, RxPdo)]
 pub(super) struct EL1259RxPdo {
@@ -69,69 +32,20 @@ impl SmConfiguration for EL1259RxPdo {
     // Default assignment, if you want a different one define it yourself
     fn get_sm_assignments(
         &self
-    ) -> Result<Vec<common::SdoIndex>, anyhow::Error>
+    ) -> Result<Vec<u16>, anyhow::Error>
     {
-
         let mut vec = vec![];
-        let mut sub_index : u16  = 0;
         for i in 0..8 {
-            let sdo_index = SdoIndex {
-                index: 0x1600+i*4,
-                sub_index,
-            };
-            sub_index += 1;
+            let sdo_index = 0x1600+i*4;
             vec.push(sdo_index);
         }
 
-        for i in 8..16 {
-            let sdo_index = SdoIndex {
-                index: 0x1620+i,
-                sub_index,
-            };
-            sub_index += 1;
+        for i in 0..8 {
+            let sdo_index = 0x1620+i;
             vec.push(sdo_index);
         }
         Ok( vec )
     }
-    
-    fn get_sm_coe_writes(&self, device_address : u16) -> Result<Vec<SdoRequest>,anyhow::Error> {
-        let assignments = self.get_sm_assignments()?;
-        let mut writes = vec![]; 
-        let mut sub_index = 0;
-        // Set len of Mappings to 0 (reset)
-        let reset_req = SdoRequest{ 
-            device_address,
-            sdo_index: SdoIndex { index: RX_PDO_ASSIGNMENT_REG as u32, sub_index },
-            data: [0,0,0,0],
-            type_flag: type_id_to_sdo_type::<u8>()?, 
-        };
-        sub_index += 1;
-
-        writes.push(reset_req);
-        // go through all assignments and write them
-        for i in 0..assignments.len() {
-            let req = SdoRequest{ 
-                device_address,
-            sdo_index: SdoIndex { index: RX_PDO_ASSIGNMENT_REG as u32, sub_index },
-
-                data: assignments[i].index.to_bytes(),
-                type_flag: type_id_to_sdo_type::<u16>()?, 
-            };
-            writes.push(req);
-            sub_index += 1;
-        }
-
-        let reset_req = SdoRequest{ 
-            device_address,
-            sdo_index: SdoIndex { index: RX_PDO_ASSIGNMENT_REG as u32, sub_index:0 },
-            data: sub_index.to_bytes(),
-            type_flag: type_id_to_sdo_type::<u8>()?,
-        };
-        writes.push(reset_req);
-
-        Ok(writes)
-    }
-
 }
 
 impl Default for EL1259RxPdo {
@@ -262,8 +176,7 @@ impl EL1259MtoRxChannel {
 
 /// This PDO object controls the multi-timestamp input channel.
 /// Importantly, it is used to tell this channel when to send input events.
-#[derive(Debug, Default, PdoObject)]
-#[pdo_object(bits = 32)]
+#[derive(Debug, Default)]
 pub(super) struct EL1259MtiRxChannel {
     /// If set, clear the event buffer.
     pub(super) input_buffer_reset: bool,
@@ -271,6 +184,12 @@ pub(super) struct EL1259MtiRxChannel {
     /// Once events have been sent, the value of this channel's `EL1259MtiTxChannel::input_order_feedback`
     /// will reflect the new value, and events can be read from that PDS.
     pub(super) input_order_counter: u8,
+}
+
+impl PdoObject for EL1259MtiRxChannel {
+    fn size(&self) -> usize {
+        32
+    }
 }
 
 impl RxPdoObject for EL1259MtiRxChannel {
@@ -309,68 +228,21 @@ impl SmConfiguration for EL1259TxPdo {
     // Default assignment, if you want a different one define it yourself
     fn get_sm_assignments(
         &self
-    ) -> Result<Vec<common::SdoIndex>, anyhow::Error>
+    ) -> Result<Vec<u16>, anyhow::Error>
     {
-
-        let mut vec = vec![];
-        let mut sub_index : u16  = 0;
+        let mut vec = vec![];        
         for i in 0..8 {
-            let sdo_index = SdoIndex {
-                index: 0x1A00+i,
-                sub_index,
-            };
-            sub_index += 1;
+            let sdo_index = 
+                0x1A00+i;            
             vec.push(sdo_index);
         }
-        for i in 8..16 {
-            let sdo_index = SdoIndex {
-                index: 0x1A08+i*4,
-                sub_index,
-            };
-            sub_index += 1;
+        for i in 0..8 {
+            let sdo_index = 0x1A08+i*4;
             vec.push(sdo_index);
         }
 
         Ok( vec )
     }
-    
-    fn get_sm_coe_writes(&self, device_address : u16) -> Result<Vec<SdoRequest>,anyhow::Error> {
-        let assignments = self.get_sm_assignments()?;
-        let mut writes = vec![]; 
-        let mut sub_index = 0;
-        // Set len of Mappings to 0 (reset)
-        let reset_req = SdoRequest{ 
-            device_address,
-            sdo_index: SdoIndex { index: TX_PDO_ASSIGNMENT_REG as u32, sub_index },
-            data: [0,0,0,0],
-            type_flag: type_id_to_sdo_type::<u8>()?, 
-        };
-        sub_index += 1;
-
-        writes.push(reset_req);
-        // go through all assignments and write them
-        for i in 0..assignments.len() {
-            let req = SdoRequest{ 
-                device_address,
-                sdo_index: SdoIndex { index: TX_PDO_ASSIGNMENT_REG as u32, sub_index },
-                data: assignments[i].index.to_bytes(),
-                type_flag: type_id_to_sdo_type::<u16>()?, 
-            };
-            writes.push(req);
-            sub_index += 1;
-        }
-
-        let reset_req = SdoRequest{ 
-            device_address,
-            sdo_index: SdoIndex { index: TX_PDO_ASSIGNMENT_REG as u32, sub_index: 0 },
-            data: sub_index.to_bytes(),
-            type_flag: type_id_to_sdo_type::<u8>()?,
-        };
-        writes.push(reset_req);
-
-        Ok(writes)
-    }
-
 }
 
 impl Default for EL1259TxPdo {

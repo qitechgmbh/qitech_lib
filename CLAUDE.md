@@ -19,7 +19,7 @@ cargo run --example el2004_minimal -- <iface>   # EtherCAT examples take the NIC
 cargo run -p xtrem --example discover
 ```
 
-There is no `[workspace]` section: the root crate depends on the sub-crates by path, so a plain `cargo test` only runs the root crate's tests — use `-p <crate>`. CI needs `libudev-dev` installed.
+The repo is a Cargo workspace whose root is also the `qitech_lib` package. Plain `cargo build`/`cargo test` at the root only act on the root package; use `--workspace` or `-p <crate>` for members. Shared dependency versions and the internal path crates are declared once in `[workspace.dependencies]` in the root `Cargo.toml`; members reference them with `<dep>.workspace = true` (adding `features = [...]` locally where needed). There is a single `Cargo.lock` at the root. CI needs `libudev-dev` installed.
 
 `.cargo/config.toml` sets `bin/run-linux` as the runner for x86_64 Linux: every `cargo run`/`cargo test` binary is `setcap`'d (`cap_net_raw,cap_sys_nice,cap_ipc_lock`) via `sudo` and `/dev/ttyUSB*` is chowned before exec. Expect a sudo prompt; raw sockets, RT scheduling and `mlockall` need these capabilities.
 

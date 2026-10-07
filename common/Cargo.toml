@@ -1,12 +1,12 @@
 [package]
 name = "common"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 
 [dependencies]
-tokio = { version = "1.50.0", features = ["rt", "rt-multi-thread", "macros", "time","sync"] }
-anyhow = "1.0.100"
-libc = "0.2.186"
-bitvec = { version = "1.0.1", features = ["alloc"] }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time", "sync"] }
+anyhow.workspace = true
+libc.workspace = true
+bitvec = { workspace = true, features = ["alloc"] }
 
 [lib]
