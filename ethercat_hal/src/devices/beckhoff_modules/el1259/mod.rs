@@ -1,8 +1,6 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
-use crate::EtherCATThreadChannel;
 use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::multi_timestamp::{MultiTimestampInput, MultiTimestampOutput};
-use crate::pdo::{PredefinedPdoAssignment, RxPdo, TxPdo};
 use crate::{
     BECKHOFF_VENDOR_ID,
     io::{digital_input::DigitalInputDevice, multi_timestamp::MultiTimestampEvent},
@@ -12,7 +10,7 @@ use ethercat_hal_derive::EthercatDevice;
 use std::collections::VecDeque;
 
 mod pdo;
-use pdo::{EL1259RxPdo, EL1259TxPdo};
+pub use pdo::{EL1259RxPdo, EL1259TxPdo};
 
 enum State {
     ResetOn,
@@ -30,6 +28,7 @@ pub struct EL1259 {
     input_queues: [VecDeque<MultiTimestampEvent>; 8],
     output_queues: [VecDeque<MultiTimestampEvent>; 8],
     state: State,
+    config: EL1259Configuration,
 }
 
 impl EthercatDeviceProcessing for EL1259 {
@@ -165,51 +164,41 @@ impl std::fmt::Debug for EL1259 {
 
 impl NewEthercatDevice for EL1259 {
     fn new() -> Self {
+        let config = EL1259Configuration::default();
         Self {
-            rxpdo: EL1259RxPdo::default(),
-            txpdo: EL1259TxPdo::default(),
+            rxpdo: config.rxpdo_assignment(),
+            txpdo: config.txpdo_assignment(),
             is_used: false,
             input_queues: Default::default(),
             output_queues: Default::default(),
             state: State::ResetOn,
+            config,
         }
     }
 }
 
-impl ConfigurableDevice<EL1259Configuration> for EL1259 {
-    fn write_config(
-        &mut self,
-        channel: EtherCATThreadChannel,
-        device_address: u16,
-        config: &EL1259Configuration,
-    ) -> Result<(), anyhow::Error> {
-        config.write_config(channel, device_address)?;
-        Ok(())
+impl ConfigurableDevice for EL1259 {
+    type Config = EL1259Configuration;
+
+    fn set_config(&mut self, config: EL1259Configuration) {
+        self.txpdo = config.txpdo_assignment();
+        self.rxpdo = config.rxpdo_assignment();
+        self.config = config;
     }
 
-    fn get_config(&self) -> EL1259Configuration {
-        EL1259Configuration::default()
+    fn get_config(&self) -> &EL1259Configuration {
+        &self.config
     }
 }
 
+/// The EL1259 has a fixed PDO assignment and no further CoE parameters
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct EL1259Configuration {}
 
 impl Configuration for EL1259Configuration {
-    fn write_config(
-        &self,
-        channel: EtherCATThreadChannel,
-        device_address: u16,
-    ) -> Result<(), anyhow::Error> {
-        self.txpdo_assignment()
-            .write_config(channel.clone(), device_address)?;
-        self.rxpdo_assignment()
-            .write_config(channel, device_address)?;
-        Ok(())
-    }
-}
+    type TxPdo = EL1259TxPdo;
+    type RxPdo = EL1259RxPdo;
 
-impl PredefinedPdoAssignment<EL1259TxPdo, EL1259RxPdo> for EL1259Configuration {
     fn txpdo_assignment(&self) -> EL1259TxPdo {
         EL1259TxPdo::default()
     }

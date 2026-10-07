@@ -1,6 +1,7 @@
+use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::digital_output::DigitalOutputDevice;
-use crate::pdo::{RxPdo, basic::BoolPdoObject};
-use ethercat_hal_derive::{EthercatDevice, RxPdo};
+use crate::pdo::basic::BoolPdoObject;
+use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
 use super::{EthercatDeviceProcessing, NewEthercatDevice};
 
@@ -11,6 +12,7 @@ use super::{EthercatDeviceProcessing, NewEthercatDevice};
 pub struct EL2024 {
     pub rxpdo: EL2024RxPdo,
     is_used: bool,
+    config: EL2024Configuration,
 }
 
 impl EthercatDeviceProcessing for EL2024 {}
@@ -23,10 +25,25 @@ impl std::fmt::Debug for EL2024 {
 
 impl NewEthercatDevice for EL2024 {
     fn new() -> Self {
+        let config = EL2024Configuration::default();
         Self {
-            rxpdo: EL2024RxPdo::default(),
+            rxpdo: config.rxpdo_assignment(),
             is_used: false,
+            config,
         }
+    }
+}
+
+impl ConfigurableDevice for EL2024 {
+    type Config = EL2024Configuration;
+
+    fn set_config(&mut self, config: EL2024Configuration) {
+        self.rxpdo = config.rxpdo_assignment();
+        self.config = config;
+    }
+
+    fn get_config(&self) -> &EL2024Configuration {
+        &self.config
     }
 }
 
@@ -75,5 +92,34 @@ impl Default for EL2024RxPdo {
             channel3: Some(BoolPdoObject::default()),
             channel4: Some(BoolPdoObject::default()),
         }
+    }
+}
+
+/// The EL2024 has no inputs
+#[derive(Debug, Clone, TxPdo)]
+pub struct EL2024TxPdo {}
+
+/// The EL2024 has a fixed PDO assignment and no further CoE parameters
+#[derive(Default, Clone, PartialEq, Debug)]
+pub struct EL2024Configuration {}
+
+impl Configuration for EL2024Configuration {
+    /// The EL2024 has no mailbox, its PDO assignment is fixed and can't be written over CoE
+    fn get_sm_coe_writes(
+        &self,
+        _device_address: u16,
+    ) -> Result<Vec<common::SdoRequest>, anyhow::Error> {
+        Ok(vec![])
+    }
+
+    type TxPdo = EL2024TxPdo;
+    type RxPdo = EL2024RxPdo;
+
+    fn txpdo_assignment(&self) -> EL2024TxPdo {
+        EL2024TxPdo {}
+    }
+
+    fn rxpdo_assignment(&self) -> EL2024RxPdo {
+        EL2024RxPdo::default()
     }
 }

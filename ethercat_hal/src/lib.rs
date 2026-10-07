@@ -7,11 +7,14 @@ pub mod ethercat_helpers;
 pub mod helpers;
 pub mod interface_discovery;
 pub mod io;
-pub mod pdo;
-pub mod shared_config;
-//#[cfg(feature = "legacy_code")]
 pub mod machine_ident_read;
+pub mod shared_config;
+
+/// Re-export of the reusable PDO objects, which live in `common`
+pub use common::pdo;
+
 use al_diagnostics::{TransitionLog, TransitionReport};
+use common::{SdoIndex, SdoReadRequest, SdoRequest};
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
 use std::cell::UnsafeCell;
@@ -366,12 +369,6 @@ where
     }
 }
 
-#[derive(Hash, Eq, PartialEq, PartialOrd, Clone)]
-pub struct SdoIndex {
-    index: u32,
-    sub_index: u16,
-}
-
 #[cfg(feature = "mock")]
 #[derive(Clone)]
 pub struct TypeErasedValue {
@@ -513,33 +510,6 @@ impl From<EtherCATState> for u8 {
     }
 }
 
-#[derive(Debug)]
-pub enum SdoType {
-    BOOL,
-    U8,
-    U16,
-    U32,
-    I16,
-    I32,
-}
-
-#[derive(Debug)]
-pub struct SdoRequest {
-    pub device_address: u16,
-    pub index: u16,
-    pub sub_index: u16,
-    pub data: [u8; 4],
-    pub type_flag: SdoType,
-}
-
-#[derive(Debug)]
-pub struct SdoReadRequest {
-    pub device_address: u16,
-    pub index: u16,
-    pub sub_index: u16,
-    pub type_flag: SdoType,
-}
-
 /// A diagnostic read, serviced from any master state.
 ///
 /// Answered with raw `FPRD` reads needing only the `MainDevice`, so unlike [`ChannelRequests`]
@@ -574,6 +544,7 @@ pub enum ChannelResponse {
     SdoResponseI16(Result<i16, anyhow::Error>),
     SdoResponseI32(Result<i32, anyhow::Error>),
     SdoWriteResponse(Result<(), anyhow::Error>),
+    BulkSdoWriteResponse(Vec<(SdoIndex, Option<anyhow::Error>)>),
     ChangeState(Result<(), anyhow::Error>),
     MachineDeviceInfoResponse(Result<Vec<MachineDeviceInfo>, anyhow::Error>),
     WriteMachineInfoResponse(Result<(), anyhow::Error>),
@@ -584,6 +555,7 @@ pub enum ChannelResponse {
 
 #[derive(Debug)]
 pub enum ChannelRequests {
+    BulkSdoWrite(Vec<SdoRequest>),
     SdoWriteRequest(SdoRequest),
     SdoReadRequest(SdoReadRequest),
     ChangeState(EtherCATState),
@@ -867,7 +839,28 @@ pub fn init_ethercat(
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx, diagnostic_tx);
     let join_handle = std::thread::Builder::new()
         .name("EthercatStateMachine".into())
-        .spawn(move || controller.ethercat_state_machine())
+        .spawn(move || {
+            // Nobody is guaranteed to join this thread, so report how it ended here
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                controller.ethercat_state_machine()
+            }));
+            match res {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(e)) => {
+                    eprintln!("[EthercatStateMachine] stopped with error: {e:?}");
+                    Err(e)
+                }
+                Err(payload) => {
+                    let msg = payload
+                        .downcast_ref::<&str>()
+                        .map(|s| s.to_string())
+                        .or_else(|| payload.downcast_ref::<String>().cloned())
+                        .unwrap_or_else(|| "<non-string panic payload>".to_string());
+                    eprintln!("[EthercatStateMachine] panicked: {msg}");
+                    std::panic::resume_unwind(payload);
+                }
+            }
+        })
         .expect("Failed to spawn thread");
     EtherCATControl {
         channel,

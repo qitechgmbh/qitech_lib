@@ -1,17 +1,22 @@
 use super::RxPdoObject;
+use crate::PdoObject;
 use bitvec::prelude::*;
-use ethercat_hal_derive::PdoObject;
 
 /// PDO Object for EL40xx (analog output) devices
 ///
 /// The "Analog Output" holds the output value and status information.
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 16)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AnalogOutput {
     /// Output value (-32768-32767 typically corresponds to -10V to +10V).
     /// This depends on the configuration of the device and the value has to be converted to i16 with custom logic.
     /// The 16 bit analog value is signed here but devices could interpret its value with different signing strategies.
     pub value: i16,
+}
+
+impl PdoObject for AnalogOutput {
+    fn size(&self) -> usize {
+        16
+    }
 }
 
 impl RxPdoObject for AnalogOutput {

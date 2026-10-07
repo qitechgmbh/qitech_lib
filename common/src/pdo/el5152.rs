@@ -1,12 +1,9 @@
 use super::{RxPdoObject, TxPdoObject};
 use bitvec::prelude::*;
-use ethercat_hal_derive::PdoObject;
 
 /// PDO Object for EL5152 encoder control (RxPDO)
 /// Based on 1600/1602 mapping: Set counter (1 bit) + alignment + Set counter value (32/16 bit)
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 48)] // Total 48 bits for full mapping
-pub struct El5152EncoderControl {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct El5152EncoderControl {
     /// Set counter - execute counter setting (1 bit) - 0x7000:03
     pub set_counter: bool,
     /// Set counter value (32-bit) - 0x7000:11
@@ -24,9 +21,7 @@ impl RxPdoObject for El5152EncoderControl {
 
 /// PDO Object for EL5152 encoder status (TxPDO)
 /// Based on 1A00/1A04 mapping: Status bits + Counter value (32-bit)
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 48)] // 16 bits status + 32 bits counter
-pub struct El5152EncoderStatus {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct El5152EncoderStatus {
     /// Set counter done - counter was set (1 bit) - 0x6000:03
     pub set_counter_done: bool,
     /// Extrapolation stall - extrapolated counter invalid (1 bit) - 0x6000:08
@@ -65,9 +60,7 @@ impl TxPdoObject for El5152EncoderStatus {
 
 /// PDO Object for EL5152 encoder frequency measurement (TxPDO)
 /// Based on 1A03/1A07 mapping: 32-bit frequency value only
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 32)]
-pub struct El5152EncoderFrequency {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct El5152EncoderFrequency {
     /// Frequency value (32-bit) - 0x6000:13 / 0x6010:13
     pub frequency_value: u32,
 }
@@ -81,9 +74,7 @@ impl TxPdoObject for El5152EncoderFrequency {
 
 /// PDO Object for EL5152 encoder period measurement (TxPDO)
 /// Based on 1A02/1A06 mapping: 32-bit period value only
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 32)]
-pub struct El5152EncoderPeriod {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct El5152EncoderPeriod {
     /// Period value (32-bit) - 0x6000:14 / 0x6010:14
     pub period_value: u32,
 }
@@ -92,5 +83,29 @@ impl TxPdoObject for El5152EncoderPeriod {
     fn read(&mut self, bits: &BitSlice<u8, Lsb0>) {
         // Period value (bits 0-31) - 0x6000:14 / 0x6010:14
         self.period_value = bits[0..32].load_le::<u32>();
+    }
+}
+
+impl crate::PdoObject for El5152EncoderControl {
+    fn size(&self) -> usize {
+        48
+    }
+}
+
+impl crate::PdoObject for El5152EncoderStatus {
+    fn size(&self) -> usize {
+        48
+    }
+}
+
+impl crate::PdoObject for El5152EncoderFrequency {
+    fn size(&self) -> usize {
+        32
+    }
+}
+
+impl crate::PdoObject for El5152EncoderPeriod {
+    fn size(&self) -> usize {
+        32
     }
 }

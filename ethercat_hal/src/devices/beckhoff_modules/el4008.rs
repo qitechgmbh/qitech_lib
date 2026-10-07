@@ -1,21 +1,18 @@
-use crate::{io::analog_output::AnalogVoltageOutputDevice, pdo::RxPdo};
-use ethercat_hal_derive::{EthercatDevice, RxPdo};
+use crate::coe::{ConfigurableDevice, Configuration};
+use crate::devices::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::io::analog_output::AnalogVoltageOutputDevice;
+use common::pdo::el40xx::AnalogOutput;
+use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 use units::{ElectricPotential, electric_potential::volt};
 
-use crate::{
-    devices::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple},
-    pdo::el40xx::AnalogOutput,
-};
-
 /// EL4008 8-channel analog output device
-///
 /// 12-bit resolution, 0-10V
-///
 /// load > 5kOhm
 #[derive(EthercatDevice)]
 pub struct EL4008 {
     pub rxpdo: EL4008RxPdo,
     pub is_used: bool,
+    pub configuration: EL4008Configuration,
 }
 
 impl std::fmt::Debug for EL4008 {
@@ -31,10 +28,25 @@ impl NewEthercatDevice for EL4008 {
     where
         Self: Sized,
     {
+        let configuration = EL4008Configuration::default();
         Self {
-            rxpdo: EL4008RxPdo::default(),
+            rxpdo: configuration.rxpdo_assignment(),
             is_used: false,
+            configuration,
         }
+    }
+}
+
+impl ConfigurableDevice for EL4008 {
+    type Config = EL4008Configuration;
+
+    fn set_config(&mut self, config: EL4008Configuration) {
+        self.rxpdo = config.rxpdo_assignment();
+        self.configuration = config;
+    }
+
+    fn get_config(&self) -> &EL4008Configuration {
+        &self.configuration
     }
 }
 
@@ -102,6 +114,27 @@ impl Default for EL4008RxPdo {
             channel7: Some(AnalogOutput::default()),
             channel8: Some(AnalogOutput::default()),
         }
+    }
+}
+
+/// The EL4008 has no inputs
+#[derive(Debug, Clone, TxPdo)]
+pub struct EL4008TxPdo {}
+
+/// The EL4008 has a fixed PDO assignment and no further CoE parameters
+#[derive(Default, Clone, PartialEq, Debug)]
+pub struct EL4008Configuration {}
+
+impl Configuration for EL4008Configuration {
+    type TxPdo = EL4008TxPdo;
+    type RxPdo = EL4008RxPdo;
+
+    fn txpdo_assignment(&self) -> EL4008TxPdo {
+        EL4008TxPdo {}
+    }
+
+    fn rxpdo_assignment(&self) -> EL4008RxPdo {
+        EL4008RxPdo::default()
     }
 }
 

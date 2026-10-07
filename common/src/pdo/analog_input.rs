@@ -1,13 +1,11 @@
-use bitvec::prelude::*;
-use ethercat_hal_derive::PdoObject;
-
 use super::{TxPdoObject, basic::Limit};
+use crate::PdoObject;
+use bitvec::prelude::*;
 
 /// PDO Object for EL30xx devices
 ///
 /// The value is accompanied by some metadata.
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 32)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AiStandard {
     /// The signal voltage is over the defined operating range of the device
     pub undervoltage: bool,
@@ -33,6 +31,12 @@ pub struct AiStandard {
     pub value: u16,
 }
 
+impl PdoObject for AiStandard {
+    fn size(&self) -> usize {
+        32
+    }
+}
+
 impl TxPdoObject for AiStandard {
     fn read(&mut self, bits: &BitSlice<u8, Lsb0>) {
         // only read other values if txpdo_toggle is true
@@ -54,12 +58,17 @@ impl TxPdoObject for AiStandard {
 /// PDO Object for EL30xx devices
 ///
 /// The value without metadata.
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 16)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AiCompact {
     /// The 16bit analog value is unsigned here but devices could write signed value with different signing strategies.
     /// This depends on the configuration of the device and the value has to be converted to i16 with custom logic.
     pub value: u16,
+}
+
+impl PdoObject for AiCompact {
+    fn size(&self) -> usize {
+        16
+    }
 }
 
 impl TxPdoObject for AiCompact {

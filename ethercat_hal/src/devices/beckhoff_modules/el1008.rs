@@ -1,8 +1,8 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::digital_input::DigitalInputDevice;
 use crate::pdo::basic::BoolPdoObject;
-use crate::pdo::{PredefinedPdoAssignment, TxPdo};
-use ethercat_hal_derive::{EthercatDevice, TxPdo};
+use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
 /// EL1008 8-channel digital input device
 ///
@@ -11,6 +11,7 @@ use ethercat_hal_derive::{EthercatDevice, TxPdo};
 pub struct EL1008 {
     pub txpdo: EL1008TxPdo,
     is_used: bool,
+    config: EL1008Configuration,
 }
 
 impl EthercatDeviceProcessing for EL1008 {}
@@ -23,11 +24,25 @@ impl std::fmt::Debug for EL1008 {
 
 impl NewEthercatDevice for EL1008 {
     fn new() -> Self {
-        let s = Self {
-            txpdo: EL1008TxPdo::default(),
+        let config = EL1008Configuration::default();
+        Self {
+            txpdo: config.txpdo_assignment(),
             is_used: false,
-        };
-        s
+            config,
+        }
+    }
+}
+
+impl ConfigurableDevice for EL1008 {
+    type Config = EL1008Configuration;
+
+    fn set_config(&mut self, config: EL1008Configuration) {
+        self.txpdo = config.txpdo_assignment();
+        self.config = config;
+    }
+
+    fn get_config(&self) -> &EL1008Configuration {
+        &self.config
     }
 }
 
@@ -162,29 +177,32 @@ impl Default for EL1008TxPdo {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum EL1008PredefinedPdoAssignment {
-    All,
-}
+/// The EL1008 has no outputs
+#[derive(Debug, Clone, RxPdo)]
+pub struct EL1008RxPdo {}
 
-impl PredefinedPdoAssignment<EL1008TxPdo, ()> for EL1008PredefinedPdoAssignment {
-    fn txpdo_assignment(&self) -> EL1008TxPdo {
-        match self {
-            Self::All => EL1008TxPdo {
-                channel1: Some(BoolPdoObject::default()),
-                channel2: Some(BoolPdoObject::default()),
-                channel3: Some(BoolPdoObject::default()),
-                channel4: Some(BoolPdoObject::default()),
-                channel5: Some(BoolPdoObject::default()),
-                channel6: Some(BoolPdoObject::default()),
-                channel7: Some(BoolPdoObject::default()),
-                channel8: Some(BoolPdoObject::default()),
-            },
-        }
+/// The EL1008 has a fixed PDO assignment and no further CoE parameters
+#[derive(Default, Clone, PartialEq, Debug)]
+pub struct EL1008Configuration {}
+
+impl Configuration for EL1008Configuration {
+    /// The EL1008 has no mailbox, its PDO assignment is fixed and can't be written over CoE
+    fn get_sm_coe_writes(
+        &self,
+        _device_address: u16,
+    ) -> Result<Vec<common::SdoRequest>, anyhow::Error> {
+        Ok(vec![])
     }
 
-    fn rxpdo_assignment(&self) {
-        unreachable!()
+    type TxPdo = EL1008TxPdo;
+    type RxPdo = EL1008RxPdo;
+
+    fn txpdo_assignment(&self) -> EL1008TxPdo {
+        EL1008TxPdo::default()
+    }
+
+    fn rxpdo_assignment(&self) -> EL1008RxPdo {
+        EL1008RxPdo {}
     }
 }
 

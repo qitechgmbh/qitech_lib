@@ -1,13 +1,10 @@
 use super::{RxPdoObject, TxPdoObject};
 use bitvec::{field::BitField, order::Lsb0, slice::BitSlice};
-use ethercat_hal_derive::PdoObject;
 
 /// PDO Object for EL252x devices
 ///
 /// "PTO Status" contains status information about the pulse train output.
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 16)]
-pub struct PtoStatus {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct PtoStatus {
     pub select_end_counter: bool,
 
     /// Device is currenly ramping (accelerating/decelerating)
@@ -48,9 +45,7 @@ impl TxPdoObject for PtoStatus {
 /// PDO Object for EL252x devices
 ///
 /// "Encoder Status" contains the encoder status information.
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 48)]
-pub struct EncStatus {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct EncStatus {
     /// Acknowedges the set counter command of the last cycle
     pub set_counter_done: bool,
 
@@ -88,9 +83,7 @@ impl TxPdoObject for EncStatus {
 /// PDO Object for EL252x devices
 ///
 /// "PTO Control" is used to control the pulse train output.
-#[derive(Debug, Clone, Default, PdoObject)]
-#[pdo_object(bits = 32)]
-pub struct PtoControl {
+#[derive(Debug, Clone, Default)]pub struct PtoControl {
     pub frequency_select: bool,
 
     /// Disable ramping (acceleration/deceleration algorithm by the device)
@@ -115,9 +108,7 @@ impl RxPdoObject for PtoControl {
 /// PDO Object for EL252x devices
 ///
 /// "PTO Target" is used to set the target position of the pulse train output.
-#[derive(Debug, Clone, Default, PdoObject)]
-#[pdo_object(bits = 32)]
-pub struct PtoTarget {
+#[derive(Debug, Clone, Default)]pub struct PtoTarget {
     /// Target position in pulses
     ///
     /// Target of the [`EncStatus::counter_value`] field
@@ -133,9 +124,7 @@ impl RxPdoObject for PtoTarget {
 /// PDO Object for EL252x devices
 ///
 /// "Encoder Control" is used to control the encoder.
-#[derive(Debug, Clone, Default, PdoObject)]
-#[pdo_object(bits = 48)]
-pub struct EncControl {
+#[derive(Debug, Clone, Default)]pub struct EncControl {
     /// Set to `true` when wanting to override the encoder position
     pub set_counter: bool,
     /// Value to set the encoder to
@@ -241,5 +230,35 @@ mod tests {
             buffer,
             vec![0b0000_0100u8, 0u8, 0x78u8, 0x56u8, 0x34u8, 0x12u8]
         )
+    }
+}
+
+impl crate::PdoObject for PtoStatus {
+    fn size(&self) -> usize {
+        16
+    }
+}
+
+impl crate::PdoObject for EncStatus {
+    fn size(&self) -> usize {
+        48
+    }
+}
+
+impl crate::PdoObject for PtoControl {
+    fn size(&self) -> usize {
+        32
+    }
+}
+
+impl crate::PdoObject for PtoTarget {
+    fn size(&self) -> usize {
+        32
+    }
+}
+
+impl crate::PdoObject for EncControl {
+    fn size(&self) -> usize {
+        48
     }
 }

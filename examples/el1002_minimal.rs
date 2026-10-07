@@ -1,6 +1,7 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use ethercat_hal::{
     BECKHOFF_VENDOR_ID, EtherCATState,
+    coe::ConfigurableDevice,
     devices::{
         EthercatDevice, NewEthercatDevice,
         beckhoff_modules::el1002::{EL1002, EL1002_PRODUCT_ID},
@@ -36,6 +37,28 @@ fn main() {
         eth_handle.get_subdevice_count()
     );
 
+    // This variable "knows" how to read the Tx PDOs of the EL1002
+    let mut el1002 = EL1002::new();
+    // The PDO assignment has to be written in PreOp, before requesting Op
+    for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
+        
+        if subdevice.vendor == BECKHOFF_VENDOR_ID && subdevice.product_id == EL1002_PRODUCT_ID {
+            /*let results = eth_control
+                .channel
+                .write_configuration(
+                    subdevice.device_address,
+                    el1002.get_config(),
+                    Duration::from_secs(10),
+                )
+                .expect("Failed to write configuration");
+            for (sdo_index, error) in results {
+                if let Some(error) = error {
+                    panic!("Failed to write {:?}: {:?}", sdo_index, error);
+                }
+            }*/
+        }
+    }
+
     eth_control
         .channel
         .request_state_change(EtherCATState::Op)
@@ -54,45 +77,38 @@ fn main() {
         println!(" - {}", sdev.get_name().expect("No utf8 name!"));
     }
 
-    // This variable "knows" how to format the Rx PDOs for the EL2004
-    let mut el1002 = EL1002::new();
     loop {
         // We ONLY have inputs so no need to call write_outputs
         if let Some(inputs) = eth_handle.get_inputs() {
             for subdevice in &subdevices {
-                // Loop over the subdevices until the EL2004 is found
+                // Loop over the subdevices until the EL1002 is found
                 if subdevice.vendor == BECKHOFF_VENDOR_ID
                     && subdevice.product_id == EL1002_PRODUCT_ID
                 {
-                    // Get the part of the Rx PDO that is used by the EL2004
+                    // Get the part of the Tx PDO that is used by the EL1002
                     let subdevice_inputs = &inputs[subdevice.start_tx..subdevice.end_tx];
 
-                    // Create the actual Rx PDO and put it into the output
+                    // Create the actual Tx PDO and put it into the output
                     el1002
                         .input(BitSlice::<u8, Lsb0>::from_slice(subdevice_inputs))
                         .expect("Failed to read Tx PDO");
+                    print!("[");
+                    for i in 0..el1002.get_port_count() {
+                        let input = if el1002
+                            .get_input(i)
+                            .expect("Failed to read input from subdevice!")
+                        {
+                            "X"
+                        } else {
+                            "."
+                        };
+
+                        print!("{}", input)
+                    }
+                    println!("]");
                 }
             }
         }
-
-        // Tick our application.
-        // Here, we just alternate which LED is on
-        print!("[");
-
-        for i in 0..el1002.get_port_count() {
-            let input = if el1002
-                .get_input(i)
-                .expect("Failed to read input from subdevice!")
-            {
-                "X"
-            } else {
-                "."
-            };
-
-            print!("{}", input)
-        }
-        println!("]");
-
         // Send the output through the EtherCAT terminals
         eth_handle.send_outputs();
         std::thread::sleep(Duration::from_millis(50));

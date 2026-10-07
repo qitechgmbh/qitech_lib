@@ -1,5 +1,4 @@
 use crate::{
-    EtherCATThreadChannel,
     coe::{ConfigurableDevice, Configuration},
     pdo::PredefinedPdoAssignment,
     shared_config::el70x1::{
@@ -8,8 +7,12 @@ use crate::{
         PosFeatures, StmControllerConfiguration, StmMotorConfiguration,
     },
 };
+use common::SdoRequest;
 
-use super::{EL7031_0030, pdo::EL7031_0030PredefinedPdoAssignment};
+use super::{
+    EL7031_0030,
+    pdo::{EL7031_0030PredefinedPdoAssignment, EL7031_0030RxPdo, EL7031_0030TxPdo},
+};
 
 /// Configuration for EL7031_0030 Stepper Motor Terminal
 #[derive(Debug, Clone)]
@@ -45,61 +48,49 @@ impl Default for EL7031_0030Configuration {
 }
 
 impl Configuration for EL7031_0030Configuration {
-    fn write_config(
-        &self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-    ) -> Result<(), anyhow::Error> {
-        self.encoder
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.stm_motor
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.stm_controller_1
-            .write_config(ecat_channel.clone(), device_address, 0x8011)?;
-        self.stm_controller_2
-            .write_config(ecat_channel.clone(), device_address, 0x8013)?;
-        self.stm_features
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.pos_configuration
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.pos_features
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.analog_input_channel_1.write_channel_config(
-            ecat_channel.clone(),
-            device_address,
-            0x8030,
-        )?;
-        self.analog_input_channel_2.write_channel_config(
-            ecat_channel.clone(),
-            device_address,
-            0x8040,
-        )?;
-        self.pdo_assignment
-            .txpdo_assignment()
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.pdo_assignment
-            .rxpdo_assignment()
-            .write_config(ecat_channel.clone(), device_address)?;
-        Ok(())
+    type TxPdo = EL7031_0030TxPdo;
+    type RxPdo = EL7031_0030RxPdo;
+
+    fn txpdo_assignment(&self) -> EL7031_0030TxPdo {
+        self.pdo_assignment.txpdo_assignment()
+    }
+
+    fn rxpdo_assignment(&self) -> EL7031_0030RxPdo {
+        self.pdo_assignment.rxpdo_assignment()
+    }
+
+    fn get_config_coe_writes(&self, device_address: u16) -> Result<Vec<SdoRequest>, anyhow::Error> {
+        let mut writes = Vec::new();
+        writes.extend(self.encoder.get_coe_writes(device_address));
+        writes.extend(self.stm_motor.get_coe_writes(device_address));
+        writes.extend(self.stm_controller_1.get_coe_writes(device_address, 0x8011));
+        writes.extend(self.stm_controller_2.get_coe_writes(device_address, 0x8013));
+        writes.extend(self.stm_features.get_coe_writes(device_address));
+        writes.extend(self.pos_configuration.get_coe_writes(device_address));
+        writes.extend(self.pos_features.get_coe_writes(device_address));
+        writes.extend(
+            self.analog_input_channel_1
+                .get_channel_coe_writes(device_address, 0x8030),
+        );
+        writes.extend(
+            self.analog_input_channel_2
+                .get_channel_coe_writes(device_address, 0x8040),
+        );
+        Ok(writes)
     }
 }
 
-impl ConfigurableDevice<EL7031_0030Configuration> for EL7031_0030 {
-    fn write_config(
-        &mut self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-        config: &EL7031_0030Configuration,
-    ) -> Result<(), anyhow::Error> {
-        config.write_config(ecat_channel.clone(), device_address)?;
-        self.configuration = config.clone();
-        self.txpdo = config.pdo_assignment.txpdo_assignment();
-        self.rxpdo = config.pdo_assignment.rxpdo_assignment();
-        Ok(())
+impl ConfigurableDevice for EL7031_0030 {
+    type Config = EL7031_0030Configuration;
+
+    fn set_config(&mut self, config: EL7031_0030Configuration) {
+        self.txpdo = config.txpdo_assignment();
+        self.rxpdo = config.rxpdo_assignment();
+        self.configuration = config;
     }
 
-    fn get_config(&self) -> EL7031_0030Configuration {
-        self.configuration.clone()
+    fn get_config(&self) -> &EL7031_0030Configuration {
+        &self.configuration
     }
 }
 
@@ -224,53 +215,70 @@ impl Default for StmFeatures {
 }
 
 impl StmFeatures {
-    pub fn write_config(
-        &self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-    ) -> Result<(), anyhow::Error> {
-        ecat_channel.sdo_write(device_address, 0x8012, 0x01, 0u8)?;
-        ecat_channel.sdo_write(device_address, 0x8012, 0x05, u8::from(self.speed_range))?;
-        ecat_channel.sdo_write(device_address, 0x8012, 0x09, self.invert_motor_polarity)?;
-        ecat_channel.sdo_write(
+    pub fn get_coe_writes(&self, device_address: u16) -> Vec<SdoRequest> {
+        let mut writes = Vec::new();
+        writes.push(SdoRequest::new(device_address, 0x8012, 0x01, 0u8));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8012,
+            0x05,
+            u8::from(self.speed_range),
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8012,
+            0x09,
+            self.invert_motor_polarity,
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             0x8012,
             0x11,
             u8::from(self.select_info_data_1),
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             0x8012,
             0x19,
             u8::from(self.select_info_data_2),
-        )?;
-        ecat_channel.sdo_write(device_address, 0x8012, 0x30, self.invert_digital_input_1)?;
-        ecat_channel.sdo_write(device_address, 0x8012, 0x31, self.invert_digital_input_2)?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8012,
+            0x30,
+            self.invert_digital_input_1,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8012,
+            0x31,
+            self.invert_digital_input_2,
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             0x8012,
             0x32,
             u8::from(self.function_for_input_1),
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             0x8012,
             0x36,
             u8::from(self.function_for_input_2),
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             0x8012,
             0x45,
             u8::from(self.digital_input_emulation_channel_1.clone()),
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             0x8012,
             0x49,
             u8::from(self.digital_input_emulation_channel_2.clone()),
-        )?;
-        Ok(())
+        ));
+        writes
     }
 }
 #[derive(Debug, Clone, Default)]

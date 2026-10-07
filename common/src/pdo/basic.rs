@@ -1,13 +1,12 @@
-use bitvec::{field::BitField, order::Lsb0, slice::BitSlice};
-use ethercat_hal_derive::PdoObject;
-
 use super::{RxPdoObject, TxPdoObject};
+use crate::pdo::PdoObject;
+use bitvec::{field::BitField, order::Lsb0, slice::BitSlice};
 
 /// PDO Object that is just a bool
 ///
-/// Commonly sued in EL20xx devices
-#[derive(Debug, Clone, Default, PdoObject)]
-#[pdo_object(bits = 1)]
+/// Commonly used in EL20xx devices
+#[derive(Debug, Clone, Default)]
+//#[pdo_object(bits = 1)]
 pub struct BoolPdoObject {
     pub value: bool,
 }
@@ -15,6 +14,12 @@ pub struct BoolPdoObject {
 impl AsRef<bool> for BoolPdoObject {
     fn as_ref(&self) -> &bool {
         &self.value
+    }
+}
+
+impl PdoObject for BoolPdoObject {
+    fn size(&self) -> usize {
+        1
     }
 }
 
@@ -33,10 +38,15 @@ impl RxPdoObject for BoolPdoObject {
 /// PDO Object that is just a f32
 ///
 /// Commonly used in EL30xx devices
-#[derive(Debug, Clone, Default, PdoObject)]
-#[pdo_object(bits = 32)]
+#[derive(Debug, Clone, Default)]
 pub struct F32PdoObject {
     pub value: f32,
+}
+
+impl PdoObject for F32PdoObject {
+    fn size(&self) -> usize {
+        32
+    }
 }
 
 impl TxPdoObject for F32PdoObject {

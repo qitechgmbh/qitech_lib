@@ -16,6 +16,7 @@ const STEP_NS: u64 = 250_000_000;
 const N_CHANNELS: usize = 8;
 /// Time for one full sweep over all channels
 const PERIOD_NS: u64 = STEP_NS * N_CHANNELS as u64;
+
 #[derive(Debug, Default)]
 struct Channel {
     pulse_start_ns: u64,
@@ -28,8 +29,8 @@ fn main() {
     let mut el1259: EL1259 = EL1259::new();
     let interface = env::args().nth(1).expect("No Interface-name given");
     let eth_control = init_ethercat(&interface, None);
-    let mut eth_handle = eth_control.app_handle;
 
+    let mut eth_handle = eth_control.app_handle;
     eth_control
         .channel
         .request_state_change(EtherCATState::PreOp)
@@ -64,6 +65,8 @@ fn main() {
         }
     }
 
+    std::thread::sleep(Duration::from_millis(1000));
+
     eth_control
         .channel
         .request_state_change(EtherCATState::Op)
@@ -71,11 +74,19 @@ fn main() {
 
     'outer: loop {
         std::thread::sleep(Duration::from_millis(10));
+        let res = eth_control.channel.register_read(0x1001, 0x0134 as u16);
+        println!(
+            "ALSTATUS: {:?} {:?}",
+            res,
+            eth_control.join_handle.as_ref().unwrap().is_finished()
+        );
+
         for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
             if !subdevice.initialized {
                 continue 'outer;
             }
         }
+
         break;
     }
 

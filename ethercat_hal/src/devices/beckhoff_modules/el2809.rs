@@ -1,7 +1,8 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice};
+use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::digital_output::DigitalOutputDevice;
-use crate::pdo::{RxPdo, basic::BoolPdoObject};
-use ethercat_hal_derive::{EthercatDevice, RxPdo};
+use crate::pdo::basic::BoolPdoObject;
+use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
 /// EL2809 16-channel digital output device
 ///
@@ -10,6 +11,7 @@ use ethercat_hal_derive::{EthercatDevice, RxPdo};
 pub struct EL2809 {
     pub rxpdo: EL2809RxPdo,
     is_used: bool,
+    config: EL2809Configuration,
 }
 
 impl EthercatDeviceProcessing for EL2809 {}
@@ -22,10 +24,25 @@ impl std::fmt::Debug for EL2809 {
 
 impl NewEthercatDevice for EL2809 {
     fn new() -> Self {
+        let config = EL2809Configuration::default();
         Self {
-            rxpdo: EL2809RxPdo::default(),
+            rxpdo: config.rxpdo_assignment(),
             is_used: false,
+            config,
         }
+    }
+}
+
+impl ConfigurableDevice for EL2809 {
+    type Config = EL2809Configuration;
+
+    fn set_config(&mut self, config: EL2809Configuration) {
+        self.rxpdo = config.rxpdo_assignment();
+        self.config = config;
+    }
+
+    fn get_config(&self) -> &EL2809Configuration {
+        &self.config
     }
 }
 
@@ -134,5 +151,34 @@ impl Default for EL2809RxPdo {
             channel15: Some(BoolPdoObject::default()),
             channel16: Some(BoolPdoObject::default()),
         }
+    }
+}
+
+/// The EL2809 has no inputs
+#[derive(Debug, Clone, TxPdo)]
+pub struct EL2809TxPdo {}
+
+/// The EL2809 has a fixed PDO assignment and no further CoE parameters
+#[derive(Default, Clone, PartialEq, Debug)]
+pub struct EL2809Configuration {}
+
+impl Configuration for EL2809Configuration {
+    /// The EL2809 has no mailbox, its PDO assignment is fixed and can't be written over CoE
+    fn get_sm_coe_writes(
+        &self,
+        _device_address: u16,
+    ) -> Result<Vec<common::SdoRequest>, anyhow::Error> {
+        Ok(vec![])
+    }
+
+    type TxPdo = EL2809TxPdo;
+    type RxPdo = EL2809RxPdo;
+
+    fn txpdo_assignment(&self) -> EL2809TxPdo {
+        EL2809TxPdo {}
+    }
+
+    fn rxpdo_assignment(&self) -> EL2809RxPdo {
+        EL2809RxPdo::default()
     }
 }

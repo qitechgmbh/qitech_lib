@@ -1,16 +1,14 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
-use crate::EtherCATThreadChannel;
 use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::encoder_input::{
     EncoderInputCounter, EncoderInputDevice, EncoderInputFrequency, EncoderInputPeriod,
 };
 use crate::pdo::PredefinedPdoAssignment;
-use crate::pdo::RxPdo;
-use crate::pdo::TxPdo;
 use crate::pdo::el5152::{
     El5152EncoderControl, El5152EncoderFrequency, El5152EncoderPeriod, El5152EncoderStatus,
 };
 
+use common::SdoRequest;
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
 /// EL5152 2-channel incremental encoder interface
@@ -66,30 +64,25 @@ impl NewEthercatDevice for EL5152 {
     fn new() -> Self {
         let configuration: EL5152Configuration = EL5152Configuration::default();
         Self {
-            configuration: configuration.clone(),
-            rxpdo: configuration.pdo_assignment.rxpdo_assignment(),
-            txpdo: configuration.pdo_assignment.txpdo_assignment(),
+            rxpdo: configuration.rxpdo_assignment(),
+            txpdo: configuration.txpdo_assignment(),
+            configuration,
             is_used: false,
         }
     }
 }
 
-impl ConfigurableDevice<EL5152Configuration> for EL5152 {
-    fn write_config(
-        &mut self,
-        ecat_chhanel: EtherCATThreadChannel,
-        device_address: u16,
-        config: &EL5152Configuration,
-    ) -> Result<(), anyhow::Error> {
-        config.write_config(ecat_chhanel, device_address)?;
-        self.configuration = config.clone();
-        self.txpdo = config.pdo_assignment.txpdo_assignment();
-        self.rxpdo = config.pdo_assignment.rxpdo_assignment();
-        Ok(())
+impl ConfigurableDevice for EL5152 {
+    type Config = EL5152Configuration;
+
+    fn set_config(&mut self, config: EL5152Configuration) {
+        self.txpdo = config.txpdo_assignment();
+        self.rxpdo = config.rxpdo_assignment();
+        self.configuration = config;
     }
 
-    fn get_config(&self) -> EL5152Configuration {
-        self.configuration.clone()
+    fn get_config(&self) -> &EL5152Configuration {
+        &self.configuration
     }
 }
 
@@ -174,26 +167,24 @@ impl EncoderInputDevice for EL5152 {
 }
 
 impl Configuration for EL5152Configuration {
-    fn write_config(
-        &self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-    ) -> Result<(), anyhow::Error> {
-        // Configure channel 1
-        self.channel1
-            .write_channel_config(ecat_channel.clone(), device_address, 0x8000)?;
-        // Configure channel 2
-        self.channel2
-            .write_channel_config(ecat_channel.clone(), device_address, 0x8010)?;
-        // Write PDO assignments
-        self.pdo_assignment
-            .txpdo_assignment()
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.pdo_assignment
-            .rxpdo_assignment()
-            .write_config(ecat_channel.clone(), device_address)?;
+    type TxPdo = EL5152TxPdo;
+    type RxPdo = EL5152RxPdo;
 
-        Ok(())
+    fn txpdo_assignment(&self) -> EL5152TxPdo {
+        self.pdo_assignment.txpdo_assignment()
+    }
+
+    fn rxpdo_assignment(&self) -> EL5152RxPdo {
+        self.pdo_assignment.rxpdo_assignment()
+    }
+
+    fn get_config_coe_writes(&self, device_address: u16) -> Result<Vec<SdoRequest>, anyhow::Error> {
+        let mut writes = Vec::new();
+        // Configure channel 1
+        writes.extend(self.channel1.get_channel_coe_writes(device_address, 0x8000));
+        // Configure channel 2
+        writes.extend(self.channel2.get_channel_coe_writes(device_address, 0x8010));
+        Ok(writes)
     }
 }
 
@@ -281,35 +272,30 @@ pub struct EL5152ChannelConfiguration {
 }
 
 impl EL5152ChannelConfiguration {
-    pub fn write_channel_config<'a>(
-        &self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-        base_index: u16,
-    ) -> Result<(), anyhow::Error> {
-        ecat_channel.sdo_write(device_address, base_index, 0x03, self.enable_counter)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x08, self.disable_filter)?;
-        ecat_channel.sdo_write(
-            device_address,
-            base_index,
-            0x0A,
-            self.enable_micro_increment,
-        )?;
-        ecat_channel.sdo_write(device_address, base_index, 0x0E, self.reversion_rotation)?;
-        ecat_channel.sdo_write(
-            device_address,
-            base_index,
-            0x0F,
-            self.frequency_based_window,
-        )?;
-        ecat_channel.sdo_write(device_address, base_index, 0x11, self.frequency_window)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x13, self.frequency_scaling)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x14, self.period_scaling)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x15, self.frequency_resolution)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x16, self.period_resolution)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x17, self.frequency_wait_time)?;
-
-        Ok(())
+    pub fn get_channel_coe_writes(&self, device_address: u16, base_index: u16) -> Vec<SdoRequest> {
+        vec![
+            SdoRequest::new(device_address, base_index, 0x03, self.enable_counter),
+            SdoRequest::new(device_address, base_index, 0x08, self.disable_filter),
+            SdoRequest::new(
+                device_address,
+                base_index,
+                0x0A,
+                self.enable_micro_increment,
+            ),
+            SdoRequest::new(device_address, base_index, 0x0E, self.reversion_rotation),
+            SdoRequest::new(
+                device_address,
+                base_index,
+                0x0F,
+                self.frequency_based_window,
+            ),
+            SdoRequest::new(device_address, base_index, 0x11, self.frequency_window),
+            SdoRequest::new(device_address, base_index, 0x13, self.frequency_scaling),
+            SdoRequest::new(device_address, base_index, 0x14, self.period_scaling),
+            SdoRequest::new(device_address, base_index, 0x15, self.frequency_resolution),
+            SdoRequest::new(device_address, base_index, 0x16, self.period_resolution),
+            SdoRequest::new(device_address, base_index, 0x17, self.frequency_wait_time),
+        ]
     }
 }
 

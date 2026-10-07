@@ -1,7 +1,8 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::analog_output::{AnalogOutputDevice, AnalogOutputOutput};
-use crate::pdo::oversampling::{AnalogOutputOversample, CycleCount};
-use crate::pdo::{RxPdo, TxPdo};
+use common::SdoRequest;
+use common::pdo::oversampling::{AnalogOutputOversample, CycleCount};
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
 const SM0_START: u16 = 0x1600;
@@ -20,7 +21,6 @@ const SM1_START: u16 = 0x1700;
 #[derive(EthercatDevice)]
 pub struct EL4732 {
     pub rxpdo: EL4732RxPdo,
-    pub txpdo: EL4732TxPdo,
     is_used: bool,
     pub configuration: EL4732Configuration,
 }
@@ -49,7 +49,6 @@ impl EL4732 {
     pub fn new_with_oversample(oversample_factor: usize) -> Self {
         Self {
             rxpdo: EL4732RxPdo::new(oversample_factor),
-            txpdo: EL4732TxPdo::default(),
             is_used: false,
             configuration: EL4732Configuration {
                 oversample_factor,
@@ -178,14 +177,9 @@ impl Default for EL4732RxPdo {
     }
 }
 
+/// The EL4732 has no inputs
 #[derive(Debug, Clone, TxPdo)]
 pub struct EL4732TxPdo {}
-
-impl Default for EL4732TxPdo {
-    fn default() -> Self {
-        Self {}
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 pub enum EL4732Port {
@@ -205,6 +199,39 @@ impl Default for EL4732Configuration {
             oversample_factor: 1,
             oversampling_config: [(SM0_START, 1), (SM1_START, 1)].to_vec(),
         }
+    }
+}
+
+impl Configuration for EL4732Configuration {
+    type TxPdo = EL4732TxPdo;
+    type RxPdo = EL4732RxPdo;
+
+    fn txpdo_assignment(&self) -> EL4732TxPdo {
+        EL4732TxPdo {}
+    }
+
+    fn rxpdo_assignment(&self) -> EL4732RxPdo {
+        EL4732RxPdo::new(self.oversample_factor)
+    }
+
+    /// The EL4732 PDO layout depends on the oversampling factor and is set up through
+    /// `configure_oversampling` with [`EL4732Configuration::oversampling_config`],
+    /// so no SM PDO assignment is written here.
+    fn get_sm_coe_writes(&self, _device_address: u16) -> Result<Vec<SdoRequest>, anyhow::Error> {
+        Ok(vec![])
+    }
+}
+
+impl ConfigurableDevice for EL4732 {
+    type Config = EL4732Configuration;
+
+    fn set_config(&mut self, config: EL4732Configuration) {
+        self.rxpdo = config.rxpdo_assignment();
+        self.configuration = config;
+    }
+
+    fn get_config(&self) -> &EL4732Configuration {
+        &self.configuration
     }
 }
 

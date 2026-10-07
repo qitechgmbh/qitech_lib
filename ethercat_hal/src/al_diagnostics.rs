@@ -213,7 +213,7 @@ fn decode_al_status(raw: u16) -> (Option<SubDeviceState>, bool) {
     (state, raw & AL_STATUS_ERROR_FLAG != 0)
 }
 
-async fn read_one_al_status(
+pub async fn read_one_al_status(
     maindevice: &MainDevice<'_>,
     device_address: u16,
     name: String,

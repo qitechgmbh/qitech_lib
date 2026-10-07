@@ -1,13 +1,15 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::digital_output::DigitalOutputDevice;
-use crate::pdo::{RxPdo, basic::BoolPdoObject};
-use ethercat_hal_derive::{EthercatDevice, RxPdo};
+use crate::pdo::basic::BoolPdoObject;
+use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 /// EL2004 4-channel digital output device
 /// 24V DC, 0.5A per channel
 #[derive(EthercatDevice)]
 pub struct EL2004 {
     pub rxpdo: EL2004RxPdo,
     is_used: bool,
+    config: EL2004Configuration,
 }
 
 impl EthercatDeviceProcessing for EL2004 {}
@@ -20,10 +22,25 @@ impl std::fmt::Debug for EL2004 {
 
 impl NewEthercatDevice for EL2004 {
     fn new() -> Self {
+        let config = EL2004Configuration::default();
         Self {
-            rxpdo: EL2004RxPdo::default(),
+            rxpdo: config.rxpdo_assignment(),
             is_used: false,
+            config,
         }
+    }
+}
+
+impl ConfigurableDevice for EL2004 {
+    type Config = EL2004Configuration;
+
+    fn set_config(&mut self, config: EL2004Configuration) {
+        self.rxpdo = config.rxpdo_assignment();
+        self.config = config;
+    }
+
+    fn get_config(&self) -> &EL2004Configuration {
+        &self.config
     }
 }
 
@@ -72,6 +89,35 @@ impl Default for EL2004RxPdo {
             channel3: Some(BoolPdoObject::default()),
             channel4: Some(BoolPdoObject::default()),
         }
+    }
+}
+
+/// The EL2004 has no inputs
+#[derive(Debug, Clone, TxPdo)]
+pub struct EL2004TxPdo {}
+
+/// The EL2004 has a fixed PDO assignment and no further CoE parameters
+#[derive(Default, Clone, PartialEq, Debug)]
+pub struct EL2004Configuration {}
+
+impl Configuration for EL2004Configuration {
+    /// The EL2004 has no mailbox, its PDO assignment is fixed and can't be written over CoE
+    fn get_sm_coe_writes(
+        &self,
+        _device_address: u16,
+    ) -> Result<Vec<common::SdoRequest>, anyhow::Error> {
+        Ok(vec![])
+    }
+
+    type TxPdo = EL2004TxPdo;
+    type RxPdo = EL2004RxPdo;
+
+    fn txpdo_assignment(&self) -> EL2004TxPdo {
+        EL2004TxPdo {}
+    }
+
+    fn rxpdo_assignment(&self) -> EL2004RxPdo {
+        EL2004RxPdo::default()
     }
 }
 
