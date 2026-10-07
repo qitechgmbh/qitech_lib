@@ -112,6 +112,10 @@ pub enum SdoType {
 }
 
 pub fn type_id_to_sdo_type<T: 'static>() -> Result<SdoType, anyhow::Error> {
+    Ok(sdo_type_of::<T>())
+}
+
+fn sdo_type_of<T: 'static>() -> SdoType {
     let t_id = TypeId::of::<T>();
     let sdo_type: SdoType = {
         if t_id == TypeId::of::<bool>() {
@@ -130,7 +134,7 @@ pub fn type_id_to_sdo_type<T: 'static>() -> Result<SdoType, anyhow::Error> {
             SdoType::U8
         }
     };
-    return Ok(sdo_type);
+    sdo_type
 }
 
 #[derive(Debug)]
@@ -147,6 +151,26 @@ pub struct SdoRequest {
     pub sdo_index: SdoIndex,
     pub data: [u8; 4],
     pub type_flag: SdoType,
+}
+
+impl SdoRequest {
+    /// Typed sdo write of `value` to `index:sub_index`
+    pub fn new<T: EthercatSdoBytes + 'static>(
+        device_address: u16,
+        index: u16,
+        sub_index: u8,
+        value: T,
+    ) -> Self {
+        Self {
+            device_address,
+            sdo_index: SdoIndex {
+                index: index as u32,
+                sub_index: sub_index as u16,
+            },
+            data: value.to_bytes(),
+            type_flag: sdo_type_of::<T>(),
+        }
+    }
 }
 
 #[derive(Hash, Eq, PartialEq, PartialOrd, Clone, Debug, Copy)]

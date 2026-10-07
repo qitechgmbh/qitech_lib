@@ -1,4 +1,5 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice};
+use crate::coe::{ConfigurableDevice, Configuration};
 use crate::devices::SubDeviceIdentityTuple;
 use crate::io::digital_input::DigitalInputDevice;
 use crate::io::digital_output::DigitalOutputDevice;
@@ -12,6 +13,7 @@ pub struct EP2339_0021 {
     pub rxpdo: EP2339_0021RxPdo,
     pub txpdo: EP2339_0021TxPdo,
     is_used: bool,
+    config: EP2339_0021Configuration,
 }
 
 impl EthercatDeviceProcessing for EP2339_0021 {}
@@ -24,11 +26,27 @@ impl std::fmt::Debug for EP2339_0021 {
 
 impl NewEthercatDevice for EP2339_0021 {
     fn new() -> Self {
+        let config = EP2339_0021Configuration::default();
         Self {
-            rxpdo: EP2339_0021RxPdo::default(),
-            txpdo: EP2339_0021TxPdo::default(),
+            rxpdo: config.rxpdo_assignment(),
+            txpdo: config.txpdo_assignment(),
             is_used: false,
+            config,
         }
+    }
+}
+
+impl ConfigurableDevice for EP2339_0021 {
+    type Config = EP2339_0021Configuration;
+
+    fn set_config(&mut self, config: EP2339_0021Configuration) {
+        self.rxpdo = config.rxpdo_assignment();
+        self.txpdo = config.txpdo_assignment();
+        self.config = config;
+    }
+
+    fn get_config(&self) -> &EP2339_0021Configuration {
+        &self.config
     }
 }
 
@@ -253,6 +271,23 @@ impl Default for EP2339_0021TxPdo {
             channel15: Some(BoolPdoObject::default()),
             channel16: Some(BoolPdoObject::default()),
         }
+    }
+}
+
+/// The EP2339_0021 has a fixed PDO assignment and no further CoE parameters
+#[derive(Default, Clone, PartialEq, Debug)]
+pub struct EP2339_0021Configuration {}
+
+impl Configuration for EP2339_0021Configuration {
+    type TxPdo = EP2339_0021TxPdo;
+    type RxPdo = EP2339_0021RxPdo;
+
+    fn txpdo_assignment(&self) -> EP2339_0021TxPdo {
+        EP2339_0021TxPdo::default()
+    }
+
+    fn rxpdo_assignment(&self) -> EP2339_0021RxPdo {
+        EP2339_0021RxPdo::default()
     }
 }
 

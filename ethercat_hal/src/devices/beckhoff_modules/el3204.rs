@@ -1,9 +1,10 @@
+use crate::coe::{ConfigurableDevice, Configuration};
 use crate::pdo::TxPdo;
 use crate::{
     io::temperature_input::{TemperatureInputDevice, TemperatureInputInput},
     pdo::el32xx::RtdInput,
 };
-use ethercat_hal_derive::{EthercatDevice, TxPdo};
+use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 
@@ -14,6 +15,7 @@ use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple}
 pub struct EL3204 {
     pub txpdo: EL3204TxPdo,
     is_used: bool,
+    pub configuration: EL3204Configuration,
 }
 impl EthercatDeviceProcessing for EL3204 {}
 
@@ -25,10 +27,25 @@ impl std::fmt::Debug for EL3204 {
 
 impl NewEthercatDevice for EL3204 {
     fn new() -> Self {
+        let configuration = EL3204Configuration::default();
         Self {
-            txpdo: EL3204TxPdo::default(),
+            txpdo: configuration.txpdo_assignment(),
             is_used: false,
+            configuration,
         }
+    }
+}
+
+impl ConfigurableDevice for EL3204 {
+    type Config = EL3204Configuration;
+
+    fn set_config(&mut self, config: EL3204Configuration) {
+        self.txpdo = config.txpdo_assignment();
+        self.configuration = config;
+    }
+
+    fn get_config(&self) -> &EL3204Configuration {
+        &self.configuration
     }
 }
 
@@ -99,6 +116,27 @@ impl Default for EL3204TxPdo {
             channel3: Some(RtdInput::default()),
             channel4: Some(RtdInput::default()),
         }
+    }
+}
+
+/// The EL3204 has no outputs
+#[derive(Debug, Clone, RxPdo)]
+pub struct EL3204RxPdo {}
+
+/// The EL3204 has a fixed PDO assignment and no further CoE parameters
+#[derive(Default, Clone, PartialEq, Debug)]
+pub struct EL3204Configuration {}
+
+impl Configuration for EL3204Configuration {
+    type TxPdo = EL3204TxPdo;
+    type RxPdo = EL3204RxPdo;
+
+    fn txpdo_assignment(&self) -> EL3204TxPdo {
+        EL3204TxPdo::default()
+    }
+
+    fn rxpdo_assignment(&self) -> EL3204RxPdo {
+        EL3204RxPdo {}
     }
 }
 

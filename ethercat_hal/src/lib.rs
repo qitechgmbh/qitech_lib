@@ -10,6 +10,9 @@ pub mod io;
 pub mod machine_ident_read;
 pub mod shared_config;
 
+/// Re-export of the reusable PDO objects, which live in `common`
+pub use common::pdo;
+
 use al_diagnostics::{TransitionLog, TransitionReport};
 use common::{SdoIndex, SdoReadRequest, SdoRequest};
 use ethercrab::PduStorage;

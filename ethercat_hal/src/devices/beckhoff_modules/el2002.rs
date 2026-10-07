@@ -1,7 +1,8 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::digital_output::DigitalOutputDevice;
 use crate::pdo::{RxPdo, basic::BoolPdoObject};
-use ethercat_hal_derive::{EthercatDevice, RxPdo};
+use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
 /// EL2002 2-channel digital output device
 ///
@@ -10,6 +11,7 @@ use ethercat_hal_derive::{EthercatDevice, RxPdo};
 pub struct EL2002 {
     pub rxpdo: EL2002RxPdo,
     is_used: bool,
+    config: EL2002Configuration,
 }
 
 impl EthercatDeviceProcessing for EL2002 {}
@@ -22,10 +24,25 @@ impl std::fmt::Debug for EL2002 {
 
 impl NewEthercatDevice for EL2002 {
     fn new() -> Self {
+        let config = EL2002Configuration::default();
         Self {
-            rxpdo: EL2002RxPdo::default(),
+            rxpdo: config.rxpdo_assignment(),
             is_used: false,
+            config,
         }
+    }
+}
+
+impl ConfigurableDevice for EL2002 {
+    type Config = EL2002Configuration;
+
+    fn set_config(&mut self, config: EL2002Configuration) {
+        self.rxpdo = config.rxpdo_assignment();
+        self.config = config;
+    }
+
+    fn get_config(&self) -> &EL2002Configuration {
+        &self.config
     }
 }
 
@@ -64,6 +81,35 @@ impl Default for EL2002RxPdo {
             channel1: Some(BoolPdoObject::default()),
             channel2: Some(BoolPdoObject::default()),
         }
+    }
+}
+
+/// The EL2002 has no inputs
+#[derive(Debug, Clone, TxPdo)]
+pub struct EL2002TxPdo {}
+
+/// The EL2002 has a fixed PDO assignment and no further CoE parameters
+#[derive(Default, Clone, PartialEq, Debug)]
+pub struct EL2002Configuration {}
+
+impl Configuration for EL2002Configuration {
+    /// The EL2002 has no mailbox, its PDO assignment is fixed and can't be written over CoE
+    fn get_sm_coe_writes(
+        &self,
+        _device_address: u16,
+    ) -> Result<Vec<common::SdoRequest>, anyhow::Error> {
+        Ok(vec![])
+    }
+
+    type TxPdo = EL2002TxPdo;
+    type RxPdo = EL2002RxPdo;
+
+    fn txpdo_assignment(&self) -> EL2002TxPdo {
+        EL2002TxPdo {}
+    }
+
+    fn rxpdo_assignment(&self) -> EL2002RxPdo {
+        EL2002RxPdo::default()
     }
 }
 

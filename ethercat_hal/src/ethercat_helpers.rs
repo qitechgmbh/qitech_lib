@@ -311,6 +311,10 @@ impl EtherCATThreadChannel {
     ) -> Result<Vec<(SdoIndex, Option<anyhow::Error>)>, anyhow::Error> {
         let mut writes = config.get_config_coe_writes(device_address)?;
         writes.extend(config.get_sm_coe_writes(device_address)?);
+        // Devices without CoE (e.g. simple digital terminals) have nothing to write
+        if writes.is_empty() {
+            return Ok(vec![]);
+        }
         self.bulk_sdo_write(writes, timeout)
     }
 

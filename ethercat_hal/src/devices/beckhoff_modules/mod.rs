@@ -1,11 +1,6 @@
 pub mod ek1100;
 pub mod el1002;
-//pub mod el4732;
-pub mod el1259;
-pub mod el4002;
-//pub mod el4002;
-//pub mod el4008;
-/*pub mod el1008;
+pub mod el1008;
 pub mod el1124;
 pub mod el1259;
 pub mod el2002;
@@ -28,13 +23,13 @@ pub mod el5152;
 pub mod el6021;
 pub mod el7031;
 pub mod el7031_0030;
-#[doc(hidden)]
+/*#[doc(hidden)]
 /// This device is still too untested/unreliable with our implementation. Use at you own risk.
-pub mod el7037;
+pub mod el7037;*/
 pub mod el7041_0052;
 pub(crate) mod el9505;
 pub mod ep2339_0021;
-*/
+
 // Re-export types that Beckhoff subdirectory devices access via `super::`
 pub(crate) use crate::devices::{
     EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple,

@@ -1,5 +1,4 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
-use crate::EtherCATThreadChannel;
 use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::serial_interface::{SerialEncoding, SerialInterfaceDevice};
 use crate::pdo::{PredefinedPdoAssignment, RxPdo, RxPdoObject, TxPdo, TxPdoObject};
@@ -7,6 +6,7 @@ use anyhow::{Error, anyhow};
 use bitvec::field::BitField;
 use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;
+use common::SdoRequest;
 
 use ethercat_hal_derive::{EthercatDevice, PdoObject};
 use ethercat_hal_derive::{RxPdo, TxPdo};
@@ -111,22 +111,17 @@ impl Default for EL6021Configuration {
     }
 }
 
-impl ConfigurableDevice<EL6021Configuration> for EL6021 {
-    fn write_config<'maindevice>(
-        &mut self,
-        channel: EtherCATThreadChannel,
-        device_address: u16,
-        config: &EL6021Configuration,
-    ) -> Result<(), anyhow::Error> {
-        config.write_config(channel, device_address)?;
-        self.configuration = config.clone();
-        self.txpdo = config.pdo_assignment.txpdo_assignment();
-        self.rxpdo = config.pdo_assignment.rxpdo_assignment();
-        Ok(())
+impl ConfigurableDevice for EL6021 {
+    type Config = EL6021Configuration;
+
+    fn set_config(&mut self, config: EL6021Configuration) {
+        self.txpdo = config.txpdo_assignment();
+        self.rxpdo = config.rxpdo_assignment();
+        self.configuration = config;
     }
 
-    fn get_config(&self) -> EL6021Configuration {
-        self.configuration.clone()
+    fn get_config(&self) -> &EL6021Configuration {
+        &self.configuration
     }
 }
 
@@ -217,11 +212,18 @@ const fn convert_serial_encoding(encoding: SerialEncoding) -> u8 {
 }
 
 impl Configuration for EL6021Configuration {
-    fn write_config(
-        &self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    type TxPdo = EL6021TxPdo;
+    type RxPdo = EL6021RxPdo;
+
+    fn txpdo_assignment(&self) -> EL6021TxPdo {
+        self.pdo_assignment.txpdo_assignment()
+    }
+
+    fn rxpdo_assignment(&self) -> EL6021RxPdo {
+        self.pdo_assignment.rxpdo_assignment()
+    }
+
+    fn get_config_coe_writes(&self, device_address: u16) -> Result<Vec<SdoRequest>, anyhow::Error> {
         match (self.baud_rate, self.data_frame) {
             (EL6021Baudrate::B2400, SerialEncoding::Coding7E1)
             | (EL6021Baudrate::B4800, SerialEncoding::Coding7O1)
@@ -232,54 +234,48 @@ impl Configuration for EL6021Configuration {
             | (EL6021Baudrate::B115200, SerialEncoding::Coding7O2) => {}
             _ => {
                 return Err(anyhow!(
-                    "ERROR: EL6021Configuration::write_config Baudrate and Encoding is not compatible!"
+                    "ERROR: EL6021Configuration::get_config_coe_writes Baudrate and Encoding is not compatible!"
                 ));
             }
         }
-        ecat_channel.sdo_write(device_address, 0x8000, 0x2, self.xon_on_supported_tx)?;
-        ecat_channel.sdo_write(device_address, 0x8000, 0x3, self.xon_off_supported_rx)?;
-        ecat_channel.sdo_write(
-            device_address,
-            0x8000,
-            0x4,
-            self.fifo_continuous_send_enabled,
-        )?;
-        ecat_channel.sdo_write(
-            device_address,
-            0x8000,
-            0x5,
-            self.enable_transfer_rate_optimization,
-        )?;
-        ecat_channel.sdo_write(device_address, 0x8000, 0x6, self.half_duplex_enabled)?;
-        ecat_channel.sdo_write(
-            device_address,
-            0x8000,
-            0x7,
-            self.point_to_point_connection_enabled,
-        )?;
-        let baudrate_coe_value = u8::from(self.baud_rate);
-        ecat_channel.sdo_write(device_address, 0x8000, 0x11, baudrate_coe_value)?;
-        ecat_channel.sdo_write(
-            device_address,
-            0x8000,
-            0x15,
-            convert_serial_encoding(self.data_frame),
-        )?;
-        ecat_channel.sdo_write(
-            device_address,
-            0x8000,
-            0x1a,
-            self.rx_buffer_full_notification,
-        )?;
+        let writes = vec![
+            SdoRequest::new(device_address, 0x8000, 0x2, self.xon_on_supported_tx),
+            SdoRequest::new(device_address, 0x8000, 0x3, self.xon_off_supported_rx),
+            SdoRequest::new(
+                device_address,
+                0x8000,
+                0x4,
+                self.fifo_continuous_send_enabled,
+            ),
+            SdoRequest::new(
+                device_address,
+                0x8000,
+                0x5,
+                self.enable_transfer_rate_optimization,
+            ),
+            SdoRequest::new(device_address, 0x8000, 0x6, self.half_duplex_enabled),
+            SdoRequest::new(
+                device_address,
+                0x8000,
+                0x7,
+                self.point_to_point_connection_enabled,
+            ),
+            SdoRequest::new(device_address, 0x8000, 0x11, u8::from(self.baud_rate)),
+            SdoRequest::new(
+                device_address,
+                0x8000,
+                0x15,
+                convert_serial_encoding(self.data_frame),
+            ),
+            SdoRequest::new(
+                device_address,
+                0x8000,
+                0x1a,
+                self.rx_buffer_full_notification,
+            ),
+        ];
 
-        self.pdo_assignment
-            .txpdo_assignment()
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.pdo_assignment
-            .rxpdo_assignment()
-            .write_config(ecat_channel.clone(), device_address)?;
-
-        Ok(())
+        Ok(writes)
     }
 }
 
@@ -405,9 +401,9 @@ impl NewEthercatDevice for EL6021 {
     fn new() -> Self {
         let configuration: EL6021Configuration = EL6021Configuration::default();
         Self {
-            configuration: configuration.clone(),
-            txpdo: configuration.pdo_assignment.txpdo_assignment(),
-            rxpdo: configuration.pdo_assignment.rxpdo_assignment(),
+            txpdo: configuration.txpdo_assignment(),
+            rxpdo: configuration.rxpdo_assignment(),
+            configuration,
             is_used: false,
             output_ts: 0,
             input_ts: 0,

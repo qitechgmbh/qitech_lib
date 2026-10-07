@@ -1,14 +1,11 @@
 use bitvec::prelude::*;
-use ethercat_hal_derive::PdoObject;
 
 use super::{TxPdoObject, basic::Limit};
 
 /// PDO Object for EL32xx (temperature sensing) devices
 ///
 /// The "RTD Input" holds the value of a temperature sensor accompanied by some metadata.
-#[derive(Debug, Clone, Default, PdoObject, PartialEq)]
-#[pdo_object(bits = 32)]
-pub struct RtdInput {
+#[derive(Debug, Clone, Default, PartialEq)]pub struct RtdInput {
     /// The signal voltage is over the defined operating range of the device
     pub undervoltage: bool, // 1 bit
     /// The signal voltage is under the defined operating range of the device
@@ -41,5 +38,11 @@ impl TxPdoObject for RtdInput {
         self.limit2 = bits[4..6].load_le::<u8>().into();
         self.error = bits[7];
         self.txpdo_state = bits[8 + 6];
+    }
+}
+
+impl crate::PdoObject for RtdInput {
+    fn size(&self) -> usize {
+        32
     }
 }

@@ -1,15 +1,12 @@
 pub mod analog_input;
 pub mod basic;
 pub mod el40xx;
-pub mod oversampling;
-
-/*pub mod el252x;
+pub mod el252x;
 pub mod el32xx;
-
 pub mod el5152;
 pub mod el70x1;
-pub mod el70x7;
-pub mod oversampling;*/
+pub mod oversampling;
+//pub mod el70x7;
 use bitvec::prelude::*;
 
 /// This trait allows to know the size of a PDO object in bits.

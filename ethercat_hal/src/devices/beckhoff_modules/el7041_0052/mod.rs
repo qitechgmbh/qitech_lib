@@ -3,6 +3,7 @@ use ethercat_hal_derive::EthercatDevice;
 
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::{
+    coe::Configuration,
     helpers::counter_wrapper_u16_i128::CounterWrapperU16U128,
     io::{
         analog_input::AnalogInputInput,
@@ -10,7 +11,7 @@ use crate::{
             StepperVelocityEL70x1Device, StepperVelocityEL70x1Input, StepperVelocityEL70x1Output,
         },
     },
-    pdo::{PredefinedPdoAssignment, RxPdo, TxPdo},
+    pdo::{RxPdo, TxPdo},
     shared_config::el70x1::EL70x1OperationMode,
 };
 use anyhow::anyhow;
@@ -33,8 +34,8 @@ impl NewEthercatDevice for EL7041_0052 {
     fn new() -> Self {
         let configuration = EL7041_0052Configuration::default();
         Self {
-            txpdo: configuration.pdo_assignment.txpdo_assignment(),
-            rxpdo: configuration.pdo_assignment.rxpdo_assignment(),
+            txpdo: configuration.txpdo_assignment(),
+            rxpdo: configuration.rxpdo_assignment(),
             is_used: false,
             configuration,
             counter_wrapper: CounterWrapperU16U128::new(),

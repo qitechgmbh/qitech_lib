@@ -1,7 +1,8 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::digital_output::DigitalOutputDevice;
 use crate::pdo::{RxPdo, basic::BoolPdoObject};
-use ethercat_hal_derive::{EthercatDevice, RxPdo};
+use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
 /// EL2008 8-channel digital output device
 ///
@@ -10,6 +11,7 @@ use ethercat_hal_derive::{EthercatDevice, RxPdo};
 pub struct EL2008 {
     pub rxpdo: EL2008RxPdo,
     is_used: bool,
+    config: EL2008Configuration,
 }
 
 impl EthercatDeviceProcessing for EL2008 {}
@@ -22,10 +24,25 @@ impl std::fmt::Debug for EL2008 {
 
 impl NewEthercatDevice for EL2008 {
     fn new() -> Self {
+        let config = EL2008Configuration::default();
         Self {
-            rxpdo: EL2008RxPdo::default(),
+            rxpdo: config.rxpdo_assignment(),
             is_used: false,
+            config,
         }
+    }
+}
+
+impl ConfigurableDevice for EL2008 {
+    type Config = EL2008Configuration;
+
+    fn set_config(&mut self, config: EL2008Configuration) {
+        self.rxpdo = config.rxpdo_assignment();
+        self.config = config;
+    }
+
+    fn get_config(&self) -> &EL2008Configuration {
+        &self.config
     }
 }
 
@@ -94,6 +111,35 @@ impl Default for EL2008RxPdo {
             channel7: Some(BoolPdoObject::default()),
             channel8: Some(BoolPdoObject::default()),
         }
+    }
+}
+
+/// The EL2008 has no inputs
+#[derive(Debug, Clone, TxPdo)]
+pub struct EL2008TxPdo {}
+
+/// The EL2008 has a fixed PDO assignment and no further CoE parameters
+#[derive(Default, Clone, PartialEq, Debug)]
+pub struct EL2008Configuration {}
+
+impl Configuration for EL2008Configuration {
+    /// The EL2008 has no mailbox, its PDO assignment is fixed and can't be written over CoE
+    fn get_sm_coe_writes(
+        &self,
+        _device_address: u16,
+    ) -> Result<Vec<common::SdoRequest>, anyhow::Error> {
+        Ok(vec![])
+    }
+
+    type TxPdo = EL2008TxPdo;
+    type RxPdo = EL2008RxPdo;
+
+    fn txpdo_assignment(&self) -> EL2008TxPdo {
+        EL2008TxPdo {}
+    }
+
+    fn rxpdo_assignment(&self) -> EL2008RxPdo {
+        EL2008RxPdo::default()
     }
 }
 

@@ -109,6 +109,14 @@ pub struct EL1002RxPdo {}
 pub struct EL1002Configuration {}
 
 impl Configuration for EL1002Configuration {
+    /// The EL1002 has no mailbox, its PDO assignment is fixed and can't be written over CoE
+    fn get_sm_coe_writes(
+        &self,
+        _device_address: u16,
+    ) -> Result<Vec<common::SdoRequest>, anyhow::Error> {
+        Ok(vec![])
+    }
+
     type TxPdo = EL1002TxPdo;
     type RxPdo = EL1002RxPdo;
 

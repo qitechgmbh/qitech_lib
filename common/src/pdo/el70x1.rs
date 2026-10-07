@@ -1,12 +1,9 @@
 use super::{RxPdoObject, TxPdoObject};
 use bitvec::prelude::*;
-use ethercat_hal_derive::PdoObject;
 
 /// # `EncStatusCompact`
 /// 48 bits / 6 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 48)]
-pub struct EncStatusCompact {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct EncStatusCompact {
     /// # 6000:01
     /// (6000:02 on EL7031-0030)
     /// The counter value was latched with the C track.
@@ -78,9 +75,7 @@ impl TxPdoObject for EncStatusCompact {
 
 /// # `EncStatus`
 /// 80 bits / 10 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 80)]
-pub struct EncStatus {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct EncStatus {
     /// # 6000:01
     /// (6000:02 on EL7031-0030)
     /// The counter value was stored via the external latch.
@@ -151,9 +146,7 @@ impl TxPdoObject for EncStatus {
 
 /// # `EncTimestampCompact`
 /// 32 bits / 4 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 32)]
-pub struct EncTimestampCompact {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct EncTimestampCompact {
     /// # 6000:16
     /// Time stamp of the last counter change.
     pub timestamp: u32,
@@ -168,9 +161,7 @@ impl TxPdoObject for EncTimestampCompact {
 
 /// # `EncTimestamp`
 /// 16 bits / 2 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 16)]
-pub struct StmStatus {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct StmStatus {
     /// # 6010:01
     /// Driver stage is ready for enabling.
     pub ready_to_enable: bool,
@@ -249,9 +240,7 @@ impl TxPdoObject for StmStatus {
 
 /// # `StmSynchronInfoData`
 /// 32 bits / 4 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 32)]
-pub struct StmSynchronInfoData {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct StmSynchronInfoData {
     /// # 6010:11
     /// Synchronous information (selection via subindex 0x8012:11).
     pub info_data_1: u16,
@@ -272,9 +261,7 @@ impl TxPdoObject for StmSynchronInfoData {
 
 /// # `PosStatusCompact`
 /// 16 bits / 2 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 16)]
-pub struct PosStatusCompact {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct PosStatusCompact {
     /// # 6020:01
     /// A current travel command is active.
     pub busy: bool,
@@ -331,9 +318,7 @@ impl TxPdoObject for PosStatusCompact {
 
 /// # `PosStatus`
 /// 96 bits / 12 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 96)]
-pub struct PosStatus {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct PosStatus {
     /// # 6020:01
     /// A current travel command is active.
     pub busy: bool,
@@ -407,9 +392,7 @@ impl TxPdoObject for PosStatus {
 
 /// # `StmInternalPosition`
 /// 32 bits / 4 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 32)]
-pub struct StmInternalPosition {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct StmInternalPosition {
     /// # 6010:14
     /// Internal microstep position.
     pub internal_position: u32,
@@ -424,9 +407,7 @@ impl TxPdoObject for StmInternalPosition {
 
 /// # `StmExternalPosition`
 /// 32 bits / 4 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 32)]
-pub struct StmExternalPosition {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct StmExternalPosition {
     /// # 6010:15
     /// Encoder position.
     pub external_position: u32,
@@ -441,9 +422,7 @@ impl TxPdoObject for StmExternalPosition {
 
 /// # `PosActualPositionLag`
 /// 32 bits / 4 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 32)]
-pub struct PosActualPositionLag {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct PosActualPositionLag {
     /// # 6020:23
     /// Actual position lag.
     pub actual_position_lag: u32,
@@ -458,9 +437,7 @@ impl TxPdoObject for PosActualPositionLag {
 
 /// # `EncControlCompact`
 /// 32 bits / 4 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 32)]
-pub struct EncControlCompact {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct EncControlCompact {
     /// # 7000:01
     /// (7000:02 on EL7031-0030)
     /// Activate latching via the C-track.
@@ -496,9 +473,7 @@ impl RxPdoObject for EncControlCompact {
 
 /// # `EncControl`
 /// 48 bits / 6 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 48)]
-pub struct EncControl {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct EncControl {
     /// # 7000:01
     /// (7000:02 on EL7031-0030)
     /// Activate external latch with positive edge.
@@ -535,9 +510,7 @@ impl RxPdoObject for EncControl {
 
 /// # `StmControl`
 /// 16 bits / 2 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 16)]
-pub struct StmControl {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct StmControl {
     /// # 7010:01
     /// Activates the output stage.
     pub enable: bool,
@@ -564,9 +537,7 @@ impl RxPdoObject for StmControl {
 
 /// # `StmPosition`
 /// 32 bits / 4 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 32)]
-pub struct StmPosition {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct StmPosition {
     /// # 7010:11
     /// Set position.
     pub position: u32,
@@ -581,9 +552,7 @@ impl RxPdoObject for StmPosition {
 
 /// # `StmVelocity`
 /// 16 bits / 2 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 16)]
-pub struct StmVelocity {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct StmVelocity {
     /// # 7010:21
     /// Set velocity.
     pub velocity: i16,
@@ -598,9 +567,7 @@ impl RxPdoObject for StmVelocity {
 
 /// # `PosControlCompact`
 /// 48 bits / 6 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 48)]
-pub struct PosControlCompact {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct PosControlCompact {
     /// # 7020:01
     /// Start travel command (rising edge), or prematurely abort travel command (falling edge).
     pub execute: bool,
@@ -627,9 +594,7 @@ impl RxPdoObject for PosControlCompact {
 
 /// # `PosControl`
 /// 112 bits / 14 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 112)]
-pub struct PosControl {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct PosControl {
     /// # 7020:01
     /// Start travel command (rising edge), or prematurely abort travel command (falling edge).
     pub execute: bool,
@@ -680,9 +645,7 @@ impl RxPdoObject for PosControl {
 
 /// # `PosControl2`
 /// 112 bits / 14 bytes
-#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
-#[pdo_object(bits = 112)]
-pub struct PosControl2 {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]pub struct PosControl2 {
     /// # 7021:01
     /// Start travel command (rising edge), or prematurely abort travel command (falling edge).
     pub execute: bool,
@@ -728,5 +691,113 @@ impl RxPdoObject for PosControl2 {
         buffer[80..80 + 16].store_le(self.acceleration);
         // Offset 12.0
         buffer[96..96 + 16].store_le(self.deceleration);
+    }
+}
+
+impl crate::PdoObject for EncStatusCompact {
+    fn size(&self) -> usize {
+        48
+    }
+}
+
+impl crate::PdoObject for EncStatus {
+    fn size(&self) -> usize {
+        80
+    }
+}
+
+impl crate::PdoObject for EncTimestampCompact {
+    fn size(&self) -> usize {
+        32
+    }
+}
+
+impl crate::PdoObject for StmStatus {
+    fn size(&self) -> usize {
+        16
+    }
+}
+
+impl crate::PdoObject for StmSynchronInfoData {
+    fn size(&self) -> usize {
+        32
+    }
+}
+
+impl crate::PdoObject for PosStatusCompact {
+    fn size(&self) -> usize {
+        16
+    }
+}
+
+impl crate::PdoObject for PosStatus {
+    fn size(&self) -> usize {
+        96
+    }
+}
+
+impl crate::PdoObject for StmInternalPosition {
+    fn size(&self) -> usize {
+        32
+    }
+}
+
+impl crate::PdoObject for StmExternalPosition {
+    fn size(&self) -> usize {
+        32
+    }
+}
+
+impl crate::PdoObject for PosActualPositionLag {
+    fn size(&self) -> usize {
+        32
+    }
+}
+
+impl crate::PdoObject for EncControlCompact {
+    fn size(&self) -> usize {
+        32
+    }
+}
+
+impl crate::PdoObject for EncControl {
+    fn size(&self) -> usize {
+        48
+    }
+}
+
+impl crate::PdoObject for StmControl {
+    fn size(&self) -> usize {
+        16
+    }
+}
+
+impl crate::PdoObject for StmPosition {
+    fn size(&self) -> usize {
+        32
+    }
+}
+
+impl crate::PdoObject for StmVelocity {
+    fn size(&self) -> usize {
+        16
+    }
+}
+
+impl crate::PdoObject for PosControlCompact {
+    fn size(&self) -> usize {
+        48
+    }
+}
+
+impl crate::PdoObject for PosControl {
+    fn size(&self) -> usize {
+        112
+    }
+}
+
+impl crate::PdoObject for PosControl2 {
+    fn size(&self) -> usize {
+        112
     }
 }

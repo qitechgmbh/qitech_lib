@@ -1,8 +1,9 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::digital_input::DigitalInputDevice;
+use crate::pdo::TxPdo;
 use crate::pdo::basic::BoolPdoObject;
-use crate::pdo::{PredefinedPdoAssignment, TxPdo};
-use ethercat_hal_derive::{EthercatDevice, TxPdo};
+use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
 /// EL1124 4-channel digital input device
 ///
@@ -11,6 +12,7 @@ use ethercat_hal_derive::{EthercatDevice, TxPdo};
 pub struct EL1124 {
     pub txpdo: EL1124TxPdo,
     is_used: bool,
+    config: EL1124Configuration,
 }
 
 impl EthercatDeviceProcessing for EL1124 {}
@@ -23,11 +25,25 @@ impl std::fmt::Debug for EL1124 {
 
 impl NewEthercatDevice for EL1124 {
     fn new() -> Self {
-        let s = Self {
-            txpdo: EL1124TxPdo::default(),
+        let config = EL1124Configuration::default();
+        Self {
+            txpdo: config.txpdo_assignment(),
             is_used: false,
-        };
-        s
+            config,
+        }
+    }
+}
+
+impl ConfigurableDevice for EL1124 {
+    type Config = EL1124Configuration;
+
+    fn set_config(&mut self, config: EL1124Configuration) {
+        self.txpdo = config.txpdo_assignment();
+        self.config = config;
+    }
+
+    fn get_config(&self) -> &EL1124Configuration {
+        &self.config
     }
 }
 
@@ -116,26 +132,32 @@ impl Default for EL1124TxPdo {
     }
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub enum EL1124PredefinedPdoAssignment {
-    All,
-}
+/// The EL1124 has no outputs
+#[derive(Debug, Clone, RxPdo)]
+pub struct EL1124RxPdo {}
 
-impl PredefinedPdoAssignment<EL1124TxPdo, ()> for EL1124PredefinedPdoAssignment {
-    fn txpdo_assignment(&self) -> EL1124TxPdo {
-        match self {
-            Self::All => EL1124TxPdo {
-                channel1: Some(BoolPdoObject::default()),
-                channel2: Some(BoolPdoObject::default()),
-                channel3: Some(BoolPdoObject::default()),
-                channel4: Some(BoolPdoObject::default()),
-            },
-        }
+/// The EL1124 has a fixed PDO assignment and no further CoE parameters
+#[derive(Default, Clone, PartialEq, Debug)]
+pub struct EL1124Configuration {}
+
+impl Configuration for EL1124Configuration {
+    /// The EL1124 has no mailbox, its PDO assignment is fixed and can't be written over CoE
+    fn get_sm_coe_writes(
+        &self,
+        _device_address: u16,
+    ) -> Result<Vec<common::SdoRequest>, anyhow::Error> {
+        Ok(vec![])
     }
 
-    fn rxpdo_assignment(&self) {
-        unreachable!()
+    type TxPdo = EL1124TxPdo;
+    type RxPdo = EL1124RxPdo;
+
+    fn txpdo_assignment(&self) -> EL1124TxPdo {
+        EL1124TxPdo::default()
+    }
+
+    fn rxpdo_assignment(&self) -> EL1124RxPdo {
+        EL1124RxPdo {}
     }
 }
 

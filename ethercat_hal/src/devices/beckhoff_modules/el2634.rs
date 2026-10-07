@@ -1,7 +1,8 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice};
+use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::digital_output::DigitalOutputDevice;
 use crate::pdo::{RxPdo, basic::BoolPdoObject};
-use ethercat_hal_derive::{EthercatDevice, RxPdo};
+use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
 /// EL2634 4-channel relay device
 ///
@@ -10,6 +11,7 @@ use ethercat_hal_derive::{EthercatDevice, RxPdo};
 pub struct EL2634 {
     pub rxpdo: EL2634RxPdo,
     is_used: bool,
+    config: EL2634Configuration,
 }
 
 impl EthercatDeviceProcessing for EL2634 {}
@@ -22,10 +24,25 @@ impl std::fmt::Debug for EL2634 {
 
 impl NewEthercatDevice for EL2634 {
     fn new() -> Self {
+        let config = EL2634Configuration::default();
         Self {
-            rxpdo: EL2634RxPdo::default(),
+            rxpdo: config.rxpdo_assignment(),
             is_used: false,
+            config,
         }
+    }
+}
+
+impl ConfigurableDevice for EL2634 {
+    type Config = EL2634Configuration;
+
+    fn set_config(&mut self, config: EL2634Configuration) {
+        self.rxpdo = config.rxpdo_assignment();
+        self.config = config;
+    }
+
+    fn get_config(&self) -> &EL2634Configuration {
+        &self.config
     }
 }
 
@@ -74,5 +91,34 @@ impl Default for EL2634RxPdo {
             channel3: Some(BoolPdoObject::default()),
             channel4: Some(BoolPdoObject::default()),
         }
+    }
+}
+
+/// The EL2634 has no inputs
+#[derive(Debug, Clone, TxPdo)]
+pub struct EL2634TxPdo {}
+
+/// The EL2634 has a fixed PDO assignment and no further CoE parameters
+#[derive(Default, Clone, PartialEq, Debug)]
+pub struct EL2634Configuration {}
+
+impl Configuration for EL2634Configuration {
+    /// The EL2634 has no mailbox, its PDO assignment is fixed and can't be written over CoE
+    fn get_sm_coe_writes(
+        &self,
+        _device_address: u16,
+    ) -> Result<Vec<common::SdoRequest>, anyhow::Error> {
+        Ok(vec![])
+    }
+
+    type TxPdo = EL2634TxPdo;
+    type RxPdo = EL2634RxPdo;
+
+    fn txpdo_assignment(&self) -> EL2634TxPdo {
+        EL2634TxPdo {}
+    }
+
+    fn rxpdo_assignment(&self) -> EL2634RxPdo {
+        EL2634RxPdo::default()
     }
 }

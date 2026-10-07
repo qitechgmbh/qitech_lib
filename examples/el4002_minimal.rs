@@ -1,6 +1,7 @@
 use bitvec::slice::BitSlice;
 use ethercat_hal::{
     BECKHOFF_VENDOR_ID, EtherCATState,
+    coe::ConfigurableDevice,
     devices::{
         EthercatDevice, NewEthercatDevice,
         beckhoff_modules::el4002::{EL4002, EL4002_PRODUCT_ID, EL4002Configuration},
@@ -35,6 +36,29 @@ fn main() {
 
     println!("preop");
 
+    // This variable "knows" how to format the Rx PDOs for the EL4002
+    let mut el4008: EL4002 = EL4002::new();
+    el4008.set_config(EL4002Configuration::default());
+
+    // The configuration has to be written in PreOp, before requesting Op
+    for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
+        if subdevice.vendor == BECKHOFF_VENDOR_ID && subdevice.product_id == EL4002_PRODUCT_ID {
+            let results = eth_control
+                .channel
+                .write_configuration(
+                    subdevice.device_address,
+                    el4008.get_config(),
+                    Duration::from_secs(10),
+                )
+                .expect("Failed to write configuration");
+            for (sdo_index, error) in results {
+                if let Some(error) = error {
+                    panic!("Failed to write {:?}: {:?}", sdo_index, error);
+                }
+            }
+        }
+    }
+
     eth_control
         .channel
         .request_state_change(EtherCATState::Op)
@@ -51,12 +75,6 @@ fn main() {
     println!("op");
 
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
-
-    // This variable "knows" how to format the Rx PDOs for the EL4008
-    let mut el4008: EL4002 = EL4002::new();
-    el4008.configuration = EL4002Configuration::default();
-    let res = el4008.write_config(eth_control.channel.clone(), 0x1003);
-    println!("{:?}", res);
 
     for iter in 0.. {
         // Tick our application.

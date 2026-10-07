@@ -43,7 +43,7 @@ fn main() {
     for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
         
         if subdevice.vendor == BECKHOFF_VENDOR_ID && subdevice.product_id == EL1002_PRODUCT_ID {
-            let results = eth_control
+            /*let results = eth_control
                 .channel
                 .write_configuration(
                     subdevice.device_address,
@@ -55,7 +55,7 @@ fn main() {
                 if let Some(error) = error {
                     panic!("Failed to write {:?}: {:?}", sdo_index, error);
                 }
-            }
+            }*/
         }
     }
 
@@ -92,7 +92,7 @@ fn main() {
                     el1002
                         .input(BitSlice::<u8, Lsb0>::from_slice(subdevice_inputs))
                         .expect("Failed to read Tx PDO");
-
+                    print!("[");
                     for i in 0..el1002.get_port_count() {
                         let input = if el1002
                             .get_input(i)

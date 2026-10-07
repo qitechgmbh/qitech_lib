@@ -8,6 +8,7 @@ use pdo::{EL7031_0030RxPdo, EL7031_0030TxPdo};
 use units::{electric_potential::volt, f64::ElectricPotential};
 
 use crate::{
+    coe::Configuration,
     helpers::{
         counter_wrapper_u16_i128::CounterWrapperU16U128, signing_converter_u16::U16SigningConverter,
     },
@@ -17,7 +18,7 @@ use crate::{
             StepperVelocityEL70x1Device, StepperVelocityEL70x1Input, StepperVelocityEL70x1Output,
         },
     },
-    pdo::{PredefinedPdoAssignment, RxPdo, TxPdo},
+    pdo::{RxPdo, TxPdo},
     shared_config::el70x1::EL70x1OperationMode,
 };
 
@@ -101,8 +102,8 @@ impl NewEthercatDevice for EL7031_0030 {
     fn new() -> Self {
         let configuration: EL7031_0030Configuration = EL7031_0030Configuration::default();
         Self {
-            txpdo: configuration.pdo_assignment.txpdo_assignment(),
-            rxpdo: configuration.pdo_assignment.rxpdo_assignment(),
+            txpdo: configuration.txpdo_assignment(),
+            rxpdo: configuration.rxpdo_assignment(),
             is_used: false,
             configuration,
             counter_wrapper: CounterWrapperU16U128::new(),

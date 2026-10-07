@@ -1,6 +1,5 @@
 use super::EthercatDeviceProcessing;
 use super::{NewEthercatDevice, SubDeviceIdentityTuple};
-use crate::EtherCATThreadChannel;
 use crate::io::analog_input::physical::AnalogInputRange;
 use crate::io::analog_input::{AnalogInputDevice, AnalogInputInput};
 use crate::pdo::RxPdo;
@@ -14,6 +13,7 @@ use crate::{
     },
     shared_config::el30xx::{EL30XXChannelConfiguration, EL30XXPresentation},
 };
+use common::SdoRequest;
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 use units::electric_current::milliampere;
 use units::f64::ElectricCurrent;
@@ -67,11 +67,11 @@ impl Default for EL3024Configuration {
 
 impl NewEthercatDevice for EL3024 {
     fn new() -> Self {
-        let configuration = EL3024Configuration::default(); // Initialize first
+        let configuration = EL3024Configuration::default();
         Self {
-            configuration: configuration.clone(),
-            txpdo: configuration.pdo_assignment.txpdo_assignment(),
-            rxpdo: configuration.pdo_assignment.rxpdo_assignment(),
+            txpdo: configuration.txpdo_assignment(),
+            rxpdo: configuration.rxpdo_assignment(),
+            configuration,
             is_used: false,
         }
     }
@@ -163,21 +163,17 @@ impl AnalogInputDevice for EL3024 {
     }
 }
 
-impl ConfigurableDevice<EL3024Configuration> for EL3024 {
-    fn get_config(&self) -> EL3024Configuration {
-        self.configuration.clone()
+impl ConfigurableDevice for EL3024 {
+    type Config = EL3024Configuration;
+
+    fn set_config(&mut self, config: EL3024Configuration) {
+        self.txpdo = config.txpdo_assignment();
+        self.rxpdo = config.rxpdo_assignment();
+        self.configuration = config;
     }
 
-    fn write_config(
-        &mut self,
-        channel: EtherCATThreadChannel,
-        device_address: u16,
-        config: &EL3024Configuration,
-    ) -> Result<(), anyhow::Error> {
-        config.write_config(channel, device_address)?;
-        self.configuration = config.clone();
-        self.txpdo = config.pdo_assignment.txpdo_assignment();
-        Ok(())
+    fn get_config(&self) -> &EL3024Configuration {
+        &self.configuration
     }
 }
 
@@ -216,24 +212,23 @@ pub struct EL3024TxPdo {
 pub struct EL3024RxPdo {}
 
 impl Configuration for EL3024Configuration {
-    fn write_config(
-        &self,
-        channel: EtherCATThreadChannel,
-        device_address: u16,
-    ) -> Result<(), anyhow::Error> {
-        self.channel1
-            .write_channel_config(channel.clone(), device_address, 0x8000)?;
-        self.channel2
-            .write_channel_config(channel.clone(), device_address, 0x8010)?;
-        self.channel3
-            .write_channel_config(channel.clone(), device_address, 0x8020)?;
-        self.channel4
-            .write_channel_config(channel.clone(), device_address, 0x8030)?;
+    type TxPdo = EL3024TxPdo;
+    type RxPdo = EL3024RxPdo;
 
-        self.pdo_assignment
-            .txpdo_assignment()
-            .write_config(channel.clone(), device_address)?;
-        Ok(())
+    fn txpdo_assignment(&self) -> EL3024TxPdo {
+        self.pdo_assignment.txpdo_assignment()
+    }
+
+    fn rxpdo_assignment(&self) -> EL3024RxPdo {
+        self.pdo_assignment.rxpdo_assignment()
+    }
+
+    fn get_config_coe_writes(&self, device_address: u16) -> Result<Vec<SdoRequest>, anyhow::Error> {
+        let mut writes = self.channel1.get_channel_coe_writes(device_address, 0x8000);
+        writes.extend(self.channel2.get_channel_coe_writes(device_address, 0x8010));
+        writes.extend(self.channel3.get_channel_coe_writes(device_address, 0x8020));
+        writes.extend(self.channel4.get_channel_coe_writes(device_address, 0x8030));
+        Ok(writes)
     }
 }
 
