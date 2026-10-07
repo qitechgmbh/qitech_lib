@@ -1,7 +1,6 @@
 use crate::coe::{ConfigurableDevice, Configuration};
 use crate::devices::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::io::analog_output::AnalogVoltageOutputDevice;
-use common::pdo::RxPdo;
 use common::pdo::el40xx::AnalogOutput;
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 use units::{ElectricPotential, electric_potential::volt};

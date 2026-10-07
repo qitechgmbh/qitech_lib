@@ -4,8 +4,6 @@ use crate::io::analog_output::AnalogVoltageOutputDevice;
 use crate::shared_config::el40xx::EL40XXChannelConfiguration;
 use common::SdoRequest;
 use common::pdo::PredefinedPdoAssignment;
-use common::pdo::RxPdo;
-use common::pdo::TxPdo;
 use common::pdo::el40xx::AnalogOutput;
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 use units::ElectricPotential;

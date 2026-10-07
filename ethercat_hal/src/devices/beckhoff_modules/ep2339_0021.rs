@@ -4,7 +4,6 @@ use crate::devices::SubDeviceIdentityTuple;
 use crate::io::digital_input::DigitalInputDevice;
 use crate::io::digital_output::DigitalOutputDevice;
 use crate::pdo::basic::BoolPdoObject;
-use crate::pdo::{RxPdo, TxPdo};
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
 /// EP2339_0021 16-channel; digital input/output

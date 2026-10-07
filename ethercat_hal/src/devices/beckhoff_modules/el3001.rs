@@ -5,7 +5,7 @@ use crate::{
     helpers::signing_converter_u16::U16SigningConverter,
     io::analog_input::physical::AnalogInputRange,
     pdo::{
-        PredefinedPdoAssignment, TxPdo,
+        PredefinedPdoAssignment,
         analog_input::{AiCompact, AiStandard},
     },
     shared_config::el30xx::{EL30XXChannelConfiguration, EL30XXPresentation},

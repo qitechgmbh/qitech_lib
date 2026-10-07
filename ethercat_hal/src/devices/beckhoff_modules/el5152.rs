@@ -4,8 +4,6 @@ use crate::io::encoder_input::{
     EncoderInputCounter, EncoderInputDevice, EncoderInputFrequency, EncoderInputPeriod,
 };
 use crate::pdo::PredefinedPdoAssignment;
-use crate::pdo::RxPdo;
-use crate::pdo::TxPdo;
 use crate::pdo::el5152::{
     El5152EncoderControl, El5152EncoderFrequency, El5152EncoderPeriod, El5152EncoderStatus,
 };

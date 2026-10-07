@@ -1,5 +1,4 @@
 use crate::coe::{ConfigurableDevice, Configuration};
-use crate::pdo::TxPdo;
 use crate::{
     io::temperature_input::{TemperatureInputDevice, TemperatureInputInput},
     pdo::el32xx::RtdInput,

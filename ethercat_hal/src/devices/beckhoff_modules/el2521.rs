@@ -5,7 +5,7 @@ use crate::{
         PulseTrainOutputDevice, PulseTrainOutputInput, PulseTrainOutputOutput,
     },
     pdo::{
-        PredefinedPdoAssignment, RxPdo, TxPdo,
+        PredefinedPdoAssignment,
         el252x::{EncControl, EncStatus, PtoControl, PtoStatus, PtoTarget},
     },
 };
@@ -403,6 +403,7 @@ pub struct EL2521RxPdo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pdo::RxPdo;
     use bitvec::prelude::*;
 
     #[test]

@@ -1,7 +1,31 @@
 use proc_macro::TokenStream;
+use proc_macro_crate::{FoundCrate, crate_name};
 use quote::quote;
 use syn::{Data, DeriveInput, parse_macro_input};
 extern crate proc_macro;
+
+/// Path to one of the internal crates (`common`, `ethercat_hal`) as seen from the crate using the
+/// derive: `crate` inside that crate, `::name` if it is a direct dependency, otherwise through the
+/// `qitech_lib` re-export. This lets terminals be defined outside of this workspace.
+fn crate_path(name: &str) -> proc_macro2::TokenStream {
+    let ident = |n: &str| syn::Ident::new(&n.replace('-', "_"), proc_macro2::Span::call_site());
+    let name_ident = ident(name);
+    match crate_name(name) {
+        Ok(FoundCrate::Itself) => quote! { crate },
+        Ok(FoundCrate::Name(found)) => {
+            let found = ident(&found);
+            quote! { ::#found }
+        }
+        Err(_) => match crate_name("qitech_lib") {
+            Ok(FoundCrate::Name(found)) => {
+                let found = ident(&found);
+                quote! { ::#found::#name_ident }
+            }
+            Ok(FoundCrate::Itself) => quote! { crate::#name_ident },
+            Err(_) => quote! { ::#name_ident },
+        },
+    }
+}
 
 #[derive(deluxe::ExtractAttributes)]
 #[deluxe(attributes(pdo_object_index))]
@@ -57,9 +81,10 @@ fn sm_configuration_impl(
     let ident = &ast.ident;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
     let len = field_name.len();
+    let common = crate_path("common");
 
     quote! {
-        impl #impl_generics common::SmConfiguration for #ident #ty_generics #where_clause {
+        impl #impl_generics #common::SmConfiguration for #ident #ty_generics #where_clause {
             const ASSIGNMENT_REG: u16 = #assignment_reg;
 
             #[doc="Implemented by the ethercat_hal_derive PDO derive macros"]
@@ -88,22 +113,21 @@ fn rxpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::
 
     let ident = &ast.ident;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
-    let sm_impl = sm_configuration_impl(
-        &ast,
-        &field_name,
-        pdo_index,
-        quote! { common::RX_PDO_ASSIGNMENT_REG },
-    );
+    let sm_impl = sm_configuration_impl(&ast, &field_name, pdo_index, {
+        let common = crate_path("common");
+        quote! { #common::RX_PDO_ASSIGNMENT_REG }
+    });
 
+    let common = crate_path("common");
     let expanded = quote! {
         #sm_impl
 
-        impl #impl_generics common::pdo::RxPdo for #ident #ty_generics #where_clause {
+        impl #impl_generics #common::pdo::RxPdo for #ident #ty_generics #where_clause {
             #[doc="Implemented by the ethercat_hal_derive::RxPdo derive macro"]
-            fn get_objects(&self) -> Box<[Option<&dyn common::pdo::RxPdoObject>]> {
+            fn get_objects(&self) -> Box<[Option<&dyn #common::pdo::RxPdoObject>]> {
                 Box::new([
                     #(
-                        self.#field_name.as_ref().map(|o| o as &dyn common::pdo::RxPdoObject),
+                        self.#field_name.as_ref().map(|o| o as &dyn #common::pdo::RxPdoObject),
                     )*
                 ])
             }
@@ -126,31 +150,30 @@ fn txpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::
 
     let ident = &ast.ident;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
-    let sm_impl = sm_configuration_impl(
-        &ast,
-        &field_name,
-        pdo_index,
-        quote! { common::TX_PDO_ASSIGNMENT_REG },
-    );
+    let sm_impl = sm_configuration_impl(&ast, &field_name, pdo_index, {
+        let common = crate_path("common");
+        quote! { #common::TX_PDO_ASSIGNMENT_REG }
+    });
 
+    let common = crate_path("common");
     let expanded = quote! {
         #sm_impl
 
-        impl #impl_generics common::pdo::TxPdo for #ident #ty_generics #where_clause {
+        impl #impl_generics #common::pdo::TxPdo for #ident #ty_generics #where_clause {
             #[doc="Implemented by the ethercat_hal_derive::TxPdo derive macro"]
-            fn get_objects(&self) -> Box<[Option<&dyn common::pdo::TxPdoObject>]> {
+            fn get_objects(&self) -> Box<[Option<&dyn #common::pdo::TxPdoObject>]> {
                 Box::new([
                     #(
-                        self.#field_name.as_ref().map(|o| o as &dyn common::pdo::TxPdoObject),
+                        self.#field_name.as_ref().map(|o| o as &dyn #common::pdo::TxPdoObject),
                     )*
                 ])
             }
 
             #[doc="Implemented by the ethercat_hal_derive::TxPdo derive macro"]
-            fn get_objects_mut(&mut self) -> Box<[Option<&mut dyn common::pdo::TxPdoObject>]> {
+            fn get_objects_mut(&mut self) -> Box<[Option<&mut dyn #common::pdo::TxPdoObject>]> {
                 Box::new([
                     #(
-                        self.#field_name.as_mut().map(|o| o as &mut dyn common::pdo::TxPdoObject),
+                        self.#field_name.as_mut().map(|o| o as &mut dyn #common::pdo::TxPdoObject),
                     )*
                 ])
             }
@@ -172,8 +195,9 @@ fn pdo_object_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_mac
     let ident = &ast.ident;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
+    let common = crate_path("common");
     let expanded = quote! {
-        impl #impl_generics common::pdo::PdoObject for #ident #ty_generics #where_clause {
+        impl #impl_generics #common::pdo::PdoObject for #ident #ty_generics #where_clause {
             #[doc="Implemented by the ethercat_hal_derive::PdoObject macro"]
             fn size(&self) -> usize {
                 #bits
@@ -193,6 +217,8 @@ pub fn pdo_object_derive(item: TokenStream) -> TokenStream {
 pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
+    let common = crate_path("common");
+    let hal = crate_path("ethercat_hal");
 
     #[allow(unused_assignments)]
     let mut output_impl = quote! {};
@@ -218,11 +244,11 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
         output_impl = quote! {
             #[doc="Implemented by the ethercat_hal_derive::EthercatDevice derive macro"]
             fn output(&self, output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>) -> Result<(), anyhow::Error> {
-                self.rxpdo.write(output)
+                #common::pdo::RxPdo::write(&self.rxpdo, output)
             }
             #[doc="Implemented by the ethercat_hal_derive::EthercatDevice derive macro"]
             fn output_len(&self) -> usize {
-                self.rxpdo.size()
+                #common::pdo::RxPdo::size(&self.rxpdo)
             }
         };
     } else {
@@ -242,11 +268,11 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
         input_impl = quote! {
             #[doc="Implemented by the ethercat_hal_derive::EthercatDevice derive macro"]
             fn input(&mut self, input: & bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>) -> Result<(), anyhow::Error> {
-                self.txpdo.read(input)
+                #common::pdo::TxPdo::read(&mut self.txpdo, input)
             }
             #[doc="Implemented by the ethercat_hal_derive::EthercatDevice derive macro"]
             fn input_len(&self) -> usize {
-                self.txpdo.size()
+                #common::pdo::TxPdo::size(&self.txpdo)
             }
         };
     } else {
@@ -263,7 +289,7 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
     }
 
     let expanded = quote! {
-        impl crate::devices::EthercatDevice for #name {
+        impl #hal::devices::EthercatDevice for #name {
             #output_impl
             #input_impl
 
@@ -289,17 +315,15 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
             }
 
             #[doc="Implemented by the ethercat_hal_derive::EthercatDevice derive macro"]
-            fn get_module(&self) -> Option<crate::devices::Module> {
+            fn get_module(&self) -> Option<#hal::devices::Module> {
                 None
             }
 
             #[doc="Implemented by the ethercat_hal_derive::EthercatDevice derive macro"]
-            fn set_module(&mut self,module : crate::devices::Module){
-                ()
-            }
+            fn set_module(&mut self, _module: #hal::devices::Module) {}
         }
 
-        impl crate::devices::EthercatDeviceUsed for #name {
+        impl #hal::devices::EthercatDeviceUsed for #name {
             #[doc="Implemented by the ethercat_hal_derive::EthercatDevice derive macro"]
             fn is_used(&self) -> bool {
                 self.is_used

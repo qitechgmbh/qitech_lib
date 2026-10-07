@@ -2,7 +2,6 @@ use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple}
 use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::analog_output::{AnalogOutputDevice, AnalogOutputOutput};
 use common::SdoRequest;
-use common::pdo::RxPdo;
 use common::pdo::oversampling::{AnalogOutputOversample, CycleCount};
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 

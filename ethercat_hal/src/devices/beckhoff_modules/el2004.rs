@@ -1,7 +1,7 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::digital_output::DigitalOutputDevice;
-use crate::pdo::{RxPdo, basic::BoolPdoObject};
+use crate::pdo::basic::BoolPdoObject;
 use ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 /// EL2004 4-channel digital output device
 /// 24V DC, 0.5A per channel

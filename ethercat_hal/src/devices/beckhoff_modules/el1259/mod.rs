@@ -6,7 +6,6 @@ use crate::{
     io::{digital_input::DigitalInputDevice, multi_timestamp::MultiTimestampEvent},
 };
 use anyhow::bail;
-use common::pdo::{RxPdo, TxPdo};
 use ethercat_hal_derive::EthercatDevice;
 use std::collections::VecDeque;
 
