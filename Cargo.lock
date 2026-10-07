@@ -1033,11 +1033,9 @@ dependencies = [
  "postcard",
  "qitech_lib_common",
  "qitech_lib_ethercat_hal",
- "qitech_lib_ethercat_hal_derive",
  "qitech_lib_units",
  "qitech_lib_xtrem",
  "serde",
- "tokio",
 ]
 
 [[package]]
