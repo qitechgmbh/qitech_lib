@@ -1,6 +1,4 @@
-#[cfg(not(feature = "mock"))]
 use crate::{ChannelRequest, ChannelResponse, EtherCATThreadResponseChannel};
-#[cfg(not(feature = "mock"))]
 use crate::{DiagnosticRequest, DiagnosticResponse};
 use crate::{
     EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest,
@@ -11,12 +9,10 @@ use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
 };
 use std::any::TypeId;
-#[cfg(not(feature = "mock"))]
 use std::time::Duration;
 
 /// Above the state machine's own snapshot deadline, so a slow bus reports results rather than
 /// timing out here.
-#[cfg(not(feature = "mock"))]
 const DIAGNOSTIC_TIMEOUT: Duration = Duration::from_millis(1500);
 
 pub trait EthercatResponseTypedResult: Sized {
@@ -149,114 +145,6 @@ impl EthercatSdoBytes for bool {
     }
 }
 
-#[cfg(feature = "mock")]
-impl EtherCATThreadChannel {
-    pub fn sdo_read<T: 'static>(
-        &self,
-        device_address: u16,
-        index: u16,
-        sub_index: u8,
-    ) -> Result<T, anyhow::Error>
-    where
-        T: EthercatSdoBytes,
-    {
-        use crate::SdoIndex;
-        let index = SdoIndex {
-            index: index as u32,
-            sub_index: sub_index as u16,
-        };
-        let res = self.sdo_map.get(&index);
-
-        let result = match res {
-            Some(r) => r,
-            None => {
-                return Err(anyhow::anyhow!(
-                    "Sdo Index {}:{} for device {} not found",
-                    index.index,
-                    index.sub_index,
-                    device_address
-                ));
-            }
-        };
-
-        if TypeId::of::<T>() == result.type_id {
-            let mut bytes: [u8; 4] = [0u8; 4];
-            for i in 0..result.value.len() {
-                if i > 3 {
-                    break;
-                }
-                bytes[i] = result.value.get(i).unwrap().clone();
-            }
-            Ok(T::from_bytes(bytes))
-        } else {
-            use std::any::type_name;
-            Err(anyhow::anyhow!(
-                "sdo_read: Unknown TypeId {} or Invalid Size {}!!",
-                type_name::<T>(),
-                result.value.len()
-            ))
-        }
-    }
-
-    pub fn register_read(
-        &self,
-        _device_address: u16,
-        _register: impl Into<u16>,
-    ) -> Result<u16, anyhow::Error> {
-        Err(anyhow::anyhow!(
-            "register_read is not supported in mock mode"
-        ))
-    }
-
-    pub fn al_status_snapshot(&self) -> Result<Vec<SubDeviceAlStatus>, anyhow::Error> {
-        Err(anyhow::anyhow!(
-            "al_status_snapshot is not supported in mock mode"
-        ))
-    }
-
-    pub fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, anyhow::Error> {
-        Ok(self.machine_device_infos.clone())
-    }
-
-    pub fn sdo_write<T: 'static>(
-        &self,
-        _device_address: u16,
-        _index: u16,
-        _sub_index: u8,
-        _value: T,
-    ) -> Result<(), anyhow::Error>
-    where
-        T: EtherCrabWireWrite + EthercatSdoBytes,
-    {
-        Ok(())
-    }
-
-    pub fn request_state_change(&self, _state: EtherCATState) -> Result<(), anyhow::Error> {
-        Ok(())
-    }
-
-    pub fn enable_dc_sync0(&self, _device_address: u16) -> Result<(), anyhow::Error> {
-        Ok(())
-    }
-
-    pub fn enable_dc_sync01(
-        &self,
-        _device_address: u16,
-        _sync1_period: Duration,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
-    }
-
-    pub fn configure_oversampling(
-        &self,
-        _device_address: u16,
-        _factor: u16,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
-    }
-}
-
-#[cfg(not(feature = "mock"))]
 impl EtherCATThreadChannel {
     pub fn sdo_read<T: 'static>(
         &self,

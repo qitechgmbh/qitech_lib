@@ -151,31 +151,6 @@ pub trait Producer {
     fn publish(&mut self);
 }
 
-pub struct MockConsumer {
-    pub buffer: [u8; ETHERCAT_TX_RX_SIZE],
-}
-
-pub struct MockProducer {
-    pub buffer: [u8; ETHERCAT_TX_RX_SIZE],
-}
-
-impl Producer for MockProducer {
-    fn input_buffer_mut(&mut self) -> Option<&mut [u8; ETHERCAT_TX_RX_SIZE]> {
-        Some(&mut self.buffer)
-    }
-
-    fn publish(&mut self) {
-        // does nothing for the mock
-    }
-}
-
-impl Consumer for MockConsumer {
-    fn read(&mut self) -> Option<&[u8]> {
-        Some(&self.buffer)
-    }
-    fn finish_read(&mut self) {}
-}
-
 unsafe impl Sync for Mailbox {}
 unsafe impl Send for Mailbox {}
 
@@ -372,25 +347,10 @@ pub struct SdoIndex {
     sub_index: u16,
 }
 
-#[cfg(feature = "mock")]
-#[derive(Clone)]
-pub struct TypeErasedValue {
-    type_id: std::any::TypeId,
-    value: Vec<u8>,
-}
-
 // Wrapper to easily refactor later on
 // `.0` is drained per-state, `.1` in every state.
-#[cfg(not(feature = "mock"))]
 #[derive(Clone)]
 pub struct EtherCATThreadChannel(pub Sender<ChannelRequest>, pub Sender<DiagnosticRequest>);
-
-#[cfg(feature = "mock")]
-#[derive(Clone)]
-pub struct EtherCATThreadChannel {
-    pub sdo_map: std::collections::HashMap<SdoIndex, TypeErasedValue>,
-    pub machine_device_infos: Vec<MachineDeviceInfo>,
-}
 
 #[derive(Clone)]
 pub struct EtherCATThreadResponseChannel(pub Sender<ChannelResponse>);
@@ -406,7 +366,6 @@ where
 }
 
 pub type StdEcatHandle = EtherCATAppHandle<TripleBufConsumer, Arc<Mailbox>>;
-pub type MockEcatHandle = EtherCATAppHandle<MockConsumer, MockProducer>;
 pub type StdEcatController = EtherCATController<Arc<Mailbox>, TripleBufProducer>;
 
 /// Metadata for a Subdevice Contains start and end of the given subdevices pdu
@@ -613,60 +572,6 @@ pub fn send_response(response_channel: EtherCATThreadResponseChannel, response: 
     let _res = response_channel.0.send(response);
 }
 
-#[cfg(feature = "mock")]
-pub fn init_ethercat_mock(
-    faked_subdevices: Vec<MetaSubdevice>,
-    _machine_infos: Option<Vec<MachineDeviceInfo>>,
-) -> EtherCATControl<MockConsumer, MockProducer> {
-    let (_, rx) = mpsc::channel(); // wont actually get used in any way, just here to avoid handling options in the controller ...
-    let mock_producer = [0u8; ETHERCAT_TX_RX_SIZE];
-    let mock_consumer = [0u8; ETHERCAT_TX_RX_SIZE];
-
-    let producer = MockProducer {
-        buffer: mock_producer,
-    };
-    let consumer = MockConsumer {
-        buffer: mock_consumer,
-    };
-
-    let producer_c = MockProducer {
-        buffer: [0u8; ETHERCAT_TX_RX_SIZE],
-    };
-    let consumer_c = MockConsumer {
-        buffer: [0u8; ETHERCAT_TX_RX_SIZE],
-    };
-
-    let channel: EtherCATThreadChannel = EtherCATThreadChannel {
-        sdo_map: std::collections::HashMap::new(),
-        machine_device_infos: vec![],
-    };
-    let app_handle = EtherCATAppHandle {
-        input_consumer: consumer,
-        output_producer: producer,
-    };
-
-    let mut controller = EtherCATController::new(
-        producer_c,
-        consumer_c,
-        rx,
-        None,
-        MasterConfiguration::default(),
-    );
-
-    controller.subdevice_count = faked_subdevices.len();
-    for i in 0..faked_subdevices.len() {
-        controller.subdevices[i] = faked_subdevices[i];
-    }
-
-    let controller = Arc::new(controller);
-    return EtherCATControl {
-        controller,
-        channel,
-        app_handle,
-        join_handle: None,
-    };
-}
-
 #[cfg(target_os = "linux")]
 pub fn set_current_thread_rt_priority(priority: i32) {
     unsafe {
@@ -779,7 +684,6 @@ impl Default for MasterConfiguration {
     }
 }
 
-#[cfg(not(feature = "mock"))]
 pub fn init_ethercat(
     interface_name: &str,
     config: Option<MasterConfiguration>,

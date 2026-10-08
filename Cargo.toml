@@ -63,7 +63,3 @@ postcard = { workspace = true, features = ["alloc"] }
 core_affinity.workspace = true
 
 [lib]
-
-[features]
-# This defines 'mock' at the root level and passes it to 'qitech_lib_ethercat_hal'
-mock = ["qitech_lib_ethercat_hal/mock"]

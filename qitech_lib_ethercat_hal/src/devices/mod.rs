@@ -3,8 +3,6 @@ pub mod panasonic_modules;
 pub mod wago_modules;
 use crate::MetaSubdevice;
 
-#[cfg(feature = "mock")]
-use crate::TypeErasedValue;
 use crate::devices::beckhoff_modules::el1124::{EL1124, EL1124_IDENTITY_A};
 use crate::devices::beckhoff_modules::el1259::{EL1259, EL1259_IDENTITY_A};
 use crate::devices::beckhoff_modules::el4008::{EL4008, EL4008_IDENTITY_A};
@@ -64,11 +62,6 @@ pub struct Module {
     pub product_id: u32,
     pub tx_offset: usize,
     pub rx_offset: usize,
-}
-
-#[cfg(feature = "mock")]
-pub trait MockEtherCatSdos {
-    fn get_sdo_map() -> std::collections::HashMap<crate::SdoIndex, TypeErasedValue>;
 }
 
 /// A trait for all devices
