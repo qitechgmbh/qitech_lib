@@ -276,18 +276,6 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
                 ()
             }
         }
-
-        impl crate::devices::EthercatDeviceUsed for #name {
-            #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
-            fn is_used(&self) -> bool {
-                self.is_used
-            }
-
-            #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
-            fn set_used(&mut self, used: bool) {
-                self.is_used = used;
-            }
-        }
     };
 
     TokenStream::from(expanded)

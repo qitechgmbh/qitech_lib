@@ -4,8 +4,8 @@ use bitvec::slice::BitSlice;
 use qitech_lib_ethercat_hal_derive::PdoObject;
 
 use crate::devices::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed,
-    EthercatDynamicPDO, Module, NewEthercatDevice, SubDeviceProductTuple,
+    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, Module,
+    NewEthercatDevice, SubDeviceProductTuple,
 };
 use crate::io::analog_input::AnalogCurrentInputDevice;
 use crate::pdo::TxPdoObject;
@@ -39,7 +39,6 @@ pub struct Wago750_455TxPdo {
 }
 
 pub struct Wago750_455 {
-    is_used: bool,
     tx_bit_offset: usize,
     rx_bit_offset: usize,
     module: Option<Module>,
@@ -69,16 +68,6 @@ impl AnalogCurrentInputDevice for Wago750_455 {
 
     fn get_port_count(&self) -> usize {
         4
-    }
-}
-
-impl EthercatDeviceUsed for Wago750_455 {
-    fn is_used(&self) -> bool {
-        self.is_used
-    }
-
-    fn set_used(&mut self, used: bool) {
-        self.is_used = used;
     }
 }
 
@@ -174,7 +163,6 @@ impl EthercatDeviceProcessing for Wago750_455 {}
 impl NewEthercatDevice for Wago750_455 {
     fn new() -> Self {
         Self {
-            is_used: false,
             tx_bit_offset: 0,
             rx_bit_offset: 0,
             module: None,

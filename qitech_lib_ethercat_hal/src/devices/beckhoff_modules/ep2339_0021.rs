@@ -11,7 +11,6 @@ use qitech_lib_ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 pub struct EP2339_0021 {
     pub rxpdo: EP2339_0021RxPdo,
     pub txpdo: EP2339_0021TxPdo,
-    is_used: bool,
 }
 
 impl EthercatDeviceProcessing for EP2339_0021 {}
@@ -27,7 +26,6 @@ impl NewEthercatDevice for EP2339_0021 {
         Self {
             rxpdo: EP2339_0021RxPdo::default(),
             txpdo: EP2339_0021TxPdo::default(),
-            is_used: false,
         }
     }
 }

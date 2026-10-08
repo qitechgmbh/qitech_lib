@@ -26,7 +26,6 @@ pub struct EL3062_0030 {
     pub configuration: EL3062_0030Configuration,
     pub txpdo: EL3062_0030TxPdo,
     pub rxpdo: EL3062_0030RxPdo,
-    is_used: bool,
 }
 
 impl EthercatDeviceProcessing for EL3062_0030 {}
@@ -54,7 +53,6 @@ impl NewEthercatDevice for EL3062_0030 {
             configuration: configuration.clone(),
             txpdo: configuration.pdo_assignment.txpdo_assignment(),
             rxpdo: configuration.pdo_assignment.rxpdo_assignment(),
-            is_used: false,
         }
     }
 }

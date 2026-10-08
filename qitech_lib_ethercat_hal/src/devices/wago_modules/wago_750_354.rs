@@ -13,8 +13,8 @@ use super::{
 };
 use crate::EtherCATThreadChannel;
 use crate::devices::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed, Module,
-    NewEthercatDevice, SubDeviceIdentityTuple,
+    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, Module, NewEthercatDevice,
+    SubDeviceIdentityTuple,
 };
 use anyhow::Error;
 const MODULE_COUNT_INDEX: (u16, u8) = (0xf050, 0x00);
@@ -29,7 +29,6 @@ struct ModulePdoMapping {
 
 // For both the rx and tx The Wago Coupler has 4 bytes, which we dont care about and skip
 pub struct Wago750_354 {
-    is_used: bool,
     pub slots: [Option<Module>; 64],
     pub slot_devices: [Option<Box<dyn DynamicEthercatDevice>>; 64],
     pub dev_count: usize,
@@ -107,22 +106,11 @@ impl EthercatDevice for Wago750_354 {
     }
 }
 
-impl EthercatDeviceUsed for Wago750_354 {
-    fn is_used(&self) -> bool {
-        self.is_used
-    }
-
-    fn set_used(&mut self, used: bool) {
-        self.is_used = used;
-    }
-}
-
 impl EthercatDeviceProcessing for Wago750_354 {}
 
 impl NewEthercatDevice for Wago750_354 {
     fn new() -> Self {
         Self {
-            is_used: false,
             slots: [const { None }; 64],
             slot_devices: [const { None }; 64],
             module_count: 0,

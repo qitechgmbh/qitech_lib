@@ -22,7 +22,6 @@ pub struct EL5152 {
     pub configuration: EL5152Configuration,
     pub rxpdo: EL5152RxPdo,
     pub txpdo: EL5152TxPdo,
-    is_used: bool,
 }
 
 impl EthercatDeviceProcessing for EL5152 {}
@@ -69,7 +68,6 @@ impl NewEthercatDevice for EL5152 {
             configuration: configuration.clone(),
             rxpdo: configuration.pdo_assignment.rxpdo_assignment(),
             txpdo: configuration.pdo_assignment.txpdo_assignment(),
-            is_used: false,
         }
     }
 }

@@ -26,7 +26,6 @@ enum State {
 pub struct EL1259 {
     rxpdo: EL1259RxPdo,
     txpdo: EL1259TxPdo,
-    is_used: bool,
     input_queues: [VecDeque<MultiTimestampEvent>; 8],
     output_queues: [VecDeque<MultiTimestampEvent>; 8],
     state: State,
@@ -168,7 +167,6 @@ impl NewEthercatDevice for EL1259 {
         Self {
             rxpdo: EL1259RxPdo::default(),
             txpdo: EL1259TxPdo::default(),
-            is_used: false,
             input_queues: Default::default(),
             output_queues: Default::default(),
             state: State::ResetOn,

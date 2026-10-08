@@ -3,15 +3,13 @@ use qitech_lib_ethercat_hal_derive::EthercatDevice;
 
 /// EK1100 bus coupler
 #[derive(Clone, EthercatDevice)]
-pub struct EK1100 {
-    is_used: bool,
-}
+pub struct EK1100 {}
 
 impl EthercatDeviceProcessing for EK1100 {}
 
 impl NewEthercatDevice for EK1100 {
     fn new() -> Self {
-        Self { is_used: false }
+        Self {}
     }
 }
 

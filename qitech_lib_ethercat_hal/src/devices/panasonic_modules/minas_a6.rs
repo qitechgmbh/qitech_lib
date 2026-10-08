@@ -6,8 +6,8 @@
 
 use crate::EncoderResolution;
 use crate::devices::{
-    EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed, EthercatDynamicPDO, Module,
-    NewEthercatDevice, SubDeviceIdentityTuple,
+    EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, Module, NewEthercatDevice,
+    SubDeviceIdentityTuple,
 };
 use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::helpers::minas_a6_subdevice_wrapper::{EtherCATSlaveWrapper, PdoMapping};
@@ -364,7 +364,6 @@ pub struct PositionTransitionSpec {
 // MinasA6BMotor
 
 pub struct MinasA6BMotor {
-    is_used: bool,
     tx_bit_offset: usize,
     rx_bit_offset: usize,
     pub module: Option<Module>,
@@ -406,7 +405,6 @@ pub struct MinasA6BMotor {
 impl Default for MinasA6BMotor {
     fn default() -> Self {
         Self {
-            is_used: false,
             tx_bit_offset: 0,
             rx_bit_offset: 0,
             module: None,
@@ -439,7 +437,6 @@ impl Default for MinasA6BMotor {
 impl NewEthercatDevice for MinasA6BMotor {
     fn new() -> Self {
         Self {
-            is_used: false,
             tx_bit_offset: 0,
             rx_bit_offset: 0,
             module: None,
@@ -464,15 +461,6 @@ impl NewEthercatDevice for MinasA6BMotor {
             initialized: false,
             homed: false,
         }
-    }
-}
-
-impl EthercatDeviceUsed for MinasA6BMotor {
-    fn is_used(&self) -> bool {
-        self.is_used
-    }
-    fn set_used(&mut self, used: bool) {
-        self.is_used = used;
     }
 }
 

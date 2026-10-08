@@ -9,7 +9,6 @@ use qitech_lib_ethercat_hal_derive::{EthercatDevice, RxPdo};
 #[derive(EthercatDevice)]
 pub struct EL2634 {
     pub rxpdo: EL2634RxPdo,
-    is_used: bool,
 }
 
 impl EthercatDeviceProcessing for EL2634 {}
@@ -24,7 +23,6 @@ impl NewEthercatDevice for EL2634 {
     fn new() -> Self {
         Self {
             rxpdo: EL2634RxPdo::default(),
-            is_used: false,
         }
     }
 }

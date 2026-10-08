@@ -21,7 +21,6 @@ const SM1_START: u16 = 0x1700;
 pub struct EL4732 {
     pub rxpdo: EL4732RxPdo,
     pub txpdo: EL4732TxPdo,
-    is_used: bool,
     pub configuration: EL4732Configuration,
 }
 
@@ -50,7 +49,6 @@ impl EL4732 {
         Self {
             rxpdo: EL4732RxPdo::new(oversample_factor),
             txpdo: EL4732TxPdo::default(),
-            is_used: false,
             configuration: EL4732Configuration {
                 oversample_factor,
                 oversampling_config: [

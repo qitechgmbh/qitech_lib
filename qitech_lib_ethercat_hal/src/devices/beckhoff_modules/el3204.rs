@@ -13,7 +13,6 @@ use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple}
 #[derive(EthercatDevice)]
 pub struct EL3204 {
     pub txpdo: EL3204TxPdo,
-    is_used: bool,
 }
 impl EthercatDeviceProcessing for EL3204 {}
 
@@ -27,7 +26,6 @@ impl NewEthercatDevice for EL3204 {
     fn new() -> Self {
         Self {
             txpdo: EL3204TxPdo::default(),
-            is_used: false,
         }
     }
 }

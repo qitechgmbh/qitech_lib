@@ -17,7 +17,6 @@ pub struct EL4002 {
     pub configuration: EL4002Configuration,
     pub rxpdo: EL4002RxPdo,
     pub txpdo: EL4002TxPdo,
-    is_used: bool,
 }
 
 impl EthercatDeviceProcessing for EL4002 {}
@@ -62,7 +61,6 @@ impl NewEthercatDevice for EL4002 {
             configuration: configuration.clone(),
             rxpdo: configuration.pdo_assignment.rxpdo_assignment(),
             txpdo: configuration.pdo_assignment.txpdo_assignment(),
-            is_used: false,
         }
     }
 }

@@ -18,7 +18,6 @@ pub struct EL2521 {
     pub configuration: EL2521Configuration,
     pub txpdo: EL2521TxPdo,
     pub rxpdo: EL2521RxPdo,
-    is_used: bool,
 }
 
 impl EthercatDeviceProcessing for EL2521 {}
@@ -39,7 +38,6 @@ impl NewEthercatDevice for EL2521 {
             configuration,
             txpdo,
             rxpdo,
-            is_used: false,
         }
     }
 }
