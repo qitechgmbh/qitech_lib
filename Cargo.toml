@@ -22,7 +22,6 @@ qitech_lib_units = { path = "qitech_lib_units" }
 qitech_lib_xtrem = { path = "qitech_lib_xtrem" }
 
 # External crates
-anyhow = "1.0.102"
 approx = "0.5.1"
 bitvec = "1.0.1"
 core_affinity = "0.8.3"
