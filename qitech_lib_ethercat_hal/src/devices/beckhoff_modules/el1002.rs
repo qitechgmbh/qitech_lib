@@ -1,4 +1,5 @@
 use super::{NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::DeviceError;
 use crate::devices::EthercatDeviceProcessing;
 use crate::io::digital_input::DigitalInputDevice;
 use crate::pdo::{PredefinedPdoAssignment, TxPdo, basic::BoolPdoObject};
@@ -27,20 +28,19 @@ impl NewEthercatDevice for EL1002 {
 }
 
 impl DigitalInputDevice for EL1002 {
-    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
-        let error = anyhow::anyhow!(
-            "[{}::Device::digital_input_state] Port index {} is not available",
-            module_path!(),
-            port
-        );
+    fn get_input(&self, port: usize) -> Result<bool, DeviceError> {
+        let error = DeviceError::InvalidPort {
+            device: "EL1002",
+            port,
+        };
 
         match port {
             0 => Ok(self.txpdo.channel1.as_ref().ok_or(error)?.value),
             1 => Ok(self.txpdo.channel2.as_ref().ok_or(error)?.value),
-            _ => Err(anyhow::anyhow!(
-                "EL1002 has 2 ports (0-1), requested index {}",
-                port
-            )),
+            _ => Err(DeviceError::InvalidPort {
+                device: "EL1002",
+                port,
+            }),
         }
     }
 

@@ -1,4 +1,5 @@
-use anyhow::anyhow;
+use crate::DeviceError;
+use crate::PdoError;
 use bitvec::field::BitField;
 
 use crate::devices::{
@@ -43,17 +44,17 @@ pub struct Wago750_460TxPdo {
 }
 
 impl TemperatureInputDevice for Wago750_460 {
-    fn get_input(&self, port: usize) -> Result<TemperatureInputInput, anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<TemperatureInputInput, DeviceError> {
         let raw = match port {
             0 => self.tx_pdo.t1,
             1 => self.tx_pdo.t2,
             2 => self.tx_pdo.t3,
             3 => self.tx_pdo.t4,
-            illegal => {
-                return Err(anyhow!(format!(
-                    "Illegal port index {} for 750_460",
-                    illegal
-                )));
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "Wago750_460",
+                    port,
+                });
             }
         };
         // Full 16-bit signed value, 0.1 °C per LSB — no status bits in the word.
@@ -110,7 +111,7 @@ impl EthercatDevice for Wago750_460 {
     fn input(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         let base = self.tx_bit_offset;
         self.tx_pdo.t1 = input[base..(base + 16)].load_le::<u16>();
         self.tx_pdo.t2 = input[(base + 16)..(base + 32)].load_le::<u16>();
@@ -126,7 +127,7 @@ impl EthercatDevice for Wago750_460 {
     fn output(
         &self,
         _output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 
@@ -149,14 +150,14 @@ impl EthercatDevice for Wago750_460 {
     fn input_checked(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         self.input(input)
     }
 
     fn output_checked(
         &self,
         _output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 

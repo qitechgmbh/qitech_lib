@@ -1,3 +1,4 @@
+use crate::DeviceError;
 use std::{
     collections::VecDeque,
     time::{Duration, Instant},
@@ -101,7 +102,7 @@ impl UfmFlowInput {
     /// Update internal state from the current EtherCAT cycle and return the latest readings.
     ///
     /// `now` should be the cycle timestamp passed into `MachineAct::act`.
-    pub fn tick(&mut self, now: Instant) -> Result<UfmFlowData, anyhow::Error> {
+    pub fn tick(&mut self, now: Instant) -> Result<UfmFlowData, DeviceError> {
         let current_pulse = self.pulse_input.get_value()?;
         let error_pin = self.error_input.get_value()?;
 

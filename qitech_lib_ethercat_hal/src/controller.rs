@@ -14,7 +14,6 @@ use crate::{
     send_response,
 };
 use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority};
-use anyhow::bail;
 use ethercrab::std::ethercat_now;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
@@ -265,7 +264,7 @@ fn dc_static_sync(
 }
 
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
-    fn apply_op_optimizations(&self) -> Result<(), anyhow::Error> {
+    fn apply_op_optimizations(&self) -> Result<(), EthercatErr> {
         match &self.current_config.realtime_optimizations {
             Some(opt) => {
                 let id = core_affinity::CoreId {
@@ -277,7 +276,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     let flags = MCL_CURRENT | MCL_FUTURE;
                     let result = unsafe { mlockall(flags) };
                     if result != 0 {
-                        bail!("Warning: Memory locking failed! Result: {}", result,);
+                        return Err(EthercatErr::MemoryLock(result));
                     }
                 }
             }
@@ -548,7 +547,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         }
     }
 
-    pub fn ethercat_state_machine(&mut self) -> Result<(), anyhow::Error> {
+    pub fn ethercat_state_machine(&mut self) -> Result<(), EthercatErr> {
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> =
             None;

@@ -10,7 +10,6 @@ use crate::{
         el252x::{EncControl, EncStatus, PtoControl, PtoStatus, PtoTarget},
     },
 };
-use anyhow::Ok;
 use qitech_lib_ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 /// EL2521 1-channel pulse train output terminal
 #[derive(EthercatDevice)]
@@ -83,7 +82,7 @@ impl ConfigurableDevice<EL2521Configuration> for EL2521 {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         config: &EL2521Configuration,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         config.write_config(ecat_channel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
@@ -280,7 +279,7 @@ impl Configuration for EL2521Configuration {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         let base_index = 0x8010;
         ecat_channel.sdo_write(device_address, base_index, 0x02, self.emergency_ramp_active)?;
         ecat_channel.sdo_write(

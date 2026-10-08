@@ -1,4 +1,5 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice};
+use crate::DeviceError;
 use crate::devices::SubDeviceIdentityTuple;
 use crate::io::digital_input::DigitalInputDevice;
 use crate::io::digital_output::DigitalOutputDevice;
@@ -60,12 +61,11 @@ impl DigitalOutputDevice for EP2339_0021 {
 }
 
 impl DigitalInputDevice for EP2339_0021 {
-    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
-        let error = anyhow::anyhow!(
-            "[{}::Device::digital_input_state] Port index {} is not available",
-            module_path!(),
-            port
-        );
+    fn get_input(&self, port: usize) -> Result<bool, DeviceError> {
+        let error = DeviceError::InvalidPort {
+            device: "EP2339_0021",
+            port,
+        };
 
         match port {
             0 => Ok(self.txpdo.channel1.as_ref().ok_or(error)?.value),
@@ -84,10 +84,10 @@ impl DigitalInputDevice for EP2339_0021 {
             13 => Ok(self.txpdo.channel14.as_ref().ok_or(error)?.value),
             14 => Ok(self.txpdo.channel15.as_ref().ok_or(error)?.value),
             15 => Ok(self.txpdo.channel16.as_ref().ok_or(error)?.value),
-            _ => Err(anyhow::anyhow!(
-                "EP2339 has 16 ports (0-15), requested index {}",
-                port
-            )),
+            _ => Err(DeviceError::InvalidPort {
+                device: "EP2339_0021",
+                port,
+            }),
         }
     }
 

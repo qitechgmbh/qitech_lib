@@ -1,3 +1,4 @@
+use crate::PdoError;
 use bitvec::field::BitField;
 
 use crate::devices::{
@@ -84,7 +85,7 @@ impl EthercatDevice for Wago750_554 {
     fn input(
         &mut self,
         _input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 
@@ -95,7 +96,7 @@ impl EthercatDevice for Wago750_554 {
     fn output(
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         let base = self.rx_bit_offset;
         output[base..(base + 16)].store_le::<u16>(self.rx_pdo.channel1);
         output[(base + 16)..(base + 32)].store_le::<u16>(self.rx_pdo.channel2);
@@ -121,14 +122,14 @@ impl EthercatDevice for Wago750_554 {
     fn input_checked(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         self.input(input)
     }
 
     fn output_checked(
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         self.output(output)
     }
 

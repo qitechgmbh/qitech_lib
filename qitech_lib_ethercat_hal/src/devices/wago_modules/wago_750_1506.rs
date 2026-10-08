@@ -1,3 +1,5 @@
+use crate::DeviceError;
+use crate::PdoError;
 use crate::{
     devices::{
         DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
@@ -85,7 +87,7 @@ pub struct Wago750_1506TxPdo {
 }
 
 impl DigitalInputDevice for Wago750_1506 {
-    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<bool, DeviceError> {
         let val = match port {
             0 => self.tx_pdo.port1,
             1 => self.tx_pdo.port2,
@@ -95,7 +97,12 @@ impl DigitalInputDevice for Wago750_1506 {
             5 => self.tx_pdo.port6,
             6 => self.tx_pdo.port7,
             7 => self.tx_pdo.port8,
-            _ => return Err(anyhow::anyhow!("Wago750_1506 has 8 ports!, (0-7)")),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "Wago750_1506",
+                    port,
+                });
+            }
         };
         Ok(val)
     }
@@ -168,7 +175,7 @@ impl EthercatDevice for Wago750_1506 {
     fn input(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         let base = self.tx_bit_offset;
 
         let idx1 = base + Into::<usize>::into(Wago750_1506InputPort::DI1);
@@ -204,7 +211,7 @@ impl EthercatDevice for Wago750_1506 {
     fn output(
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         //  println!("output: {} {}",self.rx_bit_offset,_output);
         output.set(
             self.rx_bit_offset + Into::<usize>::into(Wago750_1506OutputPort::DO1),
@@ -260,14 +267,14 @@ impl EthercatDevice for Wago750_1506 {
     fn input_checked(
         &mut self,
         _input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 
     fn output_checked(
         &self,
         _output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 
@@ -283,11 +290,11 @@ impl EthercatDevice for Wago750_1506 {
 }
 
 impl EthercatDeviceProcessing for Wago750_1506 {
-    fn input_post_process(&mut self) -> Result<(), anyhow::Error> {
+    fn input_post_process(&mut self) -> Result<(), DeviceError> {
         Ok(())
     }
 
-    fn output_pre_process(&mut self) -> Result<(), anyhow::Error> {
+    fn output_pre_process(&mut self) -> Result<(), DeviceError> {
         Ok(())
     }
 }

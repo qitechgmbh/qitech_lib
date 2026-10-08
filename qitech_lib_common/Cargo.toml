@@ -6,7 +6,7 @@ license.workspace = true
 
 [dependencies]
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time","sync"] }
-anyhow.workspace = true
+thiserror.workspace = true
 libc.workspace = true
 
 [lib]

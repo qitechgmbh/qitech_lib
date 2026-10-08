@@ -1,3 +1,4 @@
+use crate::ChannelError;
 use crate::{MAX_SUBDEVICES, PDI_LEN, get_async_runtime};
 use ethercrab::{MainDevice, SubDeviceGroup};
 
@@ -31,7 +32,7 @@ impl Default for MachineDeviceAddresses {
 pub fn read_device_identifications(
     group: &SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
     maindevice: &MainDevice,
-) -> Result<Vec<MachineDeviceInfo>, anyhow::Error> {
+) -> Result<Vec<MachineDeviceInfo>, ChannelError> {
     let addresses = MachineDeviceAddresses::default();
     let rt = get_async_runtime();
     let res: Result<Vec<MachineDeviceInfo>, ethercrab::error::Error> = rt.block_on(async {
@@ -73,7 +74,7 @@ pub fn write_device_identifications(
     group: &SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
     maindevice: &MainDevice,
     identifications: &[MachineDeviceInfo],
-) -> Result<(), anyhow::Error> {
+) -> Result<(), ChannelError> {
     tracing::info!("writing to device identifications");
     let addresses = MachineDeviceAddresses::default();
     let rt = get_async_runtime();

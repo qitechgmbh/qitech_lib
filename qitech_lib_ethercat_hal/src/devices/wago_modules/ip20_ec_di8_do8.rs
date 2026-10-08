@@ -1,5 +1,7 @@
 use super::*;
+use crate::DeviceError;
 use crate::EtherCATThreadChannel;
+use crate::PdoError;
 use crate::devices::{
     EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple,
 };
@@ -8,7 +10,6 @@ use crate::{
     helpers::ethercrab_types::EthercrabSubDevicePreoperational,
     io::{digital_input::DigitalInputDevice, digital_output::DigitalOutputDevice},
 };
-use anyhow::Error;
 use smol::lock::RwLock;
 use std::sync::Arc;
 
@@ -123,7 +124,7 @@ impl EthercatDevice for IP20EcDi8Do8 {
     fn input(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         // Read the 8 digital inputs (bits 0-7)
         if input.len() >= 8 {
             self.tx_pdo.di1 = input[0];
@@ -162,7 +163,7 @@ impl EthercatDevice for IP20EcDi8Do8 {
     fn output(
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         // Write the 8 digital outputs (bits 0-7)
         if output.len() >= 8 {
             output.set(0, self.rx_pdo.do1);
@@ -247,7 +248,7 @@ impl std::fmt::Debug for IP20EcDi8Do8 {
 }
 
 impl DigitalInputDevice for IP20EcDi8Do8 {
-    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<bool, DeviceError> {
         Ok(match port {
             0 => self.tx_pdo.di1,
             1 => self.tx_pdo.di2,
@@ -257,7 +258,12 @@ impl DigitalInputDevice for IP20EcDi8Do8 {
             5 => self.tx_pdo.di6,
             6 => self.tx_pdo.di7,
             7 => self.tx_pdo.di8,
-            _ => return Err(anyhow::anyhow!("IP20EcDi8Do8 only has 8 inputs (0-7)")),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "IP20EcDi8Do8",
+                    port,
+                });
+            }
         })
     }
 
@@ -291,7 +297,7 @@ impl IP20EcDi8Do8 {
         &mut self,
         device: &EthercrabSubDevicePreoperational<'a>,
         get_tx: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<(), crate::Error> {
         let mut vec: Vec<usize> = vec![];
         let mut bit_offset = 0;
         let start_subindex = 0x1;
@@ -327,17 +333,14 @@ impl IP20EcDi8Do8 {
     pub fn get_module_count<'a>(
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<usize, Error> {
+    ) -> Result<usize, crate::Error> {
         match ecat_channel.sdo_read::<u8>(
             device_address,
             MODULE_COUNT_INDEX.0,
             MODULE_COUNT_INDEX.1,
         ) {
             Ok(value) => Ok(value as usize),
-            Err(e) => Err(anyhow::anyhow!(
-                "Failed to read Module Count for ip20_ec_di8_do8: {:?}",
-                e
-            )),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -345,7 +348,7 @@ impl IP20EcDi8Do8 {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         module_count: usize,
-    ) -> Result<Vec<crate::devices::Module>, Error> {
+    ) -> Result<Vec<crate::devices::Module>, crate::Error> {
         const MODULES_START_ADDR: u16 = 0x9000;
         const MODULE_IDENT_SUBINDEX: u8 = 0x0a;
         let mut modules: Vec<Module> = vec![];
@@ -457,7 +460,7 @@ impl IP20EcDi8Do8 {
     pub fn initialize_modules<'a>(
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<Vec<Module>, Error> {
+    ) -> Result<Vec<Module>, crate::Error> {
         let count = match IP20EcDi8Do8::get_module_count(ecat_channel.clone(), device_address) {
             Ok(count) => count,
             Err(e) => return Err(e),

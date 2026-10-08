@@ -5,8 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow.workspace = true
 ethercrab.workspace = true
+thiserror.workspace = true
 qitech_lib_ethercat_hal_derive.workspace = true
 qitech_lib_units.workspace = true
 bitvec = { workspace = true, features = ["alloc"] }

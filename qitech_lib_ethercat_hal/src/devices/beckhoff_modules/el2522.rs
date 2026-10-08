@@ -10,7 +10,6 @@ use crate::{
         el252x::{EncControl, EncStatus, PtoControl, PtoStatus, PtoTarget},
     },
 };
-use anyhow::Ok;
 use qitech_lib_ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 
 /// EL2521 2-channel pulse train output terminal
@@ -49,7 +48,7 @@ impl ConfigurableDevice<EL2522Configuration> for EL2522 {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         config: &EL2522Configuration,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         config.write_config(ecat_channel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
@@ -338,7 +337,7 @@ impl Configuration for EL2522Configuration {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         // Write configuration for Channel 1
         self.write_channel_config(
             ecat_channel.clone(),
@@ -375,7 +374,7 @@ impl EL2522Configuration {
         pto_base_index: u16,
         enc_base_index: u16,
         config: &EL2522ChannelConfiguration,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(
             device_address,
             pto_base_index,

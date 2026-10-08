@@ -1,5 +1,5 @@
+use crate::DeviceError;
 use crate::EtherCATThreadChannel;
-use anyhow;
 
 #[derive(Debug, Clone)]
 pub struct EncConfiguration {
@@ -24,7 +24,7 @@ impl EncConfiguration {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(device_address, 0x8000, 0x0E, self.reversion_of_rotation)?;
         Ok(())
     }
@@ -109,7 +109,7 @@ impl StmMotorConfiguration {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(device_address, 0x8010, 0x01, self.max_current)?;
         ecat_channel.sdo_write(device_address, 0x8010, 0x02, self.reduced_current)?;
         ecat_channel.sdo_write(device_address, 0x8010, 0x03, self.nominal_voltage)?;
@@ -189,7 +189,7 @@ impl StmControllerConfiguration {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         base_index: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(device_address, base_index, 0x01, self.kp_factor)?;
         ecat_channel.sdo_write(device_address, base_index, 0x02, self.ki_factor)?;
         ecat_channel.sdo_write(device_address, base_index, 0x03, self.inner_window)?;
@@ -303,7 +303,7 @@ impl StmFeatures {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(device_address, 0x8012, 0x05, u8::from(self.speed_range))?;
         ecat_channel.sdo_write(device_address, 0x8012, 0x09, self.invert_motor_polarity)?;
         ecat_channel.sdo_write(
@@ -475,7 +475,7 @@ impl PosConfiguration {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(device_address, 0x8020, 0x01, self.velocity_min)?;
         ecat_channel.sdo_write(device_address, 0x8020, 0x02, self.velocity_max)?;
         ecat_channel.sdo_write(device_address, 0x8020, 0x03, self.acceleration_pos)?;
@@ -542,7 +542,7 @@ pub enum StartType {
 }
 
 impl TryFrom<u16> for StartType {
-    type Error = anyhow::Error;
+    type Error = DeviceError;
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
@@ -561,7 +561,10 @@ impl TryFrom<u16> for StartType {
             28416 => Ok(Self::CalibrationClearManual),
             28160 => Ok(Self::CalibrationSetManual),
             28161 => Ok(Self::CalibrationSetManualAuto),
-            _ => Err(anyhow::anyhow!("Invalid value for StartType: {}", value)),
+            _ => Err(DeviceError::UnknownValue {
+                what: "StartType",
+                value: value as u64,
+            }),
         }
     }
 }
@@ -641,7 +644,7 @@ impl PosFeatures {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(device_address, 0x8021, 0x01, u16::from(self.start_type))?;
         ecat_channel.sdo_write(device_address, 0x8021, 0x11, self.time_information)?;
         ecat_channel.sdo_write(
@@ -698,7 +701,7 @@ impl std::fmt::Debug for EL70x1OperationMode {
 }
 
 impl TryFrom<u8> for EL70x1OperationMode {
-    type Error = anyhow::Error;
+    type Error = DeviceError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
@@ -708,10 +711,10 @@ impl TryFrom<u8> for EL70x1OperationMode {
             3 => Ok(Self::PositionController),
             4 => Ok(Self::ExtendedVelocityController),
             5 => Ok(Self::ExtendedPositionController),
-            _ => Err(anyhow::anyhow!(
-                "Invalid value for EL7031OperationMode: {}",
-                value
-            )),
+            _ => Err(DeviceError::UnknownValue {
+                what: "EL7031OperationMode",
+                value: value as u64,
+            }),
         }
     }
 }
@@ -753,7 +756,7 @@ impl std::fmt::Debug for EL70x1SpeedRange {
 }
 
 impl TryFrom<u8> for EL70x1SpeedRange {
-    type Error = anyhow::Error;
+    type Error = DeviceError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
@@ -763,10 +766,10 @@ impl TryFrom<u8> for EL70x1SpeedRange {
             3 => Ok(Self::Steps8000),
             4 => Ok(Self::Steps16000),
             5 => Ok(Self::Steps32000),
-            _ => Err(anyhow::anyhow!(
-                "Invalid value for EL7031SpeedRange: {}",
-                value
-            )),
+            _ => Err(DeviceError::UnknownValue {
+                what: "EL7031SpeedRange",
+                value: value as u64,
+            }),
         }
     }
 }
@@ -835,7 +838,7 @@ impl std::fmt::Debug for EL70x1InfoData {
 }
 
 impl TryFrom<u8> for EL70x1InfoData {
-    type Error = anyhow::Error;
+    type Error = DeviceError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
@@ -854,10 +857,10 @@ impl TryFrom<u8> for EL70x1InfoData {
             151 => Ok(Self::DriveState),
             152 => Ok(Self::DrivePositionLagLow),
             153 => Ok(Self::DrivePositionLagHigh),
-            _ => Err(anyhow::anyhow!(
-                "Invalid value for EL7031InfoData: {}",
-                value
-            )),
+            _ => Err(DeviceError::UnknownValue {
+                what: "EL7031InfoData",
+                value: value as u64,
+            }),
         }
     }
 }
@@ -893,7 +896,7 @@ impl std::fmt::Debug for EL70x1InputFunction {
 }
 
 impl TryFrom<u8> for EL70x1InputFunction {
-    type Error = anyhow::Error;
+    type Error = DeviceError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
@@ -901,10 +904,10 @@ impl TryFrom<u8> for EL70x1InputFunction {
             1 => Ok(Self::HardwareEnable),
             2 => Ok(Self::PlcCam),
             3 => Ok(Self::AutoStart),
-            _ => Err(anyhow::anyhow!(
-                "Invalid value for EL7031InputFunction: {}",
-                value
-            )),
+            _ => Err(DeviceError::UnknownValue {
+                what: "EL7031InputFunction",
+                value: value as u64,
+            }),
         }
     }
 }
@@ -970,7 +973,7 @@ impl EL7031_0030AnalogInputChannelConfiguration {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         base_index: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(device_address, base_index, 0x01, self.enable_user_scale)?;
         ecat_channel.sdo_write(device_address, base_index, 0x06, self.enable_filter)?;
         ecat_channel.sdo_write(device_address, base_index, 0x07, self.enable_limit_1)?;

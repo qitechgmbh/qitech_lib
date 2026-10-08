@@ -1,7 +1,7 @@
 pub mod beckhoff_modules;
 pub mod panasonic_modules;
 pub mod wago_modules;
-use crate::MetaSubdevice;
+use crate::{DeviceError, MetaSubdevice, PdoError};
 
 use crate::devices::beckhoff_modules::el1124::{EL1124, EL1124_IDENTITY_A};
 use crate::devices::beckhoff_modules::el1259::{EL1259, EL1259_IDENTITY_A};
@@ -73,24 +73,24 @@ where
 {
     /// Input data from the last cycle
     /// `ts` is the timestamp when the input data was sent by the device
-    fn input(&mut self, _input: &BitSlice<u8, Lsb0>) -> Result<(), anyhow::Error>;
+    fn input(&mut self, _input: &BitSlice<u8, Lsb0>) -> Result<(), PdoError>;
 
     /// The accepted length of the input data
     fn input_len(&self) -> usize;
 
     /// automatically validate input length, then calls input
-    fn input_checked(&mut self, input: &BitSlice<u8, Lsb0>) -> Result<(), anyhow::Error> {
+    fn input_checked(&mut self, input: &BitSlice<u8, Lsb0>) -> Result<(), PdoError> {
         self.input(input)
     }
 
     /// Output data for the next cycle
     /// `ts` is the timestamp when the output data is predicted to be received by the device
-    fn output(&self, _output: &mut BitSlice<u8, Lsb0>) -> Result<(), anyhow::Error>;
+    fn output(&self, _output: &mut BitSlice<u8, Lsb0>) -> Result<(), PdoError>;
 
     /// The accepted length of the output data
     fn output_len(&self) -> usize;
 
-    fn output_checked(&self, output: &mut BitSlice<u8, Lsb0>) -> Result<(), anyhow::Error> {
+    fn output_checked(&self, output: &mut BitSlice<u8, Lsb0>) -> Result<(), PdoError> {
         self.output(output)?;
         Ok(())
     }
@@ -115,13 +115,13 @@ pub trait EthercatDynamicPDO {
 pub trait EthercatDeviceProcessing {
     /// Devices can override this function if they want to post process the input data
     /// This might be the case if the pdo is not what is needed in the io layer
-    fn input_post_process(&mut self) -> Result<(), anyhow::Error> {
+    fn input_post_process(&mut self) -> Result<(), DeviceError> {
         Ok(())
     }
 
     /// Devices can override this function if they want to pre process the output data
     /// This might be the case if the pdo is not what is needed in the io layer
-    fn output_pre_process(&mut self) -> Result<(), anyhow::Error> {
+    fn output_pre_process(&mut self) -> Result<(), DeviceError> {
         Ok(())
     }
 }
@@ -138,7 +138,7 @@ pub trait NewEthercatDevice {
 
 pub fn device_from_subdevice_identity(
     dev: MetaSubdevice,
-) -> Result<Box<dyn EthercatDevice>, anyhow::Error> {
+) -> Result<Box<dyn EthercatDevice>, DeviceError> {
     let ident_tuple: (u32, u32, u32) = (dev.vendor, dev.product_id, dev.revision);
     match ident_tuple {
         WAGO_750_354_IDENTITY_A => Ok(Box::new(Wago750_354::new())),
@@ -174,19 +174,17 @@ pub fn device_from_subdevice_identity(
         EP2339_0021_IDENTITY_A => Ok(Box::new(ep2339_0021::EP2339_0021::new())),
         MINAS_A6_IDENTITY_A => Ok(Box::new(minas_a6::MinasA6BMotor::new())),
         EL4732_IDENTITY_A | EL4732_IDENTITY_B | EL4732_IDENTITY_C => Ok(Box::new(EL4732::new())),
-        _ => Err(anyhow::anyhow!(
-            "[{}::device_from_subdevice] No Driver: vendor_id: 0x{:x}, product_id: 0x{:x}, revision: 0x{:x}",
-            module_path!(),
-            ident_tuple.0,
-            ident_tuple.1,
-            ident_tuple.2,
-        )),
+        _ => Err(DeviceError::NoDriver {
+            vendor: ident_tuple.0,
+            product: ident_tuple.1,
+            revision: ident_tuple.2,
+        }),
     }
 }
 
 pub fn device_from_subdevice_identity_rc(
     dev: &MetaSubdevice,
-) -> Result<Rc<RefCell<dyn EthercatDevice>>, anyhow::Error> {
+) -> Result<Rc<RefCell<dyn EthercatDevice>>, DeviceError> {
     let ident_tuple: (u32, u32, u32) = (dev.vendor, dev.product_id, dev.revision);
 
     match ident_tuple {
@@ -226,17 +224,15 @@ pub fn device_from_subdevice_identity_rc(
             Ok(Rc::new(RefCell::new(el4732::EL4732::new())))
         }
 
-        _ => Err(anyhow::anyhow!(
-            "[{}::device_from_subdevice] No Driver: vendor_id: 0x{:x}, product_id: 0x{:x}, revision: 0x{:x}",
-            module_path!(),
-            ident_tuple.0,
-            ident_tuple.1,
-            ident_tuple.2,
-        )),
+        _ => Err(DeviceError::NoDriver {
+            vendor: ident_tuple.0,
+            product: ident_tuple.1,
+            revision: ident_tuple.2,
+        }),
     }
 }
 
-pub fn downcast_subdevice<T: 'static>(dev: Box<dyn EthercatDevice>) -> Result<Box<T>, anyhow::Error>
+pub fn downcast_subdevice<T: 'static>(dev: Box<dyn EthercatDevice>) -> Result<Box<T>, DeviceError>
 where
     T: EthercatDevice,
 {
@@ -244,20 +240,17 @@ where
     // Attempt to downcast to the concrete type Box<T>
     match any_dev.downcast::<T>() {
         std::result::Result::Ok(concrete_box) => Ok(concrete_box),
-        Err(_) => Err(anyhow::anyhow!(
-            "Downcast failed: device is not of type {}",
-            std::any::type_name::<T>()
-        )),
+        Err(_) => Err(DeviceError::Downcast(std::any::type_name::<T>())),
     }
 }
 
 pub fn downcast_rc_refcell<T: 'static>(
     dev: Rc<RefCell<dyn EthercatDevice>>,
-) -> Result<Rc<RefCell<T>>, anyhow::Error> {
+) -> Result<Rc<RefCell<T>>, DeviceError> {
     // Check if the inner type is actually T
     let is_t = dev.borrow().as_any().is::<T>();
     if !is_t {
-        return Err(anyhow::anyhow!("Type mismatch in hardware downcast"));
+        return Err(DeviceError::Downcast(std::any::type_name::<T>()));
     }
     // Since we verified the type above, we can use raw pointers.
     let raw_trait_ptr = Rc::into_raw(dev);

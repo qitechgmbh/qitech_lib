@@ -1,5 +1,5 @@
+use crate::{ChannelError, DiagnosticRequest, DiagnosticResponse};
 use crate::{ChannelRequest, ChannelResponse, EtherCATThreadResponseChannel};
-use crate::{DiagnosticRequest, DiagnosticResponse};
 use crate::{
     EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest,
     SdoType, al_diagnostics::SubDeviceAlStatus, get_async_runtime,
@@ -9,37 +9,64 @@ use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
 };
 use std::any::TypeId;
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Duration;
 
 /// Above the state machine's own snapshot deadline, so a slow bus reports results rather than
 /// timing out here.
 const DIAGNOSTIC_TIMEOUT: Duration = Duration::from_millis(1500);
 
+/// Wait for the master thread's answer to a request.
+fn recv<T>(rx: &Receiver<T>, timeout: Duration) -> Result<T, ChannelError> {
+    rx.recv_timeout(timeout).map_err(|e| match e {
+        RecvTimeoutError::Timeout => ChannelError::Timeout(timeout),
+        RecvTimeoutError::Disconnected => ChannelError::Disconnected,
+    })
+}
+
 pub trait EthercatResponseTypedResult: Sized {
-    fn from_bool(_v: bool) -> anyhow::Result<Self> {
-        Err(anyhow::anyhow!("Conversion from bool not supported"))
+    fn from_bool(_v: bool) -> Result<Self, ChannelError> {
+        Err(ChannelError::SdoTypeMismatch(
+            "bool",
+            std::any::type_name::<Self>(),
+        ))
     }
-    fn from_u8(_v: u8) -> anyhow::Result<Self> {
-        Err(anyhow::anyhow!("Conversion from u8 not supported"))
+    fn from_u8(_v: u8) -> Result<Self, ChannelError> {
+        Err(ChannelError::SdoTypeMismatch(
+            "u8",
+            std::any::type_name::<Self>(),
+        ))
     }
-    fn from_u16(_v: u16) -> anyhow::Result<Self> {
-        Err(anyhow::anyhow!("Conversion from u16 not supported"))
+    fn from_u16(_v: u16) -> Result<Self, ChannelError> {
+        Err(ChannelError::SdoTypeMismatch(
+            "u16",
+            std::any::type_name::<Self>(),
+        ))
     }
-    fn from_i16(_v: i16) -> anyhow::Result<Self> {
-        Err(anyhow::anyhow!("Conversion from i16 not supported"))
+    fn from_i16(_v: i16) -> Result<Self, ChannelError> {
+        Err(ChannelError::SdoTypeMismatch(
+            "i16",
+            std::any::type_name::<Self>(),
+        ))
     }
-    fn from_u32(_v: u32) -> anyhow::Result<Self> {
-        Err(anyhow::anyhow!("Conversion from u32 not supported"))
+    fn from_u32(_v: u32) -> Result<Self, ChannelError> {
+        Err(ChannelError::SdoTypeMismatch(
+            "u32",
+            std::any::type_name::<Self>(),
+        ))
     }
-    fn from_i32(_v: i32) -> anyhow::Result<Self> {
-        Err(anyhow::anyhow!("Conversion from i32 not supported"))
+    fn from_i32(_v: i32) -> Result<Self, ChannelError> {
+        Err(ChannelError::SdoTypeMismatch(
+            "i32",
+            std::any::type_name::<Self>(),
+        ))
     }
 }
 
 macro_rules! impl_ethercat_typed_result {
     ($t:ty, $func:ident) => {
         impl EthercatResponseTypedResult for $t {
-            fn $func(v: $t) -> anyhow::Result<Self> {
+            fn $func(v: $t) -> Result<Self, ChannelError> {
                 Ok(v)
             }
         }
@@ -151,7 +178,7 @@ impl EtherCATThreadChannel {
         device_address: u16,
         index: u16,
         sub_index: u8,
-    ) -> Result<T, anyhow::Error>
+    ) -> Result<T, ChannelError>
     where
         T: EthercatSdoBytes + EthercatResponseTypedResult,
     {
@@ -168,24 +195,17 @@ impl EtherCATThreadChannel {
             response_channel: EtherCATThreadResponseChannel(tx),
         };
 
-        match self.0.send(req) {
-            Ok(_) => (),
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
-        let res = rx.recv_timeout(Duration::from_millis(500));
-        let response: ChannelResponse = match res {
-            Ok(res) => res,
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
+        self.0.send(req).map_err(|_| ChannelError::Disconnected)?;
+        let response = recv(&rx, Duration::from_millis(500))?;
 
-        let res: Result<T, anyhow::Error> = match response {
+        let res: Result<T, ChannelError> = match response {
             ChannelResponse::SdoResponseBool(r) => T::from_bool(r?),
             ChannelResponse::SdoResponseU8(r) => T::from_u8(r?),
             ChannelResponse::SdoResponseU16(r) => T::from_u16(r?),
             ChannelResponse::SdoResponseU32(r) => T::from_u32(r?),
             ChannelResponse::SdoResponseI16(r) => T::from_i16(r?),
             ChannelResponse::SdoResponseI32(r) => T::from_i32(r?),
-            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+            _ => Err(ChannelError::UnexpectedResponse),
         };
         return res;
     }
@@ -198,73 +218,63 @@ impl EtherCATThreadChannel {
         &self,
         device_address: u16,
         register: impl Into<u16>,
-    ) -> Result<u16, anyhow::Error> {
+    ) -> Result<u16, ChannelError> {
         let (tx, rx) = std::sync::mpsc::channel::<DiagnosticResponse>();
 
-        if let Err(e) = self.1.send(DiagnosticRequest::RegisterRead {
-            device_address,
-            register: register.into(),
-            response_channel: tx,
-        }) {
-            return Err(anyhow::anyhow!(e));
-        }
+        self.1
+            .send(DiagnosticRequest::RegisterRead {
+                device_address,
+                register: register.into(),
+                response_channel: tx,
+            })
+            .map_err(|_| ChannelError::Disconnected)?;
 
-        match rx.recv_timeout(DIAGNOSTIC_TIMEOUT) {
-            Ok(DiagnosticResponse::RegisterReadResponse(result)) => result,
-            Ok(_) => Err(anyhow::anyhow!("Unexpected DiagnosticResponse")),
-            Err(e) => Err(anyhow::anyhow!(e)),
+        match recv(&rx, DIAGNOSTIC_TIMEOUT)? {
+            DiagnosticResponse::RegisterReadResponse(result) => result,
+            _ => Err(ChannelError::UnexpectedResponse),
         }
     }
 
     /// Probe a running bus. For the state a *transition* left it in, use
     /// [`EtherCATAppHandle::get_last_transition_failure`](crate::EtherCATAppHandle::get_last_transition_failure)
     /// instead — that one is recorded automatically.
-    pub fn al_status_snapshot(&self) -> Result<Vec<SubDeviceAlStatus>, anyhow::Error> {
+    pub fn al_status_snapshot(&self) -> Result<Vec<SubDeviceAlStatus>, ChannelError> {
         let (tx, rx) = std::sync::mpsc::channel::<DiagnosticResponse>();
 
-        if let Err(e) = self.1.send(DiagnosticRequest::AlStatusSnapshot {
-            response_channel: tx,
-        }) {
-            return Err(anyhow::anyhow!(e));
-        }
+        self.1
+            .send(DiagnosticRequest::AlStatusSnapshot {
+                response_channel: tx,
+            })
+            .map_err(|_| ChannelError::Disconnected)?;
 
-        match rx.recv_timeout(DIAGNOSTIC_TIMEOUT) {
-            Ok(DiagnosticResponse::AlStatusSnapshotResponse(statuses)) => Ok(statuses),
-            Ok(_) => Err(anyhow::anyhow!("Unexpected DiagnosticResponse")),
-            Err(e) => Err(anyhow::anyhow!(e)),
+        match recv(&rx, DIAGNOSTIC_TIMEOUT)? {
+            DiagnosticResponse::AlStatusSnapshotResponse(statuses) => Ok(statuses),
+            _ => Err(ChannelError::UnexpectedResponse),
         }
     }
 
-    pub fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, anyhow::Error> {
+    pub fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, ChannelError> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::ReadMachineIdent(),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
 
-        let res = self.0.send(req);
-        match res {
-            Ok(response) => response,
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
+        self.0.send(req).map_err(|_| ChannelError::Disconnected)?;
 
-        let res = rx.recv_timeout(Duration::from_millis(5000));
-        let response: ChannelResponse = match res {
-            Ok(res) => res,
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
+        let response = recv(&rx, Duration::from_millis(5000))?;
         match response {
             ChannelResponse::MachineDeviceInfoResponse(machine_device_infos) => {
                 machine_device_infos
             }
-            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+            _ => Err(ChannelError::UnexpectedResponse),
         }
     }
 
     pub fn write_machine_device_info_eeprom(
         &self,
         info: Vec<MachineDeviceInfo>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), ChannelError> {
         use crate::ChannelRequests;
 
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
@@ -272,19 +282,11 @@ impl EtherCATThreadChannel {
             channel_request: ChannelRequests::WriteMachineIdent(info),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
-        let res = self.0.send(req);
-        match res {
-            Ok(response) => response,
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
-        let res = rx.recv_timeout(Duration::from_millis(5000));
-        let response: ChannelResponse = match res {
-            Ok(res) => res,
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
+        self.0.send(req).map_err(|_| ChannelError::Disconnected)?;
+        let response = recv(&rx, Duration::from_millis(5000))?;
         match response {
             ChannelResponse::WriteMachineInfoResponse(result) => result,
-            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+            _ => Err(ChannelError::UnexpectedResponse),
         }
     }
 
@@ -294,7 +296,7 @@ impl EtherCATThreadChannel {
         index: u16,
         sub_index: u8,
         value: T,
-    ) -> Result<(), anyhow::Error>
+    ) -> Result<(), ChannelError>
     where
         T: EtherCrabWireWrite + EthercatSdoBytes,
     {
@@ -315,24 +317,16 @@ impl EtherCATThreadChannel {
             response_channel: EtherCATThreadResponseChannel(tx),
         };
 
-        let res = self.0.send(req);
-        match res {
-            Ok(_) => (),
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
+        self.0.send(req).map_err(|_| ChannelError::Disconnected)?;
 
-        let res = rx.recv_timeout(Duration::from_millis(500));
-        let response: ChannelResponse = match res {
-            Ok(res) => res,
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
+        let response = recv(&rx, Duration::from_millis(500))?;
         match response {
             ChannelResponse::SdoWriteResponse(result) => result,
-            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+            _ => Err(ChannelError::UnexpectedResponse),
         }
     }
 
-    pub fn request_state_change(&self, state: EtherCATState) -> Result<(), anyhow::Error> {
+    pub fn request_state_change(&self, state: EtherCATState) -> Result<(), ChannelError> {
         let (tx, _rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::ChangeState(state),
@@ -342,28 +336,20 @@ impl EtherCATThreadChannel {
         Ok(())
     }
 
-    pub fn enable_dc_sync0(&self, device_address: u16) -> Result<(), anyhow::Error> {
+    pub fn enable_dc_sync0(&self, device_address: u16) -> Result<(), ChannelError> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::EnableDCSync0(device_address.into()),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
 
-        let res = self.0.send(req);
-        match res {
-            Ok(_) => (),
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
+        self.0.send(req).map_err(|_| ChannelError::Disconnected)?;
 
-        let res = rx.recv_timeout(Duration::from_millis(500));
-        let response: ChannelResponse = match res {
-            Ok(res) => res,
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
+        let response = recv(&rx, Duration::from_millis(500))?;
 
         match response {
             ChannelResponse::EnableDCSync0Response(result) => result,
-            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+            _ => Err(ChannelError::UnexpectedResponse),
         }
     }
 
@@ -371,7 +357,7 @@ impl EtherCATThreadChannel {
         &self,
         device_address: u16,
         sync1_period: Duration,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), ChannelError> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::EnableDCSync01(
@@ -381,20 +367,13 @@ impl EtherCATThreadChannel {
             response_channel: EtherCATThreadResponseChannel(tx),
         };
 
-        match self.0.send(req) {
-            Ok(_) => (),
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
+        self.0.send(req).map_err(|_| ChannelError::Disconnected)?;
 
-        let res = rx.recv_timeout(Duration::from_millis(500));
-        let response = match res {
-            Ok(res) => res,
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
+        let response = recv(&rx, Duration::from_millis(500))?;
 
         match response {
             ChannelResponse::EnableDCSync01Response(result) => result,
-            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+            _ => Err(ChannelError::UnexpectedResponse),
         }
     }
 
@@ -402,7 +381,7 @@ impl EtherCATThreadChannel {
         &self,
         device_address: u16,
         oversampling_settings: Vec<(u16, u16)>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), ChannelError> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req = ChannelRequest {
             channel_request: crate::ChannelRequests::ConfigureOversampling(
@@ -411,25 +390,18 @@ impl EtherCATThreadChannel {
             ),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
-        match self.0.send(req) {
-            Ok(_) => (),
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
-        let res = rx.recv_timeout(Duration::from_millis(500));
-        let response = match res {
-            Ok(res) => res,
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
+        self.0.send(req).map_err(|_| ChannelError::Disconnected)?;
+        let response = recv(&rx, Duration::from_millis(500))?;
         match response {
             ChannelResponse::ConfigureOversamplingResponse(result) => result,
-            _ => Err(anyhow::anyhow!("Unexpected ChannelResponse")),
+            _ => Err(ChannelError::UnexpectedResponse),
         }
     }
 
     pub fn set_mut_beckhoff_eeprom_lock_active(
         &self,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), ChannelError> {
         const BECKHOFF_EEPROM_LOCK_CODEWORD: u32 = 0x12345678;
         const BECKHOFF_CODEWORD_INDEX: u16 = 0xF008;
 
@@ -460,7 +432,7 @@ impl EtherCATThreadChannel {
     }
 }
 
-pub fn type_id_to_sdo_type<T: 'static>() -> Result<SdoType, anyhow::Error> {
+pub fn type_id_to_sdo_type<T: 'static>() -> Result<SdoType, ChannelError> {
     let t_id = TypeId::of::<T>();
     let sdo_type: SdoType = {
         if t_id == TypeId::of::<bool>() {
@@ -489,7 +461,7 @@ pub fn sdo_write(
     maindevice: &MainDevice,
     group: &SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
     request: SdoRequest,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), ChannelError> {
     for device in group.iter(maindevice) {
         if device.configured_address() == request.device_address {
             let runtime = get_async_runtime();
@@ -528,14 +500,14 @@ pub fn sdo_write(
             return Ok(res?);
         }
     }
-    Err(anyhow::anyhow!("Unknown Subdevice"))
+    Err(ChannelError::UnknownSubdevice(request.device_address))
 }
 
 pub fn sdo_read<T>(
     maindevice: &MainDevice,
     group: &SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
     request: SdoReadRequest,
-) -> Result<T, anyhow::Error>
+) -> Result<T, ChannelError>
 where
     T: EtherCrabWireRead + EtherCrabWireSized,
 {
@@ -547,14 +519,14 @@ where
             return Ok(res?);
         }
     }
-    Err(anyhow::anyhow!("Unknown Subdevice"))
+    Err(ChannelError::UnknownSubdevice(request.device_address))
 }
 
 pub fn enable_dc_sync(
     group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
     maindevice: &MainDevice,
     device_address: usize,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), ChannelError> {
     let rt = get_async_runtime();
     rt.block_on(async {
         for mut subdevice in group.iter_mut(maindevice) {
@@ -563,7 +535,7 @@ pub fn enable_dc_sync(
                 return Ok(());
             }
         }
-        return Err(anyhow::anyhow!("Unknown Subdevice"));
+        return Err(ChannelError::UnknownSubdevice(device_address as u16));
     })
 }
 
@@ -572,7 +544,7 @@ pub fn enable_dc_sync01(
     maindevice: &MainDevice,
     device_address: usize,
     sync1_period: Duration,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), ChannelError> {
     let rt = get_async_runtime();
     rt.block_on(async {
         for mut subdevice in group.iter_mut(maindevice) {
@@ -581,7 +553,7 @@ pub fn enable_dc_sync01(
                 return Ok(());
             }
         }
-        Err(anyhow::anyhow!("Unknown Subdevice"))
+        Err(ChannelError::UnknownSubdevice(device_address as u16))
     })
 }
 
@@ -590,7 +562,7 @@ pub fn configure_oversampling(
     maindevice: &MainDevice,
     device_address: usize,
     oversampling_settings: &[(u16, u16)],
-) -> Result<(), anyhow::Error> {
+) -> Result<(), ChannelError> {
     let rt = get_async_runtime();
     rt.block_on(async {
         for mut subdevice in group.iter_mut(maindevice) {
@@ -599,9 +571,6 @@ pub fn configure_oversampling(
                 return Ok(());
             }
         }
-        Err(anyhow::anyhow!(
-            "Unknown Subdevice at address 0x{:04X}",
-            device_address
-        ))
+        Err(ChannelError::UnknownSubdevice(device_address as u16))
     })
 }

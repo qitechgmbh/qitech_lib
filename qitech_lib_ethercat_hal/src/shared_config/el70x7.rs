@@ -1,3 +1,4 @@
+use crate::DeviceError;
 use crate::EtherCATThreadChannel;
 
 pub use super::el70x1::{
@@ -102,7 +103,7 @@ impl StmMotorConfiguration {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(device_address, 0x8010, 0x01, self.max_current)?;
         ecat_channel.sdo_write(device_address, 0x8010, 0x02, self.reduced_current)?;
         // EL7037 uses 10 mV units for 0x8010:03; nominal_voltage is stored as 1 mV.
@@ -165,7 +166,7 @@ impl StmControllerConfiguration {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         base_index: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(device_address, base_index, 0x01, self.kp_factor)?;
         ecat_channel.sdo_write(device_address, base_index, 0x02, self.ki_factor)?;
         Ok(())
@@ -231,7 +232,7 @@ impl StmControllerSettings3Configuration {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(device_address, 0x8014, 0x01, self.feed_forward_pos)?;
         ecat_channel.sdo_write(device_address, 0x8014, 0x02, self.kp_factor_pos)?;
         ecat_channel.sdo_write(device_address, 0x8014, 0x03, self.kp_factor_velo)?;
@@ -311,7 +312,7 @@ impl std::fmt::Debug for EL70x7InfoData {
 }
 
 impl TryFrom<u8> for EL70x7InfoData {
-    type Error = anyhow::Error;
+    type Error = DeviceError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
@@ -332,10 +333,10 @@ impl TryFrom<u8> for EL70x7InfoData {
             151 => Ok(Self::DriveState),
             152 => Ok(Self::DrivePositionLagLow),
             153 => Ok(Self::DrivePositionLagHigh),
-            _ => Err(anyhow::anyhow!(
-                "Invalid value for EL70x7InfoData: {}",
-                value
-            )),
+            _ => Err(DeviceError::UnknownValue {
+                what: "EL70x7InfoData",
+                value: value as u64,
+            }),
         }
     }
 }
@@ -449,7 +450,7 @@ impl StmFeatures {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(device_address, 0x8012, 0x01, u8::from(self.operation_mode))?;
         ecat_channel.sdo_write(device_address, 0x8012, 0x05, u8::from(self.speed_range))?;
         if matches!(self.feedback_type, EL7037FeedbackType::Encoder) {

@@ -1,4 +1,5 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::DeviceError;
 use crate::EtherCATThreadChannel;
 use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::multi_timestamp::{MultiTimestampInput, MultiTimestampOutput};
@@ -7,7 +8,6 @@ use crate::{
     BECKHOFF_VENDOR_ID,
     io::{digital_input::DigitalInputDevice, multi_timestamp::MultiTimestampEvent},
 };
-use anyhow::bail;
 use qitech_lib_ethercat_hal_derive::EthercatDevice;
 use std::collections::VecDeque;
 
@@ -32,21 +32,33 @@ pub struct EL1259 {
 }
 
 impl EthercatDeviceProcessing for EL1259 {
-    fn input_post_process(&mut self) -> Result<(), anyhow::Error> {
+    fn input_post_process(&mut self) -> Result<(), DeviceError> {
         for channel in 0..8 {
             let txmto = self.txpdo.get_mto(channel);
             let txmti = self.txpdo.get_mti(channel);
 
             if txmto.output_short_circuit {
-                bail!("Short circuit on channel {}", channel + 1);
+                return Err(DeviceError::ChannelFault {
+                    device: "EL1259",
+                    channel: channel + 1,
+                    fault: "short circuit",
+                });
             }
 
             if txmto.output_buffer_overflow {
-                bail!("Buffer overflow on output channel {}", channel + 1);
+                return Err(DeviceError::ChannelFault {
+                    device: "EL1259",
+                    channel: channel + 1,
+                    fault: "output buffer overflow",
+                });
             }
 
             if txmti.input_buffer_overflow {
-                bail!("Buffer overflow on input channel {}", channel + 1);
+                return Err(DeviceError::ChannelFault {
+                    device: "EL1259",
+                    channel: channel + 1,
+                    fault: "input buffer overflow",
+                });
             }
         }
 
@@ -63,7 +75,7 @@ impl EthercatDeviceProcessing for EL1259 {
         Ok(())
     }
 
-    fn output_pre_process(&mut self) -> Result<(), anyhow::Error> {
+    fn output_pre_process(&mut self) -> Result<(), DeviceError> {
         match self.state {
             State::ResetOn => {
                 for channel in 0..8 {
@@ -108,7 +120,7 @@ impl EthercatDeviceProcessing for EL1259 {
 }
 
 impl DigitalInputDevice for EL1259 {
-    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<bool, DeviceError> {
         Ok(self.txpdo.get_mti(port).input_state)
     }
 
@@ -180,7 +192,7 @@ impl ConfigurableDevice<EL1259Configuration> for EL1259 {
         channel: EtherCATThreadChannel,
         device_address: u16,
         config: &EL1259Configuration,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         config.write_config(channel, device_address)?;
         Ok(())
     }
@@ -198,7 +210,7 @@ impl Configuration for EL1259Configuration {
         &self,
         channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         self.txpdo_assignment()
             .write_config(channel.clone(), device_address)?;
         self.rxpdo_assignment()

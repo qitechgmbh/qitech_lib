@@ -14,8 +14,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::{
-    DiagnosticRequest, DiagnosticResponse, EtherCATController, EtherCATState, EthercatErr,
-    MAX_SUBDEVICES, Mailbox, TripleBufProducer,
+    ChannelError, DiagnosticRequest, DiagnosticResponse, EtherCATController, EtherCATState,
+    EthercatErr, MAX_SUBDEVICES, Mailbox, TripleBufProducer,
 };
 
 const MAX_REPORTS: usize = 32;
@@ -402,7 +402,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                 let result = Command::fprd(device_address, register)
                     .receive::<u16>(maindevice)
                     .await
-                    .map_err(|e| anyhow::anyhow!("register read failed: {e:?}"));
+                    .map_err(ChannelError::from);
                 let _ = response_channel.send(DiagnosticResponse::RegisterReadResponse(result));
             }
             DiagnosticRequest::AlStatusSnapshot { response_channel } => {

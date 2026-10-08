@@ -7,8 +7,11 @@ description = "GRAM XTREM / XTREM-S weighing module communication protocol (UDP)
 
 [dependencies]
 tokio = { workspace = true, features = ["sync","rt-multi-thread","macros","net","time"] }
-anyhow.workspace = true
+thiserror.workspace = true
 qitech_lib_common.workspace = true
 qitech_lib_units.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
 
 [lib]

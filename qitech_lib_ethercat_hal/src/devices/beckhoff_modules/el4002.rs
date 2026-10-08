@@ -101,7 +101,7 @@ impl EL4002 {
         &mut self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         /*
         self.configuration
             .channel1

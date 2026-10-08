@@ -3,6 +3,7 @@ pub mod coe;
 pub mod controller;
 pub mod debugging;
 pub mod devices;
+pub mod error;
 pub mod ethercat_helpers;
 pub mod helpers;
 pub mod interface_discovery;
@@ -15,7 +16,6 @@ use al_diagnostics::{TransitionLog, TransitionReport};
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
 use std::cell::UnsafeCell;
-use std::fmt;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
@@ -26,29 +26,7 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Mutex;
 use triple_buffer::{Input, Output};
 
-#[derive(Debug)]
-pub enum EthercatErr {
-    Custom(String),
-    PreopTransitionFailed,
-    SafeopTransitionFailed,
-    OpTransitionFailed,
-    WorkingCounterErr,
-}
-
-impl fmt::Display for EthercatErr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            EthercatErr::Custom(msg) => write!(f, "Ethercat-error: {}", msg),
-            EthercatErr::PreopTransitionFailed => write!(f, "Failed to transition to PREOP state"),
-            EthercatErr::SafeopTransitionFailed => {
-                write!(f, "Failed to transition to SAFEOP state")
-            }
-            EthercatErr::OpTransitionFailed => write!(f, "Failed to transition to OP state"),
-            EthercatErr::WorkingCounterErr => write!(f, "Working counter error (WKC)"),
-        }
-    }
-}
-impl std::error::Error for EthercatErr {}
+pub use error::{ChannelError, DeviceError, Error, EthercatErr, InterfaceError, PdoError};
 
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -317,13 +295,13 @@ where
         self.inputs_ready.load(Relaxed)
     }
 
-    pub fn try_get_subdevices_vec_sync(&self) -> Result<Vec<MetaSubdevice>, anyhow::Error> {
+    pub fn try_get_subdevices_vec_sync(&self) -> Result<Vec<MetaSubdevice>, ChannelError> {
         let unlocked = self.subdevices.blocking_lock();
         let count = self.get_subdevice_count() as usize;
         Ok(unlocked.clone()[0..count].to_vec())
     }
 
-    pub async fn try_get_subdevices_vec(&self) -> Result<Vec<MetaSubdevice>, anyhow::Error> {
+    pub async fn try_get_subdevices_vec(&self) -> Result<Vec<MetaSubdevice>, ChannelError> {
         let unlocked = self.subdevices.lock().await;
         let count = self.get_subdevice_count() as usize;
         Ok(unlocked.clone()[0..count].to_vec())
@@ -362,7 +340,7 @@ where
 {
     pub channel: EtherCATThreadChannel,
     pub app_handle: EtherCATAppHandle<C, P>,
-    pub join_handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
+    pub join_handle: Option<JoinHandle<Result<(), EthercatErr>>>,
 }
 
 pub type StdEcatHandle = EtherCATAppHandle<TripleBufConsumer, Arc<Mailbox>>;
@@ -407,7 +385,7 @@ impl std::fmt::Debug for MetaSubdevice {
 }
 
 impl MetaSubdevice {
-    pub fn get_name(&self) -> Result<String, anyhow::Error> {
+    pub fn get_name(&self) -> Result<String, std::string::FromUtf8Error> {
         let trimmed = self
             .name
             .iter()
@@ -517,7 +495,7 @@ pub enum DiagnosticRequest {
 
 #[derive(Debug)]
 pub enum DiagnosticResponse {
-    RegisterReadResponse(Result<u16, anyhow::Error>),
+    RegisterReadResponse(Result<u16, ChannelError>),
     AlStatusSnapshotResponse(Vec<al_diagnostics::SubDeviceAlStatus>),
 }
 
@@ -526,19 +504,19 @@ pub struct MachineIdent {}
 
 #[derive(Debug)]
 pub enum ChannelResponse {
-    SdoResponseBool(Result<bool, anyhow::Error>),
-    SdoResponseU8(Result<u8, anyhow::Error>),
-    SdoResponseU16(Result<u16, anyhow::Error>),
-    SdoResponseU32(Result<u32, anyhow::Error>),
-    SdoResponseI16(Result<i16, anyhow::Error>),
-    SdoResponseI32(Result<i32, anyhow::Error>),
-    SdoWriteResponse(Result<(), anyhow::Error>),
-    ChangeState(Result<(), anyhow::Error>),
-    MachineDeviceInfoResponse(Result<Vec<MachineDeviceInfo>, anyhow::Error>),
-    WriteMachineInfoResponse(Result<(), anyhow::Error>),
-    EnableDCSync0Response(Result<(), anyhow::Error>),
-    EnableDCSync01Response(Result<(), anyhow::Error>),
-    ConfigureOversamplingResponse(Result<(), anyhow::Error>),
+    SdoResponseBool(Result<bool, ChannelError>),
+    SdoResponseU8(Result<u8, ChannelError>),
+    SdoResponseU16(Result<u16, ChannelError>),
+    SdoResponseU32(Result<u32, ChannelError>),
+    SdoResponseI16(Result<i16, ChannelError>),
+    SdoResponseI32(Result<i32, ChannelError>),
+    SdoWriteResponse(Result<(), ChannelError>),
+    ChangeState(Result<(), EthercatErr>),
+    MachineDeviceInfoResponse(Result<Vec<MachineDeviceInfo>, ChannelError>),
+    WriteMachineInfoResponse(Result<(), ChannelError>),
+    EnableDCSync0Response(Result<(), ChannelError>),
+    EnableDCSync01Response(Result<(), ChannelError>),
+    ConfigureOversamplingResponse(Result<(), ChannelError>),
 }
 
 #[derive(Debug)]

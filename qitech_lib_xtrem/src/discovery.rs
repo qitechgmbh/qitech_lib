@@ -15,7 +15,7 @@
 use crate::protocol::{
     BROADCAST_ID, DataAddress, DeviceState, Function, RegisterValue, WriteResult,
 };
-use crate::transport::{Destination, Inbound, XtremBusHandle};
+use crate::transport::{BusError, Destination, Inbound, XtremBusHandle};
 use std::collections::BTreeMap;
 use std::net::SocketAddrV4;
 use std::time::Duration;
@@ -27,6 +27,20 @@ pub const DEFAULT_DISCOVERY_WINDOW: Duration = Duration::from_millis(2000);
 
 /// How long a single follow-up read may take before it is given up on.
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_millis(500);
+
+/// Why [`assign_device_id`] failed.
+#[derive(Debug, thiserror::Error)]
+pub enum AssignIdError {
+    /// The write request could not be sent.
+    #[error(transparent)]
+    Bus(#[from] BusError),
+    /// The module answered, but refused the new ID.
+    #[error("device {device_id:02X}h refused ID write: {result}")]
+    Refused { device_id: u8, result: WriteResult },
+    /// No write response arrived in time.
+    #[error("device {device_id:02X}h did not answer the ID write within {timeout:?}")]
+    Timeout { device_id: u8, timeout: Duration },
+}
 
 /// One module found on the network.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,7 +67,7 @@ pub struct XtremProbe {
 pub async fn discover(
     handle: &XtremBusHandle,
     window: Duration,
-) -> Result<Vec<XtremProbe>, anyhow::Error> {
+) -> Result<Vec<XtremProbe>, BusError> {
     // Subscribe before probing, otherwise a fast module can answer before we are listening.
     let mut events = handle.events();
     handle
@@ -164,7 +178,7 @@ pub async fn assign_device_id(
     addr: SocketAddrV4,
     new_id: u8,
     request_timeout: Duration,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), AssignIdError> {
     let mut events = handle.events();
     let payload = format!("{new_id:02X}").into_bytes();
     handle
@@ -192,14 +206,16 @@ pub async fn assign_device_id(
         return if result.is_ok() {
             Ok(())
         } else {
-            Err(anyhow::anyhow!(
-                "device {current_id:02X}h refused ID write: {result}"
-            ))
+            Err(AssignIdError::Refused {
+                device_id: current_id,
+                result,
+            })
         };
     }
-    Err(anyhow::anyhow!(
-        "device {current_id:02X}h did not answer the ID write within {request_timeout:?}"
-    ))
+    Err(AssignIdError::Timeout {
+        device_id: current_id,
+        timeout: request_timeout,
+    })
 }
 
 /// Extract the value from `inbound` if it is a read response for `address`.

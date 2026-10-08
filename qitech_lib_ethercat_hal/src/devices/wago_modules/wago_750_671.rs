@@ -1,3 +1,4 @@
+use crate::{DeviceError, PdoError};
 /*
  * Wago Stepper Controller 750-671
  * 24 VDC / 1.5 A
@@ -145,12 +146,15 @@ pub struct Wago750_671TxPdo {
     pub status_byte1: u8,     // S1
 }
 impl DigitalInputDevice for Wago750_671 {
-    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<bool, DeviceError> {
         let s3 = StatusByteS3::from_bits(self.txpdo.status_byte3);
         match port {
             0 => Ok(s3.has_flag(S3Flag::Input1)),
             1 => Ok(s3.has_flag(S3Flag::Input2)),
-            _ => Err(anyhow::anyhow!("Wago750_671 has 2 digital inputs (0-1)")),
+            _ => Err(DeviceError::InvalidPort {
+                device: "Wago750_671",
+                port,
+            }),
         }
     }
 
@@ -177,11 +181,11 @@ impl EthercatDynamicPDO for Wago750_671 {
 }
 
 impl EthercatDeviceProcessing for Wago750_671 {
-    fn input_post_process(&mut self) -> Result<(), anyhow::Error> {
+    fn input_post_process(&mut self) -> Result<(), DeviceError> {
         Ok(())
     }
 
-    fn output_pre_process(&mut self) -> Result<(), anyhow::Error> {
+    fn output_pre_process(&mut self) -> Result<(), DeviceError> {
         Ok(())
     }
 }
@@ -194,7 +198,7 @@ impl EthercatDevice for Wago750_671 {
     fn input(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         let base = self.tx_bit_offset;
 
         let mut b = [0u8; 12];
@@ -434,7 +438,7 @@ impl EthercatDevice for Wago750_671 {
     fn output(
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         let base = self.rx_bit_offset;
 
         let b = [
@@ -478,18 +482,15 @@ impl EthercatDevice for Wago750_671 {
     fn input_checked(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         let expected = self.input_len();
         let actual = input.len();
         if actual != expected {
-            return Err(anyhow::anyhow!(
-                "[{}::Device::input_checked] Input length is {} ({} bytes) and must be {} bits ({} bytes)",
-                module_path!(),
-                actual,
-                actual / 8,
+            return Err(PdoError::LengthMismatch {
+                device: "Wago750_671",
                 expected,
-                expected / 8
-            ));
+                actual,
+            });
         }
         Ok(())
     }
@@ -497,18 +498,15 @@ impl EthercatDevice for Wago750_671 {
     fn output_checked(
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         let expected = self.output_len();
         let actual = output.len();
         if actual != expected {
-            return Err(anyhow::anyhow!(
-                "[{}::Device::output_checked] Output length is {} ({} bytes) and must be {} bits ({} bytes)",
-                module_path!(),
-                actual,
-                actual / 8,
+            return Err(PdoError::LengthMismatch {
+                device: "Wago750_671",
                 expected,
-                expected / 8
-            ));
+                actual,
+            });
         }
         Ok(())
     }

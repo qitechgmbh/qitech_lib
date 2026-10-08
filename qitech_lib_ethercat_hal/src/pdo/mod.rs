@@ -7,6 +7,7 @@ pub mod el5152;
 pub mod el70x1;
 pub mod el70x7;
 pub mod oversampling;
+use crate::PdoError;
 use crate::coe::Configuration;
 use bitvec::prelude::*;
 
@@ -148,7 +149,7 @@ pub trait RxPdo: Configuration {
     }
 
     /// Will give the mutable PDU bit array to the PDO objects to encode the data
-    fn write(&self, buffer: &mut BitSlice<u8, Lsb0>) -> Result<(), anyhow::Error> {
+    fn write(&self, buffer: &mut BitSlice<u8, Lsb0>) -> Result<(), PdoError> {
         let mut bit_offset = 0;
         for object in self.get_objects() {
             if let Some(object) = object {
@@ -156,14 +157,11 @@ pub trait RxPdo: Configuration {
 
                 // check if end_bit_index is out of bounds
                 if end_bit_index > buffer.len() {
-                    return Err(anyhow::anyhow!(
-                        "[{}::RxPdo::write] Range {}..{} ({}bits) is out of bounds for buffer with length {}",
-                        module_path!(),
-                        bit_offset,
-                        end_bit_index,
-                        object.size(),
-                        buffer.len()
-                    ));
+                    return Err(PdoError::OutOfBounds {
+                        start: bit_offset,
+                        end: end_bit_index,
+                        len: buffer.len(),
+                    });
                 }
 
                 object.write(&mut buffer[bit_offset..end_bit_index]);
@@ -222,7 +220,7 @@ pub trait TxPdo: Configuration {
     }
 
     /// Will give the PDU bit array to the PDO objects to decode the data
-    fn read(&mut self, buffer: &BitSlice<u8, Lsb0>) -> Result<(), anyhow::Error> {
+    fn read(&mut self, buffer: &BitSlice<u8, Lsb0>) -> Result<(), PdoError> {
         let mut bit_offset = 0;
         for object in self.get_objects_mut().iter_mut() {
             if let Some(object) = object {
@@ -230,14 +228,11 @@ pub trait TxPdo: Configuration {
 
                 // check if end_bit_index is out of bounds
                 if end_bit_index > buffer.len() {
-                    return Err(anyhow::anyhow!(
-                        "[{}::TxPdo::read] Range {}..{} ({}bits) is out of bounds for buffer with length {}",
-                        module_path!(),
-                        bit_offset,
-                        end_bit_index,
-                        object.size(),
-                        buffer.len()
-                    ));
+                    return Err(PdoError::OutOfBounds {
+                        start: bit_offset,
+                        end: end_bit_index,
+                        len: buffer.len(),
+                    });
                 }
 
                 object.read(&buffer[bit_offset..end_bit_index]);

@@ -1,3 +1,4 @@
+use crate::DeviceError;
 use crate::pdo::TxPdo;
 use crate::{
     io::temperature_input::{TemperatureInputDevice, TemperatureInputInput},
@@ -31,14 +32,19 @@ impl NewEthercatDevice for EL3204 {
 }
 
 impl TemperatureInputDevice for EL3204 {
-    fn get_input(&self, port: usize) -> Result<TemperatureInputInput, anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<TemperatureInputInput, DeviceError> {
         let expect_text = "All channels should be Some(_)";
         let channel = match port {
             0 => self.txpdo.channel1.as_ref().expect(expect_text),
             1 => self.txpdo.channel2.as_ref().expect(expect_text),
             2 => self.txpdo.channel3.as_ref().expect(expect_text),
             3 => self.txpdo.channel4.as_ref().expect(expect_text),
-            _ => return Err(anyhow::anyhow!("port {} does not exist on EL3204 !", port)),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "EL3204",
+                    port,
+                });
+            }
         };
 
         Ok(TemperatureInputInput {

@@ -1,3 +1,5 @@
+use crate::DeviceError;
+use crate::PdoError;
 use crate::devices::{
     DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, Module, SubDeviceProductTuple,
 };
@@ -52,7 +54,7 @@ pub struct Wago750_430TxPdo {
 }
 
 impl DigitalInputDevice for Wago750_430 {
-    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<bool, DeviceError> {
         let val = match port {
             0 => self.txpdo.port1,
             1 => self.txpdo.port2,
@@ -62,7 +64,12 @@ impl DigitalInputDevice for Wago750_430 {
             5 => self.txpdo.port6,
             6 => self.txpdo.port7,
             7 => self.txpdo.port8,
-            _ => return Err(anyhow::anyhow!("Wago750_430 has 8 ports (0-7)")),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "Wago750_430",
+                    port,
+                });
+            }
         };
         Ok(val)
     }
@@ -99,7 +106,7 @@ impl EthercatDevice for Wago750_430 {
     fn input(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         self.txpdo.port1 = input[0];
         self.txpdo.port2 = input[1];
         self.txpdo.port3 = input[2];
@@ -118,7 +125,7 @@ impl EthercatDevice for Wago750_430 {
     fn output(
         &self,
         _output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 
@@ -141,14 +148,14 @@ impl EthercatDevice for Wago750_430 {
     fn input_checked(
         &mut self,
         _input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 
     fn output_checked(
         &self,
         _output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 

@@ -16,7 +16,7 @@ pub mod discovery;
 pub mod protocol;
 pub mod transport;
 
-pub use devices::{Reading, ScaleMode, XtremDevice, XtremError, XtremScale};
-pub use discovery::{XtremProbe, discover};
+pub use devices::{DeviceError, Reading, ScaleMode, XtremDevice, XtremError, XtremScale};
+pub use discovery::{AssignIdError, XtremProbe, discover};
 pub use protocol::{DataAddress, Frame, Function, ProtocolError, WeighingRegister, Weight};
-pub use transport::{XtremBus, XtremBusConfig, XtremBusHandle};
+pub use transport::{BusError, XtremBus, XtremBusConfig, XtremBusHandle};

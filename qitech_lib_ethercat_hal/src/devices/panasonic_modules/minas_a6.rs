@@ -3,6 +3,9 @@
 //! PDO I/O
 //!   - `input()`: unpack raw bytes from a `BitSlice` via `load_le` into a `TxPdo` struct.
 //!   - `output()`: pack a `RxPdo` struct into raw bytes and write them via `store_le`.
+use crate::ChannelError;
+use crate::DeviceError;
+use crate::PdoError;
 
 use crate::EncoderResolution;
 use crate::devices::{
@@ -12,7 +15,6 @@ use crate::devices::{
 use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::helpers::minas_a6_subdevice_wrapper::{EtherCATSlaveWrapper, PdoMapping};
 use crate::io::servo_velocity_minasa6::{MinasA6BDevice, MinasA6BInput, MinasA6BOutput};
-use anyhow::{Error, anyhow};
 use bitvec::field::BitField;
 use bitvec::prelude::{BitSlice, Lsb0};
 use std::collections::VecDeque;
@@ -330,9 +332,13 @@ impl PositionSpec {
         speed_rps: f64,
         acceleration_rps2: f64,
         deceleration_rps2: f64,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, DeviceError> {
         if !n_revolutions.is_finite() {
-            return Err(anyhow!("n_revolutions must be finite, got {n_revolutions}"));
+            return Err(DeviceError::InvalidValue {
+                device: "MinasA6B",
+                what: "n_revolutions",
+                value: n_revolutions,
+            });
         }
         for (name, v) in [
             ("speed_rps", speed_rps),
@@ -340,9 +346,12 @@ impl PositionSpec {
             ("deceleration_rps2", deceleration_rps2),
         ] {
             if !v.is_finite() || v <= 0.0 {
-                return Err(anyhow!(
-                    "{name} must be finite and > 0 (got {v}); control direction via the sign of n_revolutions"
-                ));
+                // control the direction via the sign of n_revolutions
+                return Err(DeviceError::InvalidValue {
+                    device: "MinasA6B",
+                    what: name,
+                    value: v,
+                });
             }
         }
         Ok(Self {
@@ -485,7 +494,7 @@ impl EthercatDevice for MinasA6BMotor {
     fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
-    fn input(&mut self, input: &BitSlice<u8, Lsb0>) -> Result<(), Error> {
+    fn input(&mut self, input: &BitSlice<u8, Lsb0>) -> Result<(), PdoError> {
         self.txpdo = MinasA6BTxPdo::from_bitslice(input, self.tx_bit_offset);
         self.poll();
         Ok(())
@@ -495,7 +504,7 @@ impl EthercatDevice for MinasA6BMotor {
         TX_PDO_BYTES * 8
     }
 
-    fn output(&self, output: &mut BitSlice<u8, Lsb0>) -> Result<(), Error> {
+    fn output(&self, output: &mut BitSlice<u8, Lsb0>) -> Result<(), PdoError> {
         self.rxpdo.to_bitslice(output, self.rx_bit_offset);
         Ok(())
     }
@@ -524,34 +533,28 @@ impl EthercatDevice for MinasA6BMotor {
         self.module = Some(module);
     }
 
-    fn input_checked(&mut self, input: &BitSlice<u8, Lsb0>) -> Result<(), Error> {
+    fn input_checked(&mut self, input: &BitSlice<u8, Lsb0>) -> Result<(), PdoError> {
         let expected = self.input_len();
         let actual = input.len();
         if actual != expected {
-            return Err(anyhow!(
-                "[{}::input_checked] got {} bits ({} bytes), expected {} bits ({} bytes)",
-                module_path!(),
-                actual,
-                actual / 8,
+            return Err(PdoError::LengthMismatch {
+                device: "MinasA6B",
                 expected,
-                expected / 8
-            ));
+                actual,
+            });
         }
         self.input(input)
     }
 
-    fn output_checked(&self, output: &mut BitSlice<u8, Lsb0>) -> Result<(), Error> {
+    fn output_checked(&self, output: &mut BitSlice<u8, Lsb0>) -> Result<(), PdoError> {
         let expected = self.output_len();
         let actual = output.len();
         if actual != expected {
-            return Err(anyhow!(
-                "[{}::output_checked] got {} bits ({} bytes), expected {} bits ({} bytes)",
-                module_path!(),
-                actual,
-                actual / 8,
+            return Err(PdoError::LengthMismatch {
+                device: "MinasA6B",
                 expected,
-                expected / 8
-            ));
+                actual,
+            });
         }
         self.output(output)
     }
@@ -568,7 +571,7 @@ impl MinasA6BMotor {
     pub async fn read_digital_inputs<'a>(
         &self,
         device: &'a EthercrabSubDevicePreoperational<'a>,
-    ) -> Result<u32, Error> {
+    ) -> Result<u32, crate::Error> {
         let w = EtherCATSlaveWrapper::new(device);
         let di = w.read_sdo_u32(0x60FD, 0).await?;
         tracing::info!("Drive digital inputs 0x60FD: 0x{:08X}", di);
@@ -588,7 +591,7 @@ impl MinasA6BMotor {
     pub async fn write_input_pin_functions<'a>(
         &self,
         device: &'a EthercrabSubDevicePreoperational<'a>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), crate::Error> {
         let w = EtherCATSlaveWrapper::new(device);
         let function_values: [u32; 8] = [
             0x00323232, // SI1
@@ -621,7 +624,7 @@ impl MinasA6BMotor {
     pub async fn configure<'a>(
         &self,
         device: &'a EthercrabSubDevicePreoperational<'a>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), crate::Error> {
         let w = EtherCATSlaveWrapper::new(device);
 
         w.configure_pdo_mapping(Reg::RX_PDO, &SET_DATA_MAPPING)
@@ -648,14 +651,12 @@ impl MinasA6BMotor {
     pub async fn read_encoder_resolution<'a>(
         &mut self,
         device: &'a EthercrabSubDevicePreoperational<'a>,
-    ) -> Result<EncoderResolution, Error> {
+    ) -> Result<EncoderResolution, crate::Error> {
         let w = EtherCATSlaveWrapper::new(device);
         let increments = w.read_sdo_u32(Reg::ENCODER_RESOLUTION, 1).await?;
         let revolutions = w.read_sdo_u32(Reg::ENCODER_RESOLUTION, 2).await?;
         if revolutions == 0 {
-            return Err(anyhow!(
-                "ENCODER_RESOLUTION sub-index 2 returned 0 revolutions"
-            ));
+            return Err(ChannelError::InvalidResponse("ENCODER_RESOLUTION revolutions").into());
         }
         let res = EncoderResolution {
             increments,
@@ -670,10 +671,11 @@ impl MinasA6BMotor {
     pub async fn setup_homing<'a>(
         &self,
         device: &'a EthercrabSubDevicePreoperational<'a>,
-    ) -> Result<(), Error> {
-        let enc = self
-            .encoder_resolution
-            .ok_or_else(|| anyhow!("setup_homing called before encoder resolution was read"))?;
+    ) -> Result<(), crate::Error> {
+        let enc = self.encoder_resolution.ok_or(DeviceError::InvalidState {
+            device: "MinasA6B",
+            reason: "setup_homing called before encoder resolution was read",
+        })?;
         let w = EtherCATSlaveWrapper::new(device);
 
         let mode_val: u8 = self.homing_config.homing_direction.mode_code();
@@ -706,7 +708,7 @@ impl MinasA6BMotor {
     pub async fn start_encoder_multi_turn_reset<'a>(
         &mut self,
         device: &'a EthercrabSubDevicePreoperational<'a>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), crate::Error> {
         let w = EtherCATSlaveWrapper::new(device);
         w.write_sdo_u16(Reg::ENCODER_MULTI_TURN_DATA_CLEAR, 0, 0x31)
             .await?;
@@ -721,7 +723,7 @@ impl MinasA6BMotor {
     pub async fn encoder_multi_turn_reset_done<'a>(
         &self,
         device: &'a EthercrabSubDevicePreoperational<'a>,
-    ) -> Result<bool, Error> {
+    ) -> Result<bool, crate::Error> {
         let w = EtherCATSlaveWrapper::new(device);
         Ok(w.read_sdo_u16(Reg::ENCODER_MULTI_TURN_DATA_CLEAR, 0)
             .await?
@@ -732,7 +734,7 @@ impl MinasA6BMotor {
     pub async fn finish_encoder_multi_turn_reset<'a>(
         &mut self,
         device: &'a EthercrabSubDevicePreoperational<'a>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), crate::Error> {
         let w = EtherCATSlaveWrapper::new(device);
         w.write_sdo_u32(Reg::ENCODER_MULTI_TURN_DATA_CLEAR_TRIGGER, 1, 0)
             .await?;
@@ -791,7 +793,7 @@ impl MinasA6BMotor {
     pub async fn clear_alarm<'a>(
         &self,
         device: &'a EthercrabSubDevicePreoperational<'a>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), crate::Error> {
         let w = EtherCATSlaveWrapper::new(device);
         // Panasonic alarm clear object
         w.write_sdo_u16(0x2280, 0, 0x0001).await?;
@@ -1395,7 +1397,7 @@ fn interpret_error_code(code: u16) -> String {
 }
 
 impl MinasA6BDevice for MinasA6BMotor {
-    fn get_input(&self) -> Result<MinasA6BInput, Error> {
+    fn get_input(&self) -> Result<MinasA6BInput, DeviceError> {
         Ok(MinasA6BInput {
             position: self.get_position(),
             is_enabled: self.is_enabled(),
@@ -1410,7 +1412,7 @@ impl MinasA6BDevice for MinasA6BMotor {
         })
     }
 
-    fn get_output(&self) -> Result<MinasA6BOutput, Error> {
+    fn get_output(&self) -> Result<MinasA6BOutput, DeviceError> {
         Ok(MinasA6BOutput {
             control_word: self.rxpdo.control_word,
             mode: self.rxpdo.mode,
@@ -1421,22 +1423,22 @@ impl MinasA6BDevice for MinasA6BMotor {
         })
     }
 
-    fn enable(&mut self) -> Result<(), Error> {
+    fn enable(&mut self) -> Result<(), DeviceError> {
         MinasA6BMotor::enable(self);
         Ok(())
     }
 
-    fn disable(&mut self) -> Result<(), Error> {
+    fn disable(&mut self) -> Result<(), DeviceError> {
         MinasA6BMotor::disable(self);
         Ok(())
     }
 
-    fn quick_stop(&mut self) -> Result<(), Error> {
+    fn quick_stop(&mut self) -> Result<(), DeviceError> {
         MinasA6BMotor::quick_stop(self);
         Ok(())
     }
 
-    fn leave_quick_stop(&mut self) -> Result<(), Error> {
+    fn leave_quick_stop(&mut self) -> Result<(), DeviceError> {
         MinasA6BMotor::leave_quick_stop(self);
         Ok(())
     }
@@ -1445,7 +1447,7 @@ impl MinasA6BDevice for MinasA6BMotor {
         &mut self,
         position: PositionSpec,
         transition: Option<PositionTransitionSpec>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), DeviceError> {
         self.move_position(position, transition);
         Ok(())
     }
@@ -1454,17 +1456,17 @@ impl MinasA6BDevice for MinasA6BMotor {
         &mut self,
         positions: Vec<PositionSpec>,
         transition: Option<PositionTransitionSpec>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), DeviceError> {
         self.move_positions(positions, transition);
         Ok(())
     }
 
-    fn abort_motion(&mut self) -> Result<(), Error> {
+    fn abort_motion(&mut self) -> Result<(), DeviceError> {
         self.abort_motion();
         Ok(())
     }
 
-    fn home(&mut self) -> Result<(), Error> {
+    fn home(&mut self) -> Result<(), DeviceError> {
         self.home();
         Ok(())
     }

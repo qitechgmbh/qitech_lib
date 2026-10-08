@@ -1042,8 +1042,8 @@ dependencies = [
 name = "qitech_lib_common"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "libc",
+ "thiserror",
  "tokio",
 ]
 
@@ -1051,7 +1051,6 @@ dependencies = [
 name = "qitech_lib_ethercat_hal"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "approx",
  "bitvec",
  "core_affinity",
@@ -1065,6 +1064,7 @@ dependencies = [
  "smol",
  "spin_sleep",
  "ta",
+ "thiserror",
  "tokio",
  "tracing",
  "triple_buffer",
@@ -1094,6 +1094,7 @@ dependencies = [
  "anyhow",
  "qitech_lib_common",
  "qitech_lib_units",
+ "thiserror",
  "tokio",
 ]
 

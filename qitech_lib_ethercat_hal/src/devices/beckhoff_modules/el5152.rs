@@ -1,4 +1,5 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::DeviceError;
 use crate::EtherCATThreadChannel;
 use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::encoder_input::{
@@ -78,7 +79,7 @@ impl ConfigurableDevice<EL5152Configuration> for EL5152 {
         ecat_chhanel: EtherCATThreadChannel,
         device_address: u16,
         config: &EL5152Configuration,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         config.write_config(ecat_chhanel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
@@ -92,7 +93,7 @@ impl ConfigurableDevice<EL5152Configuration> for EL5152 {
 }
 
 impl EncoderInputDevice for EL5152 {
-    fn get_counter_value(&self, port: usize) -> Result<EncoderInputCounter, anyhow::Error> {
+    fn get_counter_value(&self, port: usize) -> Result<EncoderInputCounter, DeviceError> {
         let value = match port {
             0 => self
                 .txpdo
@@ -104,12 +105,17 @@ impl EncoderInputDevice for EL5152 {
                 .status_channel2
                 .as_ref()
                 .map_or(0, |status| status.counter_value),
-            _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!")),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "EL5152",
+                    port,
+                });
+            }
         };
         Ok(EncoderInputCounter { value })
     }
 
-    fn get_frequency(&self, port: usize) -> Result<Option<EncoderInputFrequency>, anyhow::Error> {
+    fn get_frequency(&self, port: usize) -> Result<Option<EncoderInputFrequency>, DeviceError> {
         let frequency = match port {
             0 => self
                 .txpdo
@@ -125,12 +131,17 @@ impl EncoderInputDevice for EL5152 {
                 .map(|f| EncoderInputFrequency {
                     value: f.frequency_value,
                 }),
-            _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!")),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "EL5152",
+                    port,
+                });
+            }
         };
         Ok(frequency)
     }
 
-    fn get_period(&self, port: usize) -> Result<Option<EncoderInputPeriod>, anyhow::Error> {
+    fn get_period(&self, port: usize) -> Result<Option<EncoderInputPeriod>, DeviceError> {
         let period = match port {
             0 => self
                 .txpdo
@@ -146,12 +157,17 @@ impl EncoderInputDevice for EL5152 {
                 .map(|p| EncoderInputPeriod {
                     value: p.period_value,
                 }),
-            _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!")),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "EL5152",
+                    port,
+                });
+            }
         };
         Ok(period)
     }
 
-    fn set_counter(&mut self, port: usize, value: u32) -> Result<(), anyhow::Error> {
+    fn set_counter(&mut self, port: usize, value: u32) -> Result<(), DeviceError> {
         match port {
             0 => {
                 if let Some(control) = self.rxpdo.control_channel1.as_mut() {
@@ -165,7 +181,12 @@ impl EncoderInputDevice for EL5152 {
                     control.set_counter = true;
                 }
             }
-            _ => return Err(anyhow::anyhow!("EL5152 only has two Encoder ports!!!")),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "EL5152",
+                    port,
+                });
+            }
         }
         Ok(())
     }
@@ -176,7 +197,7 @@ impl Configuration for EL5152Configuration {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         // Configure channel 1
         self.channel1
             .write_channel_config(ecat_channel.clone(), device_address, 0x8000)?;
@@ -284,7 +305,7 @@ impl EL5152ChannelConfiguration {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         base_index: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(device_address, base_index, 0x03, self.enable_counter)?;
         ecat_channel.sdo_write(device_address, base_index, 0x08, self.disable_filter)?;
         ecat_channel.sdo_write(

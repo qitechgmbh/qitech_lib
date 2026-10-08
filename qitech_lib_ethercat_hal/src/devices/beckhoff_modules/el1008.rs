@@ -1,4 +1,5 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::DeviceError;
 use crate::io::digital_input::DigitalInputDevice;
 use crate::pdo::basic::BoolPdoObject;
 use crate::pdo::{PredefinedPdoAssignment, TxPdo};
@@ -30,7 +31,7 @@ impl NewEthercatDevice for EL1008 {
 }
 
 impl DigitalInputDevice for EL1008 {
-    fn get_input(&self, port: usize) -> Result<bool, anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<bool, DeviceError> {
         let val = match port {
             0 => {
                 self.txpdo
@@ -88,7 +89,12 @@ impl DigitalInputDevice for EL1008 {
                     .expect("EL1008 Channel 8 not found")
                     .value
             }
-            _ => return Err(anyhow::anyhow!("EL1008 has 8 ports! (0-7)")),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "EL1008",
+                    port,
+                });
+            }
         };
         Ok(val)
     }

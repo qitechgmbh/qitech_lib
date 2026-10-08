@@ -1,4 +1,5 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::DeviceError;
 use crate::EtherCATThreadChannel;
 use crate::io::analog_input::{AnalogInputDevice, AnalogInputInput};
 use crate::pdo::RxPdo;
@@ -58,7 +59,7 @@ impl NewEthercatDevice for EL3062_0030 {
 }
 
 impl AnalogInputDevice for EL3062_0030 {
-    fn get_input(&self, port: usize) -> Result<AnalogInputInput, anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput, DeviceError> {
         let raw_value = match port {
             0 => match &self.txpdo {
                 EL3062_0030TxPdo {
@@ -82,14 +83,24 @@ impl AnalogInputDevice for EL3062_0030 {
                 } => ai_compact_channel2.value,
                 _ => panic!("Invalid TxPdo assignment"),
             },
-            _ => return Err(anyhow::anyhow!("EL3062_0030 only has TWO ports")),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "EL3062_0030",
+                    port,
+                });
+            }
         };
         let raw_value = U16SigningConverter::load_raw(raw_value);
 
         let presentation = match port {
             0 => &self.configuration.channel_1.presentation,
             1 => &self.configuration.channel_2.presentation,
-            _ => return Err(anyhow::anyhow!("EL3062_0030 only has TWO ports")),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "EL3062_0030",
+                    port,
+                });
+            }
         };
         let value: i16 = match presentation {
             EL30XXPresentation::Unsigned => raw_value.as_unsigned() as i16,
@@ -125,7 +136,7 @@ impl ConfigurableDevice<EL3062_0030Configuration> for EL3062_0030 {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         config: &EL3062_0030Configuration,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         config.write_config(ecat_channel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
@@ -158,7 +169,7 @@ impl crate::coe::Configuration for EL3062_0030TxPdo {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         // Clear sync manager manager PDO assignment
         ecat_channel.sdo_write(device_address, 0x1C13, 0, 0u8)?;
 
@@ -232,7 +243,7 @@ impl crate::coe::Configuration for EL3062_0030RxPdo {
         &self,
         _ecat_channel: EtherCATThreadChannel,
         _addr: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         Ok(())
     }
 }
@@ -247,7 +258,7 @@ impl Configuration for EL3062_0030Configuration {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         self.channel_1
             .write_channel_config(ecat_channel.clone(), device_address, 0x8000)?;
         self.channel_2

@@ -1,3 +1,4 @@
+use crate::PdoError;
 use bitvec::field::BitField;
 use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;
@@ -95,7 +96,7 @@ impl EthercatDevice for Wago750_455 {
     fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
-    fn input(&mut self, input: &BitSlice<u8, Lsb0>) -> Result<(), anyhow::Error> {
+    fn input(&mut self, input: &BitSlice<u8, Lsb0>) -> Result<(), PdoError> {
         let base = self.tx_bit_offset;
 
         self.tx_pdo.ai1.read(&input[base..(base + 16)]);
@@ -113,7 +114,7 @@ impl EthercatDevice for Wago750_455 {
     fn output(
         &self,
         _output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 
@@ -136,14 +137,14 @@ impl EthercatDevice for Wago750_455 {
     fn input_checked(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         self.input(input)
     }
 
     fn output_checked(
         &self,
         _output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 

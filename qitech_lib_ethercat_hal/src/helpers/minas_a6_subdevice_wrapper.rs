@@ -1,5 +1,5 @@
+use crate::ChannelError;
 use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
-use anyhow::{Error, anyhow};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy)]
@@ -28,59 +28,116 @@ impl<'a> EtherCATSlaveWrapper<'a> {
 
     // SDO write helpers
 
-    pub async fn write_sdo_u8(&self, index: u16, subindex: u8, value: u8) -> Result<(), Error> {
+    pub async fn write_sdo_u8(
+        &self,
+        index: u16,
+        subindex: u8,
+        value: u8,
+    ) -> Result<(), ChannelError> {
         self.device
             .sdo_write(index, subindex, value)
             .await
-            .map_err(|e| anyhow!("sdo_write u8  [{:#06x}/{:#04x}]: {:?}", index, subindex, e))
+            .map_err(|source| ChannelError::Sdo {
+                index,
+                sub_index: subindex,
+                source,
+            })
     }
 
-    pub async fn write_sdo_u16(&self, index: u16, subindex: u8, value: u16) -> Result<(), Error> {
+    pub async fn write_sdo_u16(
+        &self,
+        index: u16,
+        subindex: u8,
+        value: u16,
+    ) -> Result<(), ChannelError> {
         self.device
             .sdo_write(index, subindex, value)
             .await
-            .map_err(|e| anyhow!("sdo_write u16 [{:#06x}/{:#04x}]: {:?}", index, subindex, e))
+            .map_err(|source| ChannelError::Sdo {
+                index,
+                sub_index: subindex,
+                source,
+            })
     }
 
-    pub async fn write_sdo_u32(&self, index: u16, subindex: u8, value: u32) -> Result<(), Error> {
+    pub async fn write_sdo_u32(
+        &self,
+        index: u16,
+        subindex: u8,
+        value: u32,
+    ) -> Result<(), ChannelError> {
         self.device
             .sdo_write(index, subindex, value)
             .await
-            .map_err(|e| anyhow!("sdo_write u32 [{:#06x}/{:#04x}]: {:?}", index, subindex, e))
+            .map_err(|source| ChannelError::Sdo {
+                index,
+                sub_index: subindex,
+                source,
+            })
     }
 
-    pub async fn write_sdo_i16(&self, index: u16, subindex: u8, value: i16) -> Result<(), Error> {
+    pub async fn write_sdo_i16(
+        &self,
+        index: u16,
+        subindex: u8,
+        value: i16,
+    ) -> Result<(), ChannelError> {
         self.device
             .sdo_write(index, subindex, value)
             .await
-            .map_err(|e| anyhow!("sdo_write i16 [{:#06x}/{:#04x}]: {:?}", index, subindex, e))
+            .map_err(|source| ChannelError::Sdo {
+                index,
+                sub_index: subindex,
+                source,
+            })
     }
 
-    pub async fn write_sdo_i32(&self, index: u16, subindex: u8, value: i32) -> Result<(), Error> {
+    pub async fn write_sdo_i32(
+        &self,
+        index: u16,
+        subindex: u8,
+        value: i32,
+    ) -> Result<(), ChannelError> {
         self.device
             .sdo_write(index, subindex, value)
             .await
-            .map_err(|e| anyhow!("sdo_write i32 [{:#06x}/{:#04x}]: {:?}", index, subindex, e))
+            .map_err(|source| ChannelError::Sdo {
+                index,
+                sub_index: subindex,
+                source,
+            })
     }
 
     // SDO read helpers
-    pub async fn read_sdo_u16(&self, index: u16, subindex: u8) -> Result<u16, Error> {
+    pub async fn read_sdo_u16(&self, index: u16, subindex: u8) -> Result<u16, ChannelError> {
         self.device
             .sdo_read::<u16>(index, subindex)
             .await
-            .map_err(|e| anyhow!("sdo_read  u16 [{:#06x}/{:#04x}]: {:?}", index, subindex, e))
+            .map_err(|source| ChannelError::Sdo {
+                index,
+                sub_index: subindex,
+                source,
+            })
     }
 
-    pub async fn read_sdo_u32(&self, index: u16, subindex: u8) -> Result<u32, Error> {
+    pub async fn read_sdo_u32(&self, index: u16, subindex: u8) -> Result<u32, ChannelError> {
         self.device
             .sdo_read::<u32>(index, subindex)
             .await
-            .map_err(|e| anyhow!("sdo_read  u32 [{:#06x}/{:#04x}]: {:?}", index, subindex, e))
+            .map_err(|source| ChannelError::Sdo {
+                index,
+                sub_index: subindex,
+                source,
+            })
     }
 
     // PDO assignment / mapping
 
-    pub async fn assign_pdos(&self, assign_index: u16, pdo_indices: &[u16]) -> Result<(), Error> {
+    pub async fn assign_pdos(
+        &self,
+        assign_index: u16,
+        pdo_indices: &[u16],
+    ) -> Result<(), ChannelError> {
         self.write_sdo_u8(assign_index, 0x00, 0).await?;
         for (i, &pdo_index) in pdo_indices.iter().enumerate() {
             self.write_sdo_u16(assign_index, (i + 1) as u8, pdo_index)
@@ -94,7 +151,7 @@ impl<'a> EtherCATSlaveWrapper<'a> {
         &self,
         map_index: u16,
         mappings: &[PdoMapping],
-    ) -> Result<(), Error> {
+    ) -> Result<(), ChannelError> {
         self.write_sdo_u8(map_index, 0x00, 0).await?;
         for (i, mapping) in mappings.iter().enumerate() {
             self.write_sdo_u32(map_index, (i + 1) as u8, mapping.to_u32())
@@ -112,7 +169,7 @@ pub async fn wait_status<F>(
     status_description: &str,
     status_mask: u16,
     timeout: Duration,
-) -> Result<(), Error>
+) -> Result<(), ChannelError>
 where
     F: FnMut() -> Vec<u8>,
 {
@@ -133,7 +190,7 @@ where
         }
 
         if Instant::now() >= deadline {
-            return Err(anyhow!("Timeout waiting for {}", status_description));
+            return Err(ChannelError::StatusTimeout(status_description.to_string()));
         }
 
         smol::Timer::after(Duration::from_millis(2)).await;

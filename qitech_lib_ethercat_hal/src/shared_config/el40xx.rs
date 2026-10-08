@@ -112,7 +112,7 @@ impl EL40XXChannelConfiguration {
         _channel: EtherCATThreadChannel,
         _device_address: u16,
         _base_index: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         Ok(())
     }
 }
