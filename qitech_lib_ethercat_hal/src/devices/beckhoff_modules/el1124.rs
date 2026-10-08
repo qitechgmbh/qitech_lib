@@ -10,7 +10,6 @@ use qitech_lib_ethercat_hal_derive::{EthercatDevice, TxPdo};
 #[derive(Clone, EthercatDevice)]
 pub struct EL1124 {
     pub txpdo: EL1124TxPdo,
-    is_used: bool,
 }
 
 impl EthercatDeviceProcessing for EL1124 {}
@@ -25,7 +24,6 @@ impl NewEthercatDevice for EL1124 {
     fn new() -> Self {
         let s = Self {
             txpdo: EL1124TxPdo::default(),
-            is_used: false,
         };
         s
     }

@@ -17,8 +17,7 @@
 // =============================================================================
 
 use crate::devices::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed,
-    EthercatDynamicPDO, Module, NewEthercatDevice, SubDeviceProductTuple,
+    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, Module, NewEthercatDevice, SubDeviceProductTuple,
 };
 
 // =============================================================================
@@ -419,7 +418,6 @@ use crate::devices::{
 
 #[derive(Clone)]
 pub struct Wago750_XXX {
-    is_used: bool,
     tx_bit_offset: usize,
     rx_bit_offset: usize,
     module: Option<Module>,
@@ -449,16 +447,6 @@ impl EthercatDynamicPDO for Wago750_XXX {
 
     fn set_rx_offset(&mut self, offset: usize) {
         self.rx_bit_offset = offset
-    }
-}
-
-impl EthercatDeviceUsed for Wago750_XXX {
-    fn is_used(&self) -> bool {
-        self.is_used
-    }
-
-    fn set_used(&mut self, used: bool) {
-        self.is_used = used;
     }
 }
 
@@ -531,7 +519,6 @@ impl EthercatDeviceProcessing for Wago750_XXX {}
 impl NewEthercatDevice for Wago750_XXX {
     fn new() -> Self {
         Self {
-            is_used: false,
             tx_bit_offset: 0,
             rx_bit_offset: 0,
             module: None,

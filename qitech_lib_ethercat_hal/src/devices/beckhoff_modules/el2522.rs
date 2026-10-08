@@ -19,7 +19,6 @@ pub struct EL2522 {
     pub configuration: EL2522Configuration,
     pub txpdo: EL2522TxPdo,
     pub rxpdo: EL2522RxPdo,
-    is_used: bool,
 }
 
 impl EthercatDeviceProcessing for EL2522 {}
@@ -40,7 +39,6 @@ impl NewEthercatDevice for EL2522 {
             configuration,
             txpdo,
             rxpdo,
-            is_used: false,
         }
     }
 }

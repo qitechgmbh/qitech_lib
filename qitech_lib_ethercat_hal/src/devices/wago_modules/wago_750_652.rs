@@ -1,8 +1,7 @@
 use bitvec::field::BitField;
 
 use crate::devices::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceUsed, EthercatDynamicPDO, Module,
-    SubDeviceProductTuple,
+    DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, Module, SubDeviceProductTuple,
 };
 use crate::devices::{EthercatDeviceProcessing, NewEthercatDevice};
 use crate::io::serial_interface::SerialInterfaceDevice;
@@ -10,7 +9,6 @@ const WAGO750_652_MAX_BUF_LENGTH: usize = 48;
 
 #[derive(Clone)]
 pub struct Wago750_652 {
-    is_used: bool,
     tx_bit_offset: usize,
     rx_bit_offset: usize,
     module: Option<Module>,
@@ -69,16 +67,6 @@ impl Default for Wago750_652TxPdo {
             status: Default::default(),
             in_buffer: [0u8; WAGO750_652_MAX_BUF_LENGTH],
         }
-    }
-}
-
-impl EthercatDeviceUsed for Wago750_652 {
-    fn is_used(&self) -> bool {
-        self.is_used
-    }
-
-    fn set_used(&mut self, used: bool) {
-        self.is_used = used;
     }
 }
 
@@ -227,7 +215,6 @@ impl EthercatDeviceProcessing for Wago750_652 {}
 impl NewEthercatDevice for Wago750_652 {
     fn new() -> Self {
         Self {
-            is_used: false,
             tx_bit_offset: 0,
             rx_bit_offset: 0,
             module: None,

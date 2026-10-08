@@ -1,8 +1,7 @@
 use super::*;
 use crate::EtherCATThreadChannel;
 use crate::devices::{
-    EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed, NewEthercatDevice,
-    SubDeviceIdentityTuple,
+    EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple,
 };
 use crate::{
     devices::{DynamicEthercatDevice, Module},
@@ -105,7 +104,6 @@ pub struct IP20EcDi8Do8TxPdo {
 /// This device has 8x Digital Input and 8x Digital Output terminals
 #[derive(Clone)]
 pub struct IP20EcDi8Do8 {
-    is_used: bool,
     pub slots: [Option<Module>; 64],
     pub slot_devices: [Option<Arc<RwLock<dyn DynamicEthercatDevice>>>; 64],
     pub dev_count: usize,
@@ -223,22 +221,11 @@ impl EthercatDevice for IP20EcDi8Do8 {
     }
 }
 
-impl EthercatDeviceUsed for IP20EcDi8Do8 {
-    fn is_used(&self) -> bool {
-        self.is_used
-    }
-
-    fn set_used(&mut self, used: bool) {
-        self.is_used = used;
-    }
-}
-
 impl EthercatDeviceProcessing for IP20EcDi8Do8 {}
 
 impl NewEthercatDevice for IP20EcDi8Do8 {
     fn new() -> Self {
         Self {
-            is_used: false,
             slots: [const { None }; 64],
             slot_devices: [const { None }; 64],
             module_count: 0,

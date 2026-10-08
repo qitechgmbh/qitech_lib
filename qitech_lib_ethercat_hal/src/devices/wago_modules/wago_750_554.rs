@@ -1,8 +1,8 @@
 use bitvec::field::BitField;
 
 use crate::devices::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed,
-    EthercatDynamicPDO, Module, NewEthercatDevice, SubDeviceProductTuple,
+    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, Module,
+    NewEthercatDevice, SubDeviceProductTuple,
 };
 use crate::io::analog_output::AnalogCurrentOutputDevice;
 use qitech_lib_units::electric_current::milliampere;
@@ -13,7 +13,6 @@ use qitech_lib_units::f64::ElectricCurrent;
 /// 12-bit resolution, 4-20mA
 #[derive(Clone)]
 pub struct Wago750_554 {
-    is_used: bool,
     tx_bit_offset: usize,
     rx_bit_offset: usize,
     module: Option<Module>,
@@ -54,16 +53,6 @@ impl AnalogCurrentOutputDevice for Wago750_554 {
             1 => self.rx_pdo.channel2 = raw,
             _ => (),
         }
-    }
-}
-
-impl EthercatDeviceUsed for Wago750_554 {
-    fn is_used(&self) -> bool {
-        self.is_used
-    }
-
-    fn set_used(&mut self, used: bool) {
-        self.is_used = used;
     }
 }
 
@@ -159,7 +148,6 @@ impl EthercatDeviceProcessing for Wago750_554 {}
 impl NewEthercatDevice for Wago750_554 {
     fn new() -> Self {
         Self {
-            is_used: false,
             tx_bit_offset: 0,
             rx_bit_offset: 0,
             module: None,

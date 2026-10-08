@@ -15,7 +15,6 @@ use crate::{
 #[derive(EthercatDevice)]
 pub struct EL4008 {
     pub rxpdo: EL4008RxPdo,
-    pub is_used: bool,
 }
 
 impl std::fmt::Debug for EL4008 {
@@ -33,7 +32,6 @@ impl NewEthercatDevice for EL4008 {
     {
         Self {
             rxpdo: EL4008RxPdo::default(),
-            is_used: false,
         }
     }
 }

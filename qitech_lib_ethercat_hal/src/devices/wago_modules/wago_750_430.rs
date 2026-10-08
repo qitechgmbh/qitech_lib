@@ -1,13 +1,11 @@
 use crate::devices::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceUsed, EthercatDynamicPDO, Module,
-    SubDeviceProductTuple,
+    DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, Module, SubDeviceProductTuple,
 };
 use crate::devices::{EthercatDeviceProcessing, NewEthercatDevice};
 use crate::io::digital_input::DigitalInputDevice;
 
 #[derive(Clone)]
 pub struct Wago750_430 {
-    is_used: bool,
     tx_bit_offset: usize,
     rx_bit_offset: usize,
     pub txpdo: Wago750_430TxPdo,
@@ -71,16 +69,6 @@ impl DigitalInputDevice for Wago750_430 {
 
     fn get_port_count(&self) -> usize {
         8
-    }
-}
-
-impl EthercatDeviceUsed for Wago750_430 {
-    fn is_used(&self) -> bool {
-        self.is_used
-    }
-
-    fn set_used(&mut self, used: bool) {
-        self.is_used = used;
     }
 }
 
@@ -180,7 +168,6 @@ impl EthercatDeviceProcessing for Wago750_430 {}
 impl NewEthercatDevice for Wago750_430 {
     fn new() -> Self {
         Self {
-            is_used: false,
             tx_bit_offset: 0,
             rx_bit_offset: 0,
             module: None,

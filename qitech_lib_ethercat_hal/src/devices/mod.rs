@@ -76,13 +76,7 @@ pub trait MockEtherCatSdos {
 /// provides interface to read and write the PDO data
 pub trait EthercatDevice
 where
-    Self: NewEthercatDevice
-        + EthercatDeviceProcessing
-        + EthercatDeviceUsed
-        + Any
-        + Send
-        + Sync
-        + Debug,
+    Self: NewEthercatDevice + EthercatDeviceProcessing + Any + Send + Sync + Debug,
 {
     /// Input data from the last cycle
     /// `ts` is the timestamp when the input data was sent by the device
@@ -147,15 +141,6 @@ pub trait NewEthercatDevice {
     fn new() -> Self
     where
         Self: Sized;
-}
-
-/// A trait to ensure a divice can ony be used once
-pub trait EthercatDeviceUsed {
-    /// Returns true if the device is used
-    fn is_used(&self) -> bool;
-
-    /// Sets the device as used
-    fn set_used(&mut self, used: bool);
 }
 
 pub fn device_from_subdevice_identity(

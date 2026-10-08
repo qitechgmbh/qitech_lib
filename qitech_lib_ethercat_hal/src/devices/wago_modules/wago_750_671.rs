@@ -7,8 +7,8 @@ use bitvec::field::BitField;
 
 use crate::{
     devices::{
-        DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDeviceUsed,
-        EthercatDynamicPDO, Module, NewEthercatDevice, SubDeviceProductTuple,
+        DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
+        Module, NewEthercatDevice, SubDeviceProductTuple,
     },
     io::digital_input::DigitalInputDevice,
     io::stepper_velocity_wago_750_671::{
@@ -28,7 +28,6 @@ fn decode_i24(l: u8, m: u8, h: u8) -> i32 {
 
 #[derive(Clone)]
 pub struct Wago750_671 {
-    is_used: bool,
     tx_bit_offset: usize,
     rx_bit_offset: usize,
     pub rxpdo: Wago750_671RxPdo,
@@ -157,14 +156,6 @@ impl DigitalInputDevice for Wago750_671 {
 
     fn get_port_count(&self) -> usize {
         2
-    }
-}
-impl EthercatDeviceUsed for Wago750_671 {
-    fn is_used(&self) -> bool {
-        self.is_used
-    }
-    fn set_used(&mut self, used: bool) {
-        self.is_used = used;
     }
 }
 
@@ -536,7 +527,6 @@ impl EthercatDevice for Wago750_671 {
 impl NewEthercatDevice for Wago750_671 {
     fn new() -> Self {
         Self {
-            is_used: false,
             tx_bit_offset: 0,
             rx_bit_offset: 0,
             module: None,

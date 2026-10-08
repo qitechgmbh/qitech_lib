@@ -4,15 +4,13 @@ use qitech_lib_ethercat_hal_derive::EthercatDevice;
 /// EL9505 power supply terminal, 5 V DC output voltage.
 /// No process data — present on the bus purely to supply 5 V to field devices.
 #[derive(Clone, EthercatDevice)]
-pub struct EL9505 {
-    is_used: bool,
-}
+pub struct EL9505 {}
 
 impl EthercatDeviceProcessing for EL9505 {}
 
 impl NewEthercatDevice for EL9505 {
     fn new() -> Self {
-        Self { is_used: false }
+        Self {}
     }
 }
 

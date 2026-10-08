@@ -18,7 +18,6 @@ use qitech_lib_units::{electric_potential::volt, f64::ElectricPotential};
 pub struct EL3001 {
     pub txpdo: EL3001TxPdo,
     pub configuration: EL3001Configuration,
-    is_used: bool,
 }
 
 impl EthercatDeviceProcessing for EL3001 {}
@@ -41,7 +40,6 @@ impl NewEthercatDevice for EL3001 {
         Self {
             txpdo: configuration.pdo_assignment.txpdo_assignment(),
             configuration,
-            is_used: false,
         }
     }
 }
