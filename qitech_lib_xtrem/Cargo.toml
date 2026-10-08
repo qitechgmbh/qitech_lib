@@ -11,4 +11,7 @@ thiserror.workspace = true
 qitech_lib_common.workspace = true
 qitech_lib_units.workspace = true
 
+[dev-dependencies]
+anyhow.workspace = true
+
 [lib]
