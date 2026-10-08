@@ -143,7 +143,7 @@ impl Wago750_354 {
         }
     }
 
-    pub async fn get_pdo_offsets<'a>(
+    pub fn get_pdo_offsets(
         &mut self,
         device_address: u16,
         ecat_channel: EtherCATThreadChannel,
@@ -322,14 +322,8 @@ impl Wago750_354 {
         if self.dev_count != 0 {
             return;
         }
-        smol::block_on(async {
-            let _ = self
-                .get_pdo_offsets(device_address, ecat_channel.clone(), true)
-                .await;
-            let _ = self
-                .get_pdo_offsets(device_address, ecat_channel.clone(), false)
-                .await;
-        });
+        let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), true);
+        let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), false);
         for module in &mut self.slots {
             match module {
                 Some(m) => {

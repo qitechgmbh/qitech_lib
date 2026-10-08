@@ -10,10 +10,9 @@ thiserror.workspace = true
 qitech_lib_ethercat_hal_derive.workspace = true
 qitech_lib_units.workspace = true
 bitvec = { workspace = true, features = ["alloc"] }
-smol.workspace = true
 rand.workspace = true
 tracing.workspace = true
-tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time"] }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time", "sync"] }
 qitech_lib_common.workspace = true
 ta.workspace = true
 triple_buffer.workspace = true

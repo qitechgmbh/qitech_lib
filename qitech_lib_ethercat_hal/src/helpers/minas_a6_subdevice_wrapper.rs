@@ -193,6 +193,6 @@ where
             return Err(ChannelError::StatusTimeout(status_description.to_string()));
         }
 
-        smol::Timer::after(Duration::from_millis(2)).await;
+        tokio::time::sleep(Duration::from_millis(2)).await;
     }
 }

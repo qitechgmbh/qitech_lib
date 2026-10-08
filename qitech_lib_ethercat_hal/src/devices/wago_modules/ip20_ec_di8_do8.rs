@@ -10,8 +10,8 @@ use crate::{
     helpers::ethercrab_types::EthercrabSubDevicePreoperational,
     io::{digital_input::DigitalInputDevice, digital_output::DigitalOutputDevice},
 };
-use smol::lock::RwLock;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 const MODULE_COUNT_INDEX: (u16, u8) = (0xf050, 0x00);
 const TX_MAPPING_INDEX: (u16, u8) = (0x1c13, 0x00);
@@ -141,7 +141,7 @@ impl EthercatDevice for IP20EcDi8Do8 {
         for slot_device in &mut self.slot_devices {
             match slot_device {
                 Some(device) => {
-                    let mut d = device.write_blocking();
+                    let mut d = device.blocking_write();
                     let _ = d.input(input);
                     drop(d);
                 }
@@ -180,7 +180,7 @@ impl EthercatDevice for IP20EcDi8Do8 {
         for slot_device in &self.slot_devices {
             match slot_device {
                 Some(device) => {
-                    let d = device.read_blocking();
+                    let d = device.blocking_read();
                     let _ = d.output(output);
                     drop(d);
                 }
@@ -400,7 +400,7 @@ impl IP20EcDi8Do8 {
         let mut tx_index = 1;
         let mut rx_index = 1;
 
-        smol::block_on(async {
+        qitech_lib_common::get_async_runtime().block_on(async {
             let _ = self.get_pdo_offsets(device, true).await;
             let _ = self.get_pdo_offsets(device, false).await;
         });
@@ -438,7 +438,7 @@ impl IP20EcDi8Do8 {
                         rx_index += 1;
                     }
 
-                    let mut dev_guard = dev.write_blocking();
+                    let mut dev_guard = dev.blocking_write();
                     match tx_pdo_offset {
                         Some(offset) => dev_guard.set_tx_offset(*offset),
                         None => (),
