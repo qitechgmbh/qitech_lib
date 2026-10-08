@@ -1,5 +1,6 @@
 pub mod beckhoff_modules;
 pub mod panasonic_modules;
+pub mod step_drives_common;
 pub mod wago_modules;
 use crate::MetaSubdevice;
 

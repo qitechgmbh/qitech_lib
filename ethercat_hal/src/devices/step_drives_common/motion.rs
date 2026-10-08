@@ -2,10 +2,11 @@
 //!
 //! # Position scale
 //!
-//! The EL7062 scales every process-data position (`0x6000:11` actual,
-//! `0x7010:05` target, following error, ...) to `2^singleturn_bits` increments
-//! per motor revolution. `singleturn_bits` is 0x8000:12 / 0x8100:12 and defaults
-//! to 20, i.e. **1,048,576 increments per revolution**.
+//! The Beckhoff step-drive terminals sharing this module (EL7062, EL7031, ...)
+//! scale every process-data position (`0x6000:11` actual, `0x7010:05` target,
+//! following error, ...) to `2^singleturn_bits` increments per motor
+//! revolution. `singleturn_bits` is 0x8000:12 / 0x8100:12 and defaults to 20,
+//! i.e. **1,048,576 increments per revolution**.
 //!
 //! That scale is a property of the terminal and is *independent of the encoder*.
 //! 0x8008:13 "Encoder Increments per Revolution" only tells the terminal how many
@@ -16,23 +17,16 @@
 //! Limits are therefore given in **revolutions** (and rev/s) and converted
 //! with the terminal's own [`PositionScale`].
 
-/// The terminal's process-data position scale: 0x8000:12 / 0x8100:12
+/// The terminals' process-data position scale: 0x8000:12 / 0x8100:12
 /// ("Singleturn bits") together with 0x8000:13 / 0x8100:13 ("Multiturn bits").
 ///
-/// The manual requires their sum to be 32, and the ESI file lists drive error
+/// The terminals require their sum to be 32, and the ESI file lists drive error
 /// `0x8423` for a violation, so they are held as one pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PositionScale {
     singleturn_bits: u8,
     multiturn_bits: u8,
 }
-
-/// Default 0x8000:12 / 0x8100:12 and 0x8000:13 / 0x8100:13 "Singleturn bits"
-/// and "Multiturn bits" of the EL7062.
-pub const DEFAULT_POSITION_SCALE: PositionScale = PositionScale {
-    singleturn_bits: 20,
-    multiturn_bits: 12,
-};
 
 /// A singleturn/multiturn bit pair the terminal will not accept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,7 +51,10 @@ impl std::error::Error for PositionScaleError {}
 impl Default for PositionScale {
     /// Power-on defaults: 20 singleturn bits + 12 multiturn bits.
     fn default() -> Self {
-        DEFAULT_POSITION_SCALE
+        Self {
+            singleturn_bits: 20,
+            multiturn_bits: 12,
+        }
     }
 }
 
@@ -66,8 +63,9 @@ impl PositionScale {
     /// per revolution leaves no room for the revolution count in a 32-bit
     /// UDINT position, and [`Self::increments_per_revolution`] could not
     /// compute it anyway (`1u32 << 32` overflows).
-    pub fn new(singleturn_bits: u8, multiturn_bits: u8) -> Result<Self, PositionScaleError> {
-        if !(1..=31).contains(&singleturn_bits)
+    pub const fn new(singleturn_bits: u8, multiturn_bits: u8) -> Result<Self, PositionScaleError> {
+        if singleturn_bits < 1
+            || singleturn_bits > 31
             || singleturn_bits as u16 + multiturn_bits as u16 != 32
         {
             return Err(PositionScaleError {
@@ -186,12 +184,12 @@ mod tests {
     #[test]
     fn default_scale_is_one_million_increments_per_revolution() {
         assert_eq!(
-            DEFAULT_POSITION_SCALE.increments_per_revolution(),
+            PositionScale::default().increments_per_revolution(),
             1_048_576
         );
     }
 
-    /// The terminal requires 0x8000:12 + 0x8000:13 == 32, so a lone singleturn
+    /// The terminals require 0x8000:12 + 0x8000:13 == 32, so a lone singleturn
     /// setting is not a configuration, it is half of one.
     #[test]
     fn a_bit_pair_that_does_not_sum_to_32_is_rejected() {
@@ -216,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn the_terminal_default_pair_is_accepted() {
+    fn the_power_on_pair_is_accepted() {
         assert!(PositionScale::new(20, 12).is_ok());
     }
 
@@ -225,7 +223,7 @@ mod tests {
     #[test]
     fn a_few_hundred_increments_is_well_under_one_full_step() {
         let full_steps_per_rev = 200;
-        let per_step = DEFAULT_POSITION_SCALE.increments_per_step(full_steps_per_rev);
+        let per_step = PositionScale::default().increments_per_step(full_steps_per_rev);
         assert!((per_step - 5242.88).abs() < 0.01, "per_step = {per_step}");
         assert!(
             500.0 < per_step / 10.0,
@@ -237,9 +235,9 @@ mod tests {
     /// increments instead of revolutions.
     #[test]
     fn one_revolution_takes_about_a_second() {
-        let incr_per_rev = DEFAULT_POSITION_SCALE.increments_per_revolution() as f64;
+        let incr_per_rev = PositionScale::default().increments_per_revolution() as f64;
         let dt = 1e-3; // 1 ms master cycle
-        let mut ramp = SetpointRamp::new(0, DEFAULT_POSITION_SCALE);
+        let mut ramp = SetpointRamp::new(0, PositionScale::default());
         let target = incr_per_rev;
         let mut seconds = 0.0;
         loop {
@@ -261,8 +259,8 @@ mod tests {
     #[test]
     fn ramp_never_overshoots() {
         let dt = 1e-3;
-        let incr_per_rev = DEFAULT_POSITION_SCALE.increments_per_revolution() as f64;
-        let mut ramp = SetpointRamp::new(0, DEFAULT_POSITION_SCALE);
+        let incr_per_rev = PositionScale::default().increments_per_revolution() as f64;
+        let mut ramp = SetpointRamp::new(0, PositionScale::default());
         // Odd target, so the brake-distance clamp has to round a partial step.
         let target = 0.37 * incr_per_rev;
         for _ in 0..5000 {

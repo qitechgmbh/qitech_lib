@@ -9,8 +9,26 @@ use crate::pdo::{PredefinedPdoAssignment, RxPdo, TxPdo};
 use anyhow::anyhow;
 
 pub mod coe;
-pub mod motion;
 pub mod pdo;
+
+/// Motion code shared with the other Beckhoff step-drive terminals.
+///
+/// The shared implementation lives in [`crate::devices::step_drives_common::motion`];
+/// this module re-exports it, keeping the `el7062::motion::...` paths that
+/// existed before the move.
+pub mod motion {
+    /// Default 0x8000:12 / 0x8100:12 and 0x8000:13 / 0x8100:13 "Singleturn bits"
+    /// and "Multiturn bits" of the EL7062.
+    pub const DEFAULT_POSITION_SCALE: PositionScale = match PositionScale::new(20, 12) {
+        Ok(scale) => scale,
+        Err(_) => panic!("the EL7062 power-on default pair must pass validation"),
+    };
+
+    pub use crate::devices::step_drives_common::motion::{
+        DEFAULT_MAX_REV_PER_S, DEFAULT_MAX_REV_PER_S2, PositionScale, PositionScaleError,
+        SetpointRamp,
+    };
+}
 
 /// How long one fault-reset pulse holds CiA 402 controlword bit 7 high.
 ///
