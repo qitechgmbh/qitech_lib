@@ -2,13 +2,15 @@ use crate::ChannelRequest;
 use crate::EthercatErr;
 use crate::RtOptimizationConfig;
 use crate::TripleBufProducer;
-use crate::ethercat_helpers::configure_oversampling;
-use crate::ethercat_helpers::enable_dc_sync01;
+use crate::ethercrab_impl::configure_oversampling;
+use crate::ethercrab_impl::enable_dc_sync;
+use crate::ethercrab_impl::enable_dc_sync01;
+use crate::ethercrab_impl::sdo_read;
+use crate::ethercrab_impl::sdo_write;
 use crate::{
     ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES,
     PDI_LEN, PDU_STORAGE, Producer, SdoType,
     al_diagnostics::EtherCATTransition,
-    ethercat_helpers::{enable_dc_sync, sdo_read, sdo_write},
     get_async_runtime,
     machine_ident_read::{read_device_identifications, write_device_identifications},
     send_response,
