@@ -17,14 +17,13 @@
 
     Ctrl+C kills this process while the drive is in Op, so it loses process data,
     logs DC-Link undervoltage (0x4411) and PD-Watchdog (0x8105), and latches a
-    fault. The next run prints `FAULT: statusword 0x0008, latched by an earlier
-    run` before clearing it. That line is expected after an interrupt, not a new
-    fault, and each interrupt adds one more 0x4411/0x8105 pair to the drive's
-    0x10F3 history. A graceful Op -> SafeOp transition is not possible: the
-    master's state-change channel acts on NoInterface, PreOp and Op only, and
-    drops every other target.
-
-    For CSV, jog profiles and scale readback, see examples/el7062_maximal.rs.
+    fault. The next run prints `FAULT: ... latched by an earlier run` — that
+    line is expected after an interrupt, not a new fault — and then pulses
+    controlword bit 7 until the reset takes, reading the DC-link level on the
+    edge. Each interrupt adds one more 0x4411/0x8105 pair to the drive's 0x10F3
+    history. A graceful Op -> SafeOp transition is not possible: the master's
+    state-change channel acts on NoInterface, PreOp and Op only, and drops
+    every other target.
 */
 
 use bitvec::slice::BitSlice;
@@ -249,7 +248,8 @@ fn main() {
                 panic!(
                     "no new process image for {STALL_TIMEOUT:?}: the master stopped cycling, \
                      so the drive has dropped out of Op. Check the terminal's display and the \
-                     0x10F3 history, which el7062_maximal dumps at startup."
+                     0x10F3 diagnosis history; the DC-link and follower readings this example \
+                     prints on a fault edge tell the undervoltage and loss-of-step stories."
                 );
             }
         }
@@ -271,8 +271,15 @@ fn main() {
         el7062.axis(CH).apply_controlword(&statusword).unwrap();
 
         if statusword.fault && !faulted {
+            // One sync SDO read on the fault edge: the DC-link level answers
+            // the "why" for the most common fault here (0x4411 undervoltage
+            // after an interrupted run). Other readers live on the type —
+            // supply voltage, amplifier temperature, output stage state.
+            let dc_link = EL7062::read_dc_link_voltage(&eth_control.channel, addr)
+                .map(|mv| format!("{mv} mV"))
+                .unwrap_or_else(|e| format!("unreadable: {e}"));
             println!(
-                "FAULT: statusword 0x{:04X}, latched by an earlier run",
+                "FAULT: statusword 0x{:04X}, DC-link {dc_link}, latched by an earlier run",
                 statusword.as_raw()
             );
             faulted = true;

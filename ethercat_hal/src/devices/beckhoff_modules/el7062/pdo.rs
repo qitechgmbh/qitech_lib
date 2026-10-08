@@ -4,6 +4,7 @@
 //! (Beckhoff Infosys, ch. 8.1). Where the manual contradicts itself, the
 //! conflict is recorded on the object it affects.
 
+use super::coe;
 use crate::pdo::{PredefinedPdoAssignment, RxPdoObject, TxPdoObject};
 use bitvec::prelude::*;
 use ethercat_hal_derive::{PdoObject, RxPdo, TxPdo};
@@ -340,6 +341,141 @@ impl TxPdoObject for DrvVelocityActual {
     }
 }
 
+/// # `DrvTorqueActual`
+/// Torque actual value, 16 bits (INT).
+///
+/// Mapped from `0x6010:08` (Ch. 1) / `0x6110:08` (Ch. 2), TxPDO `0x1A03`.
+///
+/// The value scales with the channel's rated current `0x8011:12`.
+#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
+#[pdo_object(bits = 16)]
+pub struct DrvTorqueActual {
+    /// Actual torque in thousandths of the nominal current.
+    pub torque_actual: i16,
+}
+
+impl TxPdoObject for DrvTorqueActual {
+    fn read(&mut self, bits: &BitSlice<u8, Lsb0>) {
+        self.torque_actual = bits[0..16].load_le::<u16>() as i16;
+    }
+}
+
+/// # `DrvModeOfOperationDisplay`
+/// Modes of operation display, 8 bits.
+///
+/// Mapped from `0x6010:03` (Ch. 1) / `0x6110:03` (Ch. 2), TxPDO `0x1A0E`.
+///
+/// What the drive actually runs, which shepherds a channel whose mode the
+/// user changed underneath: the "Modes of operation" object written at
+/// configuration time is a request, not an observation.
+#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
+#[pdo_object(bits = 8)]
+pub struct DrvModeOfOperationDisplay {
+    /// Raw mode code; decode with [`DriveModeDisplay::from_raw`].
+    pub mode: u8,
+}
+
+impl TxPdoObject for DrvModeOfOperationDisplay {
+    fn read(&mut self, bits: &BitSlice<u8, Lsb0>) {
+        self.mode = bits[0..8].load_le::<u8>();
+    }
+}
+
+/// A mode the EL7062's "Modes of operation display" can report
+/// (`0x6010:03` / `0x6110:03`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DriveModeDisplay {
+    /// `8`: cyclic synchronous position.
+    Csp,
+    /// `9`: cyclic synchronous velocity.
+    Csv,
+    /// `10`: cyclic synchronous torque.
+    Cst,
+    /// `11`: cyclic synchronous torque with commutation angle.
+    Cstca,
+    /// `131`: Drive Motion Control.
+    DriveMotionControl,
+    /// Any other value. Kept rather than rejected so a word from the terminal
+    /// is never dropped on the floor.
+    Unknown(u8),
+}
+
+impl DriveModeDisplay {
+    /// Decode a raw `0x6010:03` value.
+    pub fn from_raw(raw: u8) -> Self {
+        match raw {
+            8 => Self::Csp,
+            9 => Self::Csv,
+            10 => Self::Cst,
+            11 => Self::Cstca,
+            131 => Self::DriveMotionControl,
+            other => Self::Unknown(other),
+        }
+    }
+
+    /// The raw value.
+    pub fn as_raw(self) -> u8 {
+        match self {
+            Self::Csp => 8,
+            Self::Csv => 9,
+            Self::Cst => 10,
+            Self::Cstca => 11,
+            Self::DriveMotionControl => 131,
+            Self::Unknown(raw) => raw,
+        }
+    }
+}
+
+/// # `DrvInfoData`
+/// One of the three "Info data" slots, 16 bits.
+///
+/// Mapped from `0x6010:12` / `0x6010:13` / `0x6010:14` (Ch. 1) and their
+/// `0x61n0` counterparts (Ch. 2), TxPDOs `0x1A04`, `0x1A05`, `0x1A0D`.
+///
+/// The same 16 bits mean different things, chosen per slot with `0x8010:39`,
+/// `0x8010:3A` and `0x8010:58` ("Select info data n"); decode through
+/// [`DrvInfoData::value`], not by assuming one meaning.
+#[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
+#[pdo_object(bits = 16)]
+pub struct DrvInfoData {
+    /// The slot's raw value.
+    pub value: u16,
+}
+
+impl TxPdoObject for DrvInfoData {
+    fn read(&mut self, bits: &BitSlice<u8, Lsb0>) {
+        self.value = bits[0..16].load_le::<u16>();
+    }
+}
+
+impl DrvInfoData {
+    /// Decode the slot's bits according to the channel's
+    /// [`InfoDataSource`](crate::devices::beckhoff_modules::el7062::coe::
+    /// InfoDataSource) selection (see `El7062AmplifierConfiguration`).
+    pub fn value(&self, source: coe::InfoDataSource) -> InfoDataValue {
+        match source {
+            coe::InfoDataSource::DcLinkVoltage => InfoDataValue::DcLinkVoltage(self.value),
+            coe::InfoDataSource::PcbTemperature => InfoDataValue::PcbTemperature(self.value as i16),
+            coe::InfoDataSource::DigitalInputs => InfoDataValue::DigitalInputs(self.value),
+        }
+    }
+}
+
+/// A decoded TxPDO "Info data" slot.
+///
+/// Which variant these take is what the channel's `info_data_1`/`_2`/`_3`
+/// selection asked the terminal to put there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InfoDataValue {
+    /// DC-link voltage, in mV.
+    DcLinkVoltage(u16),
+    /// PCB temperature, in 0.1 °C.
+    PcbTemperature(i16),
+    /// The channel's digital inputs, in the [`DiInputs`] bit layout: bits 0
+    /// and 1 are inputs 1 and 2, bits 4-6 are encoder tracks A, B and C.
+    DigitalInputs(u16),
+}
+
 /// # `DiInputs`
 /// Digital inputs of one channel, 16 bits.
 ///
@@ -388,6 +524,16 @@ pub struct EL7062TxPdo {
     pub ch1_velocity_actual: Option<DrvVelocityActual>,
     #[pdo_object_index(0x1A10)]
     pub ch1_digital_inputs: Option<DiInputs>,
+    #[pdo_object_index(0x1A03)]
+    pub ch1_torque_actual: Option<DrvTorqueActual>,
+    #[pdo_object_index(0x1A0E)]
+    pub ch1_mode_display: Option<DrvModeOfOperationDisplay>,
+    #[pdo_object_index(0x1A04)]
+    pub ch1_info_data_1: Option<DrvInfoData>,
+    #[pdo_object_index(0x1A05)]
+    pub ch1_info_data_2: Option<DrvInfoData>,
+    #[pdo_object_index(0x1A0D)]
+    pub ch1_info_data_3: Option<DrvInfoData>,
 
     #[pdo_object_index(0x1A80)]
     pub ch2_position: Option<FbPosition>,
@@ -399,6 +545,16 @@ pub struct EL7062TxPdo {
     pub ch2_velocity_actual: Option<DrvVelocityActual>,
     #[pdo_object_index(0x1A90)]
     pub ch2_digital_inputs: Option<DiInputs>,
+    #[pdo_object_index(0x1A83)]
+    pub ch2_torque_actual: Option<DrvTorqueActual>,
+    #[pdo_object_index(0x1A8E)]
+    pub ch2_mode_display: Option<DrvModeOfOperationDisplay>,
+    #[pdo_object_index(0x1A84)]
+    pub ch2_info_data_1: Option<DrvInfoData>,
+    #[pdo_object_index(0x1A85)]
+    pub ch2_info_data_2: Option<DrvInfoData>,
+    #[pdo_object_index(0x1A8D)]
+    pub ch2_info_data_3: Option<DrvInfoData>,
 }
 
 /// # RxPDO of the EL7062.
@@ -468,28 +624,70 @@ impl PredefinedPdoAssignment<EL7062TxPdo, EL7062RxPdo> for EL7062PredefinedPdoAs
                 ch1_position: Some(FbPosition::default()),
                 ch1_statusword: Some(DrvStatusWord::default()),
                 ch1_following_error: Some(DrvFollowingError::default()),
-                ch1_velocity_actual: None,
+                ch1_velocity_actual: Some(DrvVelocityActual::default()),
                 ch1_digital_inputs: Some(DiInputs::default()),
+                ch1_torque_actual: None,
+                ch1_mode_display: Some(DrvModeOfOperationDisplay::default()),
+                ch1_info_data_1: Some(DrvInfoData::default()),
+                ch1_info_data_2: Some(DrvInfoData::default()),
+                ch1_info_data_3: Some(DrvInfoData::default()),
                 ch2_position: Some(FbPosition::default()),
                 ch2_statusword: Some(DrvStatusWord::default()),
                 ch2_following_error: Some(DrvFollowingError::default()),
-                ch2_velocity_actual: None,
+                ch2_velocity_actual: Some(DrvVelocityActual::default()),
                 ch2_digital_inputs: Some(DiInputs::default()),
+                ch2_torque_actual: None,
+                ch2_mode_display: Some(DrvModeOfOperationDisplay::default()),
+                ch2_info_data_1: Some(DrvInfoData::default()),
+                ch2_info_data_2: Some(DrvInfoData::default()),
+                ch2_info_data_3: Some(DrvInfoData::default()),
             },
-            Self::CyclicSynchronousVelocity
-            | Self::CyclicSynchronousTorque
-            | Self::CyclicSynchronousTorqueWithCommutationAngle => EL7062TxPdo {
+            Self::CyclicSynchronousVelocity => EL7062TxPdo {
                 ch1_position: Some(FbPosition::default()),
                 ch1_statusword: Some(DrvStatusWord::default()),
                 ch1_following_error: None,
-                ch1_velocity_actual: None,
+                ch1_velocity_actual: Some(DrvVelocityActual::default()),
                 ch1_digital_inputs: Some(DiInputs::default()),
+                ch1_torque_actual: None,
+                ch1_mode_display: Some(DrvModeOfOperationDisplay::default()),
+                ch1_info_data_1: Some(DrvInfoData::default()),
+                ch1_info_data_2: Some(DrvInfoData::default()),
+                ch1_info_data_3: Some(DrvInfoData::default()),
                 ch2_position: Some(FbPosition::default()),
                 ch2_statusword: Some(DrvStatusWord::default()),
                 ch2_following_error: None,
-                ch2_velocity_actual: None,
+                ch2_velocity_actual: Some(DrvVelocityActual::default()),
                 ch2_digital_inputs: Some(DiInputs::default()),
+                ch2_torque_actual: None,
+                ch2_mode_display: Some(DrvModeOfOperationDisplay::default()),
+                ch2_info_data_1: Some(DrvInfoData::default()),
+                ch2_info_data_2: Some(DrvInfoData::default()),
+                ch2_info_data_3: Some(DrvInfoData::default()),
             },
+            Self::CyclicSynchronousTorque | Self::CyclicSynchronousTorqueWithCommutationAngle => {
+                EL7062TxPdo {
+                    ch1_position: Some(FbPosition::default()),
+                    ch1_statusword: Some(DrvStatusWord::default()),
+                    ch1_following_error: None,
+                    ch1_velocity_actual: Some(DrvVelocityActual::default()),
+                    ch1_digital_inputs: Some(DiInputs::default()),
+                    ch1_torque_actual: Some(DrvTorqueActual::default()),
+                    ch1_mode_display: Some(DrvModeOfOperationDisplay::default()),
+                    ch1_info_data_1: Some(DrvInfoData::default()),
+                    ch1_info_data_2: Some(DrvInfoData::default()),
+                    ch1_info_data_3: Some(DrvInfoData::default()),
+                    ch2_position: Some(FbPosition::default()),
+                    ch2_statusword: Some(DrvStatusWord::default()),
+                    ch2_following_error: None,
+                    ch2_velocity_actual: Some(DrvVelocityActual::default()),
+                    ch2_digital_inputs: Some(DiInputs::default()),
+                    ch2_torque_actual: Some(DrvTorqueActual::default()),
+                    ch2_mode_display: Some(DrvModeOfOperationDisplay::default()),
+                    ch2_info_data_1: Some(DrvInfoData::default()),
+                    ch2_info_data_2: Some(DrvInfoData::default()),
+                    ch2_info_data_3: Some(DrvInfoData::default()),
+                }
+            }
         }
     }
 
@@ -602,10 +800,7 @@ mod tests {
         // Process data arrives as a little-endian byte slice, low byte first.
         let bytes = raw.to_le_bytes();
         let mut statusword = DrvStatusWord::from_raw(0);
-        TxPdoObject::read(
-            &mut statusword,
-            BitSlice::<u8, Lsb0>::from_slice(&bytes),
-        );
+        TxPdoObject::read(&mut statusword, BitSlice::<u8, Lsb0>::from_slice(&bytes));
         assert_eq!(statusword.as_raw(), raw);
         assert!(statusword.operation_enabled, "bit 2");
         assert!(statusword.warning, "bit 7");
@@ -697,7 +892,11 @@ mod tests {
                     .expect("counter enabled")
             })
             .collect();
-        assert_eq!(read, vec![0, 1, 2, 3, 0, 1, 2, 3], "counter must count up and wrap");
+        assert_eq!(
+            read,
+            vec![0, 1, 2, 3, 0, 1, 2, 3],
+            "counter must count up and wrap"
+        );
     }
 
     /// A `>` comparison would miss the 3 -> 0 wrap and stall forever.
@@ -741,5 +940,72 @@ mod tests {
                 "bit {bit} is undecoded but must not be lost"
             );
         }
+    }
+
+    /// The torque is a signed 16-bit value in thousandths of the nominal
+    /// current, so the read must keep the sign.
+    #[test]
+    fn torque_actual_keeps_its_sign() {
+        for (raw, expected) in [(1u16, 1i16), (0x8000, -32768), (0xFFFF, -1)] {
+            let bytes = raw.to_le_bytes();
+            let mut torque = DrvTorqueActual::default();
+            TxPdoObject::read(&mut torque, BitSlice::<u8, Lsb0>::from_slice(&bytes));
+            assert_eq!(torque.torque_actual, expected, "raw 0x{raw:04X}");
+        }
+    }
+
+    /// 0x6010:03 names the modes by number; anything else stays named as its
+    /// number rather than being dropped.
+    #[test]
+    fn mode_display_decodes_the_documented_modes() {
+        for (raw, expected) in [
+            (0u8, None),
+            (8, Some(DriveModeDisplay::Csp)),
+            (9, Some(DriveModeDisplay::Csv)),
+            (10, Some(DriveModeDisplay::Cst)),
+            (11, Some(DriveModeDisplay::Cstca)),
+            (131, Some(DriveModeDisplay::DriveMotionControl)),
+            (7, None),
+        ] {
+            let bytes = [raw, 0];
+            let mut display = DrvModeOfOperationDisplay::default();
+            TxPdoObject::read(&mut display, BitSlice::<u8, Lsb0>::from_slice(&bytes));
+            let decoded = DriveModeDisplay::from_raw(display.mode);
+            match expected {
+                Some(mode) => assert_eq!(decoded, mode, "raw {raw}"),
+                None => assert!(
+                    matches!(decoded, DriveModeDisplay::Unknown(_)),
+                    "raw {raw} must stay Unknown"
+                ),
+            }
+            assert_eq!(decoded.as_raw(), raw, "round trip for raw {raw}");
+        }
+    }
+
+    /// One slot, three meanings: the decode must follow the channel's
+    /// "Select info data" choice, not a fixed assumption.
+    #[test]
+    fn info_data_decodes_what_the_channel_selected() {
+        // DC-link voltage: the raw 16 bits are mV.
+        let dc_link = DrvInfoData { value: 48_000 };
+        assert_eq!(
+            dc_link.value(coe::InfoDataSource::DcLinkVoltage),
+            InfoDataValue::DcLinkVoltage(48_000)
+        );
+
+        // PCB temperature is signed, in 0.1 °C: 0xFFCE = -50 = -5.0 °C.
+        let cold = DrvInfoData { value: 0xFFCE };
+        assert_eq!(
+            cold.value(coe::InfoDataSource::PcbTemperature),
+            InfoDataValue::PcbTemperature(-50)
+        );
+
+        // Digital inputs keep the 0x6020 bit layout for `DiInputs`-style
+        // reading of the raw word.
+        let di = DrvInfoData { value: 0b0100_0011 };
+        assert_eq!(
+            di.value(coe::InfoDataSource::DigitalInputs),
+            InfoDataValue::DigitalInputs(0b0100_0011)
+        );
     }
 }

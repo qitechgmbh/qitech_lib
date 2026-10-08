@@ -19,8 +19,11 @@
         calibrate 98.7  after measuring the real travel with a ruler
 
     Ctrl+C kills this process while the drive is in Op, so the next run reports
-    a latched fault (DC-Link undervoltage 0x4411 / PD-Watchdog 0x8105) and
-    resets it. That is expected after an interrupt; see el7062_minimal.rs.
+    a latched fault (DC-Link undervoltage 0x4411 / PD-Watchdog 0x8105). That is
+    expected after an interrupt; the driver pulses controlword bit 7 until the
+    reset takes — a fault whose cause is still present at the first edge stays
+    latched otherwise — and this example prints the DC-link level and
+    amplifier temperature on the fault edge via SDO.
 */
 
 use bitvec::slice::BitSlice;
@@ -282,14 +285,17 @@ fn main() {
     });
     println!("EL7062 @0x{addr:04X} in Op. Type `help` for commands.");
 
-    // The process-data position is a wrapping 32-bit counter (0x8000:1B..1C
-    // default to the full UDINT range), so it is unwrapped into an i64 for the
-    // helper and the setpoint is wrapped back the same way.
+    // The process-data position is a wrapping 32-bit counter (the driver
+    // writes 0x8000:1B..1C to their documented full-UDINT default at
+    // configuration time, so a terminal with stored commissioning is covered
+    // too), so it is unwrapped into an i64 for the helper and the setpoint is
+    // wrapped back the same way.
     let mut last_raw_position: Option<i32> = None;
     let mut actual_position = 0i64;
     let mut last_cycle = eth_handle.get_current_cycle();
     let mut last_state = traverse.state();
     let mut last_status = Instant::now();
+    let mut last_fault = false;
 
     loop {
         // See el7062_minimal.rs: the master's I/O thread owns the timing, so
@@ -334,6 +340,24 @@ fn main() {
         let mut axis = el7062.axis(CH);
         let statusword = axis.statusword().unwrap();
         axis.apply_controlword(&statusword).unwrap();
+
+        if statusword.fault && !last_fault {
+            // One sync SDO read on the fault edge: the DC-link level answers
+            // the "why" for the most common fault here (0x4411 after an
+            // interrupted run), the amplifier temperature separates that
+            // from an overtemperature event.
+            let dc_link = EL7062::read_dc_link_voltage(&eth_control.channel, addr)
+                .map(|mv| format!("{mv} mV"))
+                .unwrap_or_else(|e| format!("unreadable: {e}"));
+            let temperature = EL7062::read_amplifier_temperature(&eth_control.channel, addr)
+                .map(|t| format!("{:.1} °C", t as f64 / 10.0))
+                .unwrap_or_else(|e| format!("unreadable: {e}"));
+            println!(
+                "FAULT: statusword 0x{:04X}, DC-link {dc_link}, amplifier {temperature}",
+                statusword.as_raw()
+            );
+        }
+        last_fault = statusword.fault;
 
         let raw_position = axis.position().unwrap();
         actual_position = match last_raw_position {
