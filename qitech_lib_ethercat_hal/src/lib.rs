@@ -4,14 +4,17 @@ pub mod controller;
 pub mod debugging;
 pub mod devices;
 pub mod error;
-pub mod ethercat_helpers;
+pub mod ecat_channel_impl;
 pub mod helpers;
 pub mod interface_discovery;
 pub mod io;
 pub mod pdo;
 pub mod shared_config;
+pub (crate)mod ethercrab_impl;
+
 //#[cfg(feature = "legacy_code")]
 pub mod machine_ident_read;
+
 use al_diagnostics::{TransitionLog, TransitionReport};
 use ethercrab::PduStorage;
 use machine_ident_read::MachineDeviceInfo;
