@@ -1,8 +1,8 @@
 use crate::{ChannelError, DiagnosticRequest, DiagnosticResponse};
 use crate::{ChannelRequest, ChannelResponse, EtherCATThreadResponseChannel};
 use crate::{
-    EtherCATState, EtherCATThreadChannel, SdoReadRequest, SdoRequest,
-    SdoType, al_diagnostics::SubDeviceAlStatus, machine_ident_read::MachineDeviceInfo,
+    EtherCATState, EtherCATThreadChannel, SdoReadRequest, SdoRequest, SdoType,
+    al_diagnostics::SubDeviceAlStatus, machine_ident_read::MachineDeviceInfo,
 };
 use ethercrab::EtherCrabWireWrite;
 use std::any::TypeId;

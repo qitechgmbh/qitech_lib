@@ -1,13 +1,15 @@
-use std::time::Duration;
+use crate::{
+    ChannelError, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType, get_async_runtime,
+};
 use ethercrab::{DcSync, EtherCrabWireRead, EtherCrabWireSized, MainDevice, SubDeviceGroup};
-use crate::{ChannelError, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType, get_async_runtime};
+use std::time::Duration;
 
 /*
  Value type needs to have EtherCrabWireWriteSized at the least to be able to write with ethecrab
 */
 pub fn sdo_write(
     maindevice: &MainDevice,
-    group: &SubDeviceGroup<MAX_SUBDEVICES ,PDI_LEN>,
+    group: &SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
     request: SdoRequest,
 ) -> Result<(), ChannelError> {
     for device in group.iter(maindevice) {

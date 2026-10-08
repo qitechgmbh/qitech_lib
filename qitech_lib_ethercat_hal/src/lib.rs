@@ -3,14 +3,14 @@ pub mod coe;
 pub mod controller;
 pub mod debugging;
 pub mod devices;
-pub mod error;
 pub mod ecat_channel_impl;
+pub mod error;
+pub(crate) mod ethercrab_impl;
 pub mod helpers;
 pub mod interface_discovery;
 pub mod io;
 pub mod pdo;
 pub mod shared_config;
-pub (crate)mod ethercrab_impl;
 
 //#[cfg(feature = "legacy_code")]
 pub mod machine_ident_read;
