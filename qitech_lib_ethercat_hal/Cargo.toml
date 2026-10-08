@@ -1,0 +1,33 @@
+[package]
+name = "qitech_lib_ethercat_hal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+ethercrab.workspace = true
+qitech_lib_ethercat_hal_derive.workspace = true
+qitech_lib_units.workspace = true
+bitvec = { workspace = true, features = ["alloc"] }
+smol.workspace = true
+rand.workspace = true
+tracing.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time"] }
+qitech_lib_common.workspace = true
+ta.workspace = true
+triple_buffer.workspace = true
+core_affinity.workspace = true
+libc.workspace = true
+spin_sleep.workspace = true
+futures.workspace = true
+
+[dev-dependencies]
+approx.workspace = true
+
+[lib]
+
+[features]
+default = []
+mock = []
+legacy_code = []

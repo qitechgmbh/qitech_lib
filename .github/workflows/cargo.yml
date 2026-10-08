@@ -50,7 +50,7 @@ jobs:
       - name: Build
         env:
           RUSTFLAGS: "-D warnings"
-        run: cargo build --verbose
+        run: cargo build --workspace --all-targets --verbose
 
   format:
     runs-on: ubuntu-latest
@@ -74,7 +74,7 @@ jobs:
       - name: Build Examples
         env:
           RUSTFLAGS: "-D warnings"
-        run: cargo build --examples --verbose
+        run: cargo build --workspace --examples --verbose
 
   sbom:
     runs-on: ubuntu-latest

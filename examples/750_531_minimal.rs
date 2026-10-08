@@ -1,5 +1,5 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
-use ethercat_hal::{
+use qitech_lib_ethercat_hal::{
     EtherCATState,
     devices::{
         EthercatDevice, NewEthercatDevice,

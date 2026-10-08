@@ -1,0 +1,14 @@
+[package]
+name        = "qitech_lib_xtrem"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "GRAM XTREM / XTREM-S weighing module communication protocol (UDP)"
+
+[dependencies]
+tokio = { workspace = true, features = ["sync","rt-multi-thread","macros","net","time"] }
+anyhow.workspace = true
+qitech_lib_common.workspace = true
+qitech_lib_units.workspace = true
+
+[lib]

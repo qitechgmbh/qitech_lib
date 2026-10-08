@@ -1,0 +1,11 @@
+[package]
+name = "qitech_lib_units"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version = "1.86"
+
+[dependencies]
+uom = { workspace = true, features = ["f64"] }
+
+[lib]

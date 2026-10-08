@@ -1,0 +1,45 @@
+use bitvec::prelude::*;
+use qitech_lib_ethercat_hal_derive::PdoObject;
+
+use super::{TxPdoObject, basic::Limit};
+
+/// PDO Object for EL32xx (temperature sensing) devices
+///
+/// The "RTD Input" holds the value of a temperature sensor accompanied by some metadata.
+#[derive(Debug, Clone, Default, PdoObject, PartialEq)]
+#[pdo_object(bits = 32)]
+pub struct RtdInput {
+    /// The signal voltage is over the defined operating range of the device
+    pub undervoltage: bool, // 1 bit
+    /// The signal voltage is under the defined operating range of the device
+    pub overvoltage: bool, // 1 bit
+    /// Configurable limit 1
+    pub limit1: Limit, // 2 bit
+    /// Configurable limit 2
+    pub limit2: Limit, // 2 bit
+    pub error: bool,       // 1 bit
+    pub txpdo_state: bool, // 1 bit
+    /// If the PDO objects data has changed since the last read
+    pub txpdo_toggle: bool, // 1 bit
+    /// Temperature in degrees celsius
+    ///
+    /// The temperature is accurate to 0.1 degrees celsius.
+    pub temperature: f32,
+}
+
+impl TxPdoObject for RtdInput {
+    fn read(&mut self, bits: &BitSlice<u8, Lsb0>) {
+        // only read other values if txpdo_toggle is true
+        self.txpdo_toggle = bits[8 + 7];
+        if !self.txpdo_toggle {
+            return;
+        }
+        self.temperature = (bits[16..16 + 16].load_le::<i16>() as f32) / 10.0;
+        self.undervoltage = bits[0];
+        self.overvoltage = bits[1];
+        self.limit1 = bits[2..4].load_le::<u8>().into();
+        self.limit2 = bits[4..6].load_le::<u8>().into();
+        self.error = bits[7];
+        self.txpdo_state = bits[8 + 6];
+    }
+}
