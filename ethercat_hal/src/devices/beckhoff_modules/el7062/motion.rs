@@ -13,17 +13,14 @@
 //! scale above; it does not change the scale. One full motor step of a
 //! 200-steps/rev motor is therefore 2^20/200 = 5242.88 increments.
 //!
-//! Because the scale is easy to get wrong by three orders of magnitude, limits
-//! are given in **revolutions** and converted with the terminal's own
-//! [`PositionScale`].
+//! Limits are therefore given in **revolutions** (and rev/s) and converted
+//! with the terminal's own [`PositionScale`].
 
 /// The terminal's process-data position scale: 0x8000:12 / 0x8100:12
 /// ("Singleturn bits") together with 0x8000:13 / 0x8100:13 ("Multiturn bits").
 ///
-/// These are one setting rather than two. The manual requires their sum to be
-/// 32, and the ESI file lists drive error `0x8423` for a violation, so holding
-/// them as a pair is what makes that rule unrepresentable instead of merely
-/// documented.
+/// The manual requires their sum to be 32, and the ESI file lists drive error
+/// `0x8423` for a violation, so they are held as one pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PositionScale {
     singleturn_bits: u8,
@@ -65,12 +62,10 @@ impl Default for PositionScale {
 }
 
 impl PositionScale {
-    /// `singleturn_bits` is capped at 31 because the process-data position is a
-    /// 32-bit UDINT: a scale of 2^32 increments per revolution leaves no room
-    /// for the revolution count, so the terminal cannot represent it. That bound
-    /// is also what keeps [`Self::increments_per_revolution`] total, since
-    /// `1u32 << 32` would otherwise overflow and, with overflow checks off,
-    /// silently mask down to 1 increment per revolution.
+    /// `singleturn_bits` is capped at 31 because a scale of 2^32 increments
+    /// per revolution leaves no room for the revolution count in a 32-bit
+    /// UDINT position, and [`Self::increments_per_revolution`] could not
+    /// compute it anyway (`1u32 << 32` overflows).
     pub fn new(singleturn_bits: u8, multiturn_bits: u8) -> Result<Self, PositionScaleError> {
         if !(1..=31).contains(&singleturn_bits)
             || singleturn_bits as u16 + multiturn_bits as u16 != 32
@@ -175,7 +170,6 @@ impl SetpointRamp {
         self.velocity += dv;
 
         let next = self.position + self.velocity * dt;
-        // Do not overshoot the target.
         if (target - self.position).signum() != (target - next).signum() {
             self.position = target;
             self.velocity = 0.0;

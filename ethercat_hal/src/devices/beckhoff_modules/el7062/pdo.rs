@@ -208,10 +208,8 @@ pub struct DrvStatusWord {
     /// Bit 13: input cycle counter high bit. See [`DrvStatusWord`].
     bit13: bool,
 
-    /// The status word as received.
-    ///
-    /// The decoded fields cover only 10 of the 16 bits, so rebuilding a value
-    /// from them would lose bits 4, 5, 8, 9, 14 and 15.
+    /// The status word as received: the decoded fields cover only 10 of the
+    /// 16 bits.
     raw: u16,
 }
 
@@ -365,9 +363,8 @@ impl TxPdoObject for DrvTorqueActual {
 ///
 /// Mapped from `0x6010:03` (Ch. 1) / `0x6110:03` (Ch. 2), TxPDO `0x1A0E`.
 ///
-/// What the drive actually runs, which shepherds a channel whose mode the
-/// user changed underneath: the "Modes of operation" object written at
-/// configuration time is a request, not an observation.
+/// The mode written at configuration time is a request, not an observation;
+/// this is what the terminal reports it is actually doing.
 #[derive(Debug, Clone, Default, PdoObject, PartialEq, Eq)]
 #[pdo_object(bits = 8)]
 pub struct DrvModeOfOperationDisplay {
@@ -471,8 +468,7 @@ pub enum InfoDataValue {
     DcLinkVoltage(u16),
     /// PCB temperature, in 0.1 °C.
     PcbTemperature(i16),
-    /// The channel's digital inputs, in the [`DiInputs`] bit layout: bits 0
-    /// and 1 are inputs 1 and 2, bits 4-6 are encoder tracks A, B and C.
+    /// The channel's digital inputs, in the [`DiInputs`] bit layout.
     DigitalInputs(u16),
 }
 
@@ -864,8 +860,7 @@ mod tests {
     }
 
     /// Counter bits are overlaid onto an observed statusword (`0x18A7`) rather
-    /// than built from zero, so the fixture cannot encode a pattern the drive
-    /// would not produce.
+    /// than built from zero.
     #[test]
     fn a_per_cycle_counter_has_a_half_rate_high_bit() {
         let base = DrvStatusWord::from_raw(0x18A7).as_raw();
@@ -922,22 +917,6 @@ mod tests {
                 DrvStatusWord::from_raw(raw).as_raw(),
                 raw,
                 "raw 0x{raw:04X}"
-            );
-        }
-    }
-
-    /// Bits 4, 5, 8, 9, 14 and 15 have no decoded field, so nothing in this
-    /// struct gives them a name. They are nonetheless reported faithfully by
-    /// `as_raw`, which returns the word as received rather than rebuilding one
-    /// from the decoded fields.
-    #[test]
-    fn reserved_bits_have_no_field_but_survive_as_raw() {
-        for bit in [4, 5, 8, 9, 14, 15] {
-            let statusword = DrvStatusWord::from_raw(1 << bit);
-            assert_eq!(
-                statusword.as_raw(),
-                1 << bit,
-                "bit {bit} is undecoded but must not be lost"
             );
         }
     }

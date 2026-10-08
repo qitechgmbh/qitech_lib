@@ -82,13 +82,9 @@ impl Default for El7062FeedbackConfiguration {
 }
 
 /// Gear ratio scaling every position and speed from the motor side to the
-/// load side of a gear unit (`0x8000:19` + `0x8000:1A` / `0x8100:1A`).
-///
-/// Non-default settings here rescale every process-data position and speed,
-/// silently invalidating the "increments per revolution" assumption a caller
-/// makes. Held as one value rather than two free `u32`s so a ratio can never
-/// be set to the load-side expectation and forgotten: dividing by zero has no
-/// meaning for "X motor revolutions per Y shaft revolutions".
+/// load side of a gear unit (`0x8000:19` + `0x8000:1A` / `0x8100:1A`). Held as
+/// one value rather than two free `u32`s: dividing by zero has no meaning for
+/// "X motor revolutions per Y shaft revolutions".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GearRatio {
     /// `0x8000:19` / `0x8100:19`. `5` for a gear where 5 motor revolutions
@@ -164,11 +160,6 @@ impl std::error::Error for GearRatioError {}
 
 /// Where the process-data position wraps (`0x8000:1B` + `0x8000:1C` /
 /// `0x8100:1B` + `0x8100:1C`).
-///
-/// One value rather than two free `u32`s: an unconfigured pair with `min` at
-/// or above `max` violates the terminal's own rule that min must always be
-/// lower than max, so it is caught here instead of left for the terminal to
-/// reject or, worse, honour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PositionRange {
     /// `0x8000:1B` / `0x8100:1B`: lowest position; below it the terminal
@@ -269,10 +260,8 @@ impl Default for EncoderType {
 }
 
 /// Encoder wiring and resolution for one channel (`0x8008` / `0x8108`).
-///
-/// One setting rather than two independent fields: otherwise `Disabled` can
-/// carry a stale 4096 in `0x8008:13`, or a wired encoder can report zero counts
-/// per revolution.
+/// One setting rather than two independent fields, so `Disabled` cannot carry
+/// a stale resolution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncoderConfig {
     /// `0x8008:12` = 0. Resolution is written as 0.
@@ -326,8 +315,7 @@ impl EncoderConfig {
     /// Resolution for `0x8008:13` / `0x8108:13`; `None` when disabled.
     ///
     /// `None` rather than 0: the terminal rejects 0 here with SDO abort
-    /// `0x06090032` (measured on Ch. 2), and the power-on default 4096 would
-    /// assert a resolution nobody measured.
+    /// `0x06090032` (measured on Ch. 2).
     pub fn increments_per_revolution(self) -> Option<u32> {
         match self {
             Self::Disabled => None,
@@ -464,9 +452,8 @@ pub struct El7062AmplifierConfiguration {
     pub position_loop_proportional_gain: u32,
 
     /// # 8010:31 / 8110:31
-    /// Velocity limitation in 1/min (power-on default `100000`; this driver
-    /// writes a much lower value on purpose, see `Default`). Only effective
-    /// in CSP and CSV.
+    /// Velocity limitation in 1/min. Only effective in CSP and CSV; see
+    /// `Default` for why this driver departs from the power-on value.
     pub velocity_limitation: u32,
 
     /// # 8010:33 / 8110:33
@@ -493,8 +480,7 @@ pub struct El7062AmplifierConfiguration {
     pub info_data_3: InfoDataSource,
 
     /// # 8010:49 / 8110:49
-    /// Halt ramp deceleration in 0.1 rad/s² (power-on default `62832`; this
-    /// driver writes a much lower value on purpose, see `Default`).
+    /// Halt ramp deceleration in 0.1 rad/s² (see `Default`).
     ///
     /// Used by CiA 402 "halt" — a commanded stop that keeps the drive
     /// enabled, not a quick stop.
@@ -537,16 +523,14 @@ pub struct El7062AmplifierConfiguration {
 
     /// # 8010:72 / 8110:72
     /// Current reduction at standstill, in thousandths of nominal current
-    /// (power-on default `0x7FFF`; this driver writes a much lower value on
-    /// purpose, see `Default`).
+    /// (see `Default` for why this driver departs from the power-on value).
     ///
     /// Applies while the target velocity is within `stand_still_window`, and
     /// only for commutation types 16 and 17.
     pub stand_still_torque_limitation: u16,
 
     /// # 8010:73 / 8110:73
-    /// Acceleration limitation in 0.1 rad/s² (power-on default `62832`; this
-    /// driver writes a much lower value on purpose, see `Default`).
+    /// Acceleration limitation in 0.1 rad/s² (see `Default`).
     pub acceleration_limitation: u32,
 }
 
@@ -580,10 +564,8 @@ impl Default for El7062AmplifierConfiguration {
 }
 
 /// How the terminal determines the motor's commutation angle (`0x8010:64`).
-///
-/// Which of these is correct depends on whether an encoder is connected, so
-/// this is checked against the channel's [`EncoderConfig`] rather than left to
-/// the ordering of two SDO writes.
+/// Modes 17 and 18 are checked against the channel's [`EncoderConfig`], see
+/// `El7062ChannelConfiguration::validate`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Commutation {
     /// 16: stepper with internal counter. No encoder needed.
@@ -880,8 +862,7 @@ impl El7062AmplifierConfiguration {
 #[derive(Debug, Clone)]
 pub struct El7062MotorConfiguration {
     /// # 8011:12 / 8111:12
-    /// Rated current of the motor in mA (power-on default `3000`; this driver
-    /// writes a lower value on purpose, see `Default`).
+    /// Rated current of the motor in mA (see `Default`).
     pub rated_current: u32,
 
     /// # 8011:33 / 8111:33
@@ -889,8 +870,7 @@ pub struct El7062MotorConfiguration {
     pub motor_full_steps_per_revolution: u32,
 
     /// # 8011:34 / 8111:34
-    /// Configured motor current in mA (power-on default `3000`; this driver
-    /// writes a lower value on purpose, see `Default`).
+    /// Configured motor current in mA (see `Default`).
     pub configured_motor_current: u32,
 }
 
@@ -1053,13 +1033,10 @@ impl El7062BrakeConfiguration {
 
 /// Signal filter settings for one channel of the EL7062 (`0x8013` / `0x8113`).
 ///
-/// Two filter stages of the same shape. Only the filter types are written
-/// here: the four REAL32 gain/damping entries per stage cannot be written with
-/// the channel's typed SDO interface. That is still complete defaulting in
-/// practice, because a stage whose type is "no filter" does not use its stored
-/// frequencies and dampings — and "no filter" is the power-on default written
-/// for both stages, which also neutralizes whatever filter commissioning the
-/// terminal may hold.
+/// Only the filter types are written here: the four REAL32 gain/damping
+/// entries per stage cannot be written with the channel's typed SDO interface.
+/// That is still complete defaulting in practice, because a stage whose type
+/// is "no filter" does not use its stored frequencies and dampings.
 #[derive(Debug, Clone)]
 pub struct El7062FilterConfiguration {
     /// # 8013:10-14 / 8113:10-14
@@ -1172,8 +1149,7 @@ impl El7062ChannelConfiguration {
     /// # Errors
     /// Commutation types 17 and 18 take the commutation angle from the encoder,
     /// so asking for them with `0x8008:12` = 0 configures a drive that cannot
-    /// commutate. The manual does not say whether the terminal rejects that on
-    /// write or only later, so it is caught here instead.
+    /// commutate.
     pub fn validate(&self) -> Result<(), ChannelConfigError> {
         if self.amplifier.commutation.requires_encoder() && !self.feedback.encoder.is_enabled() {
             return Err(ChannelConfigError::CommutationNeedsEncoder {
@@ -1400,9 +1376,7 @@ impl ConfigurableDevice<EL7062Configuration> for EL7062 {
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
         self.rxpdo = config.pdo_assignment.rxpdo_assignment();
-        // New process image, new bookkeeping: a fault-reset pulse mid-write
-        // and an old "setpoint written" mark have nothing to do with the
-        // channels as reconfigured.
+        // A new process image invalidates the per-channel bookkeeping.
         self.ch1_state = super::AxisState::default();
         self.ch2_state = super::AxisState::default();
         Ok(())
@@ -1619,9 +1593,9 @@ mod tests {
         assert_eq!(FanConfiguration::Installed.as_raw(), 1);
     }
 
-    /// The objects the review singled out as never written are all present in
-    /// the channel's defaults, so a write_config pass touches a terminal
-    /// commissioned by other tooling without silently leaving stored values.
+    /// Every CoE object this driver encountered during commissioning with
+    /// other tooling has a corresponding default, so a `write_config` pass
+    /// never silently leaves a stored value behind.
     #[test]
     fn the_default_channel_configuration_covers_the_never_written_objects() {
         let channel = El7062ChannelConfiguration::default();

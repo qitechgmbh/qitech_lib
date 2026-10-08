@@ -16,8 +16,7 @@ pub mod pdo;
 ///
 /// The reset acts on the bit's rising edge. After the hold, the bit drops so
 /// the next faulted cycle can raise a fresh edge — see
-/// [`Axis::apply_controlword`]. Same idea as the timed toggle of the
-/// Panasonic module, same order of magnitude.
+/// [`Axis::apply_controlword`].
 const FAULT_RESET_HOLD: Duration = Duration::from_millis(300);
 
 /// Runtime bookkeeping per channel, owned by the device rather than the
@@ -32,8 +31,7 @@ struct AxisState {
     /// Whether the application wrote a setpoint (target position, velocity or
     /// torque) since the last fault. `apply_controlword` refuses
     /// `enable_operation` until this is set again, so an enable never runs a
-    /// stale setpoint — without it, a newly enabled CSP axis would head
-    /// towards whatever target position PDO the last session left.
+    /// stale setpoint.
     target_set: bool,
 }
 
@@ -358,10 +356,7 @@ impl Axis<'_> {
     }
 
     /// Get "Info data 1", decoded per the channel's `info_data_1` selection.
-    ///
-    /// With the driver's (and the terminal's) defaults this is the DC-link
-    /// voltage in mV — the direct answer to "why did the drive fault" for an
-    /// undervoltage event, readable every cycle without an SDO exchange.
+    /// Default selection: DC-link voltage in mV.
     pub fn info_data_1(&self) -> Result<pdo::InfoDataValue, anyhow::Error> {
         let raw = self.info_data_raw(self.info_data_1, 1)?;
         Ok(pdo::DrvInfoData { value: raw }.value(self.config.amplifier.info_data_1))
@@ -519,21 +514,14 @@ impl Axis<'_> {
     /// `statusword.fault` is handled here, not left to the caller, with an
     /// edge-correct reset: the fault-reset bit (bit 7) is asserted for
     /// [`FAULT_RESET_HOLD`], then dropped, and re-asserted on the next faulted
-    /// cycle if the fault persists. A plain "bit held high" does not do this:
-    /// CiA 402 resets on the bit's rising edge, so a fault whose cause is
-    /// still present at that first edge (a DC-link undervoltage, say) would
-    /// otherwise latch forever.
+    /// cycle if the fault persists. CiA 402 resets on the bit's rising edge,
+    /// so a bit held high gives exactly one reset attempt.
     ///
     /// Operation is only requested once the application has written a
     /// setpoint since the last fault (`set_target_position`,
     /// `set_target_velocity` or `set_target_torque` mark that). Enabling
     /// earlier would head a CSP axis straight to its stale target-position
     /// PDO value — 0 unless someone wrote to it.
-    ///
-    /// Bits on the EL7062: 0 = switch on, 1 = enable voltage, 2 = quick stop,
-    /// 3 = enable operation, 7 = fault reset. Bit 2 is reserved per the
-    /// manual, so see [`pdo::DrvControlWord::quick_stop`] before relying on
-    /// it.
     pub fn apply_controlword(
         &mut self,
         statusword: &pdo::DrvStatusWord,
@@ -561,8 +549,7 @@ impl Axis<'_> {
                 .fault_reset_asserted
                 .is_some_and(|asserted| asserted.elapsed() >= FAULT_RESET_HOLD)
             {
-                // End of one pulse: drop bit 7 so the next faulted cycle —
-                // and there will be one if the cause is still there —
+                // End of one pulse: drop bit 7 so the next faulted cycle
                 // carries a fresh rising edge.
                 self.set_controlword(pdo::DrvControlWord::default())?;
                 self.state.fault_reset_asserted = None;
