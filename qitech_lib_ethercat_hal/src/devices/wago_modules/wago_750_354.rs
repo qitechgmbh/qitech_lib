@@ -12,11 +12,11 @@ use super::{
     wago_750_1506::{self, WAGO_750_1506_MODULE_IDENT, WAGO_750_1506_PRODUCT_ID},
 };
 use crate::EtherCATThreadChannel;
+use crate::PdoError;
 use crate::devices::{
     DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, Module, NewEthercatDevice,
     SubDeviceIdentityTuple,
 };
-use anyhow::Error;
 const MODULE_COUNT_INDEX: (u16, u8) = (0xf050, 0x00);
 const TX_MAPPING_INDEX: (u16, u8) = (0x1c13, 0x00);
 const RX_MAPPING_INDEX: (u16, u8) = (0x1c12, 0x00);
@@ -46,7 +46,7 @@ impl EthercatDevice for Wago750_354 {
     fn input(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         for slot_device in &mut self.slot_devices {
             match slot_device {
                 Some(device) => {
@@ -66,7 +66,7 @@ impl EthercatDevice for Wago750_354 {
     fn output(
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         for slot_device in &self.slot_devices {
             match slot_device {
                 Some(device) => {
@@ -143,12 +143,12 @@ impl Wago750_354 {
         }
     }
 
-    pub async fn get_pdo_offsets<'a>(
+    pub fn get_pdo_offsets(
         &mut self,
         device_address: u16,
         ecat_channel: EtherCATThreadChannel,
         get_tx: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<(), crate::Error> {
         let mut vec: Vec<ModulePdoMapping> = vec![];
         let mut bit_offset = 0;
 
@@ -208,17 +208,14 @@ impl Wago750_354 {
     pub fn get_module_count(
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<usize, Error> {
+    ) -> Result<usize, crate::Error> {
         match ecat_channel.sdo_read::<u8>(
             device_address,
             MODULE_COUNT_INDEX.0,
             MODULE_COUNT_INDEX.1,
         ) {
             Ok(value) => Ok(value as usize),
-            Err(e) => Err(anyhow::anyhow!(
-                "Failed to read Module Count for Wago750_354: {:?}",
-                e
-            )),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -227,7 +224,7 @@ impl Wago750_354 {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         module_count: usize,
-    ) -> Result<Vec<crate::devices::Module>, Error> {
+    ) -> Result<Vec<crate::devices::Module>, crate::Error> {
         const MODULES_START_ADDR: u16 = 0x9000;
         const MODULE_IDENT_SUBINDEX: u8 = 0x0a;
         let mut modules: Vec<Module> = vec![];
@@ -325,14 +322,8 @@ impl Wago750_354 {
         if self.dev_count != 0 {
             return;
         }
-        smol::block_on(async {
-            let _ = self
-                .get_pdo_offsets(device_address, ecat_channel.clone(), true)
-                .await;
-            let _ = self
-                .get_pdo_offsets(device_address, ecat_channel.clone(), false)
-                .await;
-        });
+        let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), true);
+        let _ = self.get_pdo_offsets(device_address, ecat_channel.clone(), false);
         for module in &mut self.slots {
             match module {
                 Some(m) => {
@@ -404,7 +395,7 @@ impl Wago750_354 {
     pub fn initialize_modules<'a>(
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<Vec<Module>, Error> {
+    ) -> Result<Vec<Module>, crate::Error> {
         let count = match Wago750_354::get_module_count(ecat_channel.clone(), device_address) {
             Ok(count) => count,
             Err(e) => return Err(e),

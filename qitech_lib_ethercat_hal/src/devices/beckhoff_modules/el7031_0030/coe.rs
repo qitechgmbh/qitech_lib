@@ -1,3 +1,4 @@
+use crate::DeviceError;
 use crate::{
     EtherCATThreadChannel,
     coe::{ConfigurableDevice, Configuration},
@@ -49,7 +50,7 @@ impl Configuration for EL7031_0030Configuration {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         self.encoder
             .write_config(ecat_channel.clone(), device_address)?;
         self.stm_motor
@@ -90,7 +91,7 @@ impl ConfigurableDevice<EL7031_0030Configuration> for EL7031_0030 {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         config: &EL7031_0030Configuration,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         config.write_config(ecat_channel.clone(), device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
@@ -228,7 +229,7 @@ impl StmFeatures {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(device_address, 0x8012, 0x01, 0u8)?;
         ecat_channel.sdo_write(device_address, 0x8012, 0x05, u8::from(self.speed_range))?;
         ecat_channel.sdo_write(device_address, 0x8012, 0x09, self.invert_motor_polarity)?;
@@ -296,7 +297,7 @@ pub enum EL7031_0030DigitalInputEmulation {
 }
 
 impl TryFrom<u8> for EL7031_0030DigitalInputEmulation {
-    type Error = anyhow::Error;
+    type Error = DeviceError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
@@ -307,10 +308,10 @@ impl TryFrom<u8> for EL7031_0030DigitalInputEmulation {
             4 => Ok(Self::Band2),
             5 => Ok(Self::Hysteresis1),
             6 => Ok(Self::Hysteresis2),
-            _ => Err(anyhow::anyhow!(
-                "Invalid value for EL7031_0030DigitalInputEmulation: {}",
-                value
-            )),
+            _ => Err(DeviceError::UnknownValue {
+                what: "EL7031_0030DigitalInputEmulation",
+                value: value as u64,
+            }),
         }
     }
 }

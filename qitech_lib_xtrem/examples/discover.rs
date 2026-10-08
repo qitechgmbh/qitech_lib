@@ -26,7 +26,7 @@ struct Args {
     mode: ScaleMode,
 }
 
-fn parse_args() -> Result<Args, anyhow::Error> {
+fn parse_args() -> Result<Args, Box<dyn std::error::Error>> {
     let mut args = Args {
         bind: SocketAddrV4::new(std::net::Ipv4Addr::UNSPECIFIED, DEFAULT_DEVICE_REMOTE_PORT),
         broadcast: SocketAddrV4::new(std::net::Ipv4Addr::BROADCAST, DEFAULT_DEVICE_LOCAL_PORT),
@@ -44,7 +44,7 @@ fn parse_args() -> Result<Args, anyhow::Error> {
                 let interval_ms = expect_value(&mut argv, "--stream")?.parse()?;
                 args.mode = ScaleMode::Stream { interval_ms };
             }
-            other => return Err(anyhow::anyhow!("unknown argument {other:?}")),
+            other => return Err(format!("unknown argument {other:?}").into()),
         }
     }
     Ok(args)
@@ -53,12 +53,12 @@ fn parse_args() -> Result<Args, anyhow::Error> {
 fn expect_value(
     argv: &mut impl Iterator<Item = String>,
     flag: &str,
-) -> Result<String, anyhow::Error> {
+) -> Result<String, Box<dyn std::error::Error>> {
     argv.next()
-        .ok_or_else(|| anyhow::anyhow!("{flag} needs a value"))
+        .ok_or_else(|| format!("{flag} needs a value").into())
 }
 
-fn main() -> Result<(), anyhow::Error> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = parse_args()?;
 
     let bus = XtremBus::open(XtremBusConfig {

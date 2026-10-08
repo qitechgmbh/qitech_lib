@@ -58,7 +58,7 @@ impl Configuration for EL7031Configuration {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         // All calls are now synchronous and use the (channel, address) pattern
         self.encoder
             .write_config(ecat_channel.clone(), device_address)?;
@@ -95,7 +95,7 @@ impl ConfigurableDevice<EL7031Configuration> for EL7031 {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         config: &EL7031Configuration,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         config.write_config(ecat_channel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();

@@ -1,4 +1,4 @@
-use anyhow::Error;
+use crate::DeviceError;
 
 pub trait SerialInterfaceDevice {
     fn serial_interface_read_message(&mut self, port: usize) -> Option<Vec<u8>>;
@@ -6,7 +6,7 @@ pub trait SerialInterfaceDevice {
         &mut self,
         port: usize,
         message: Vec<u8>,
-    ) -> Result<bool, Error>;
+    ) -> Result<bool, DeviceError>;
     fn serial_interface_has_messages(&mut self, port: usize) -> bool;
     fn get_serial_encoding(&self, port: usize) -> Option<SerialEncoding>;
     fn get_baudrate(&self, port: usize) -> Option<u32>;

@@ -57,7 +57,7 @@ impl Configuration for EL7041_0052Configuration {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         self.encoder
             .write_config(ecat_channel.clone(), device_address)?;
         self.stm_motor
@@ -88,7 +88,7 @@ impl ConfigurableDevice<EL7041_0052Configuration> for EL7041_0052 {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         config: &EL7041_0052Configuration,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         config.write_config(ecat_channel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();

@@ -2,7 +2,8 @@ use super::udp;
 use crate::protocol::{DataAddress, Frame, MAX_FRAME_LEN, ProtocolError};
 use qitech_lib_common::get_async_runtime;
 use std::collections::HashMap;
-use std::net::{SocketAddr, SocketAddrV4};
+use std::io;
+use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -15,6 +16,39 @@ const DEVICE_QUEUE_LEN: usize = 8;
 
 /// Backlog of the "every frame" channel that discovery listens on.
 const EVENT_QUEUE_LEN: usize = 256;
+
+/// Everything that can go wrong on the bus socket itself.
+#[derive(Debug, thiserror::Error)]
+pub enum BusError {
+    /// The socket could not be bound or configured (see [`udp::bind_socket`]).
+    #[error("could not bind xtrem bus to {addr}")]
+    Bind {
+        addr: SocketAddrV4,
+        #[source]
+        source: io::Error,
+    },
+    /// The bound socket could not be registered with the runtime or queried.
+    #[error("xtrem bus socket error")]
+    Socket(#[from] io::Error),
+    /// The socket reports an IPv6 local address; the modules only speak IPv4.
+    #[error("bus bound to an IPv6 address: {0}")]
+    Ipv6Bound(SocketAddrV6),
+    /// A frame could not be sent.
+    #[error("could not send frame to {to}")]
+    Send {
+        to: SocketAddrV4,
+        #[source]
+        source: io::Error,
+    },
+}
+
+impl BusError {
+    /// The send buffer was full. A synchronous caller should retry next tick rather than treat
+    /// this as a failure.
+    pub fn is_would_block(&self) -> bool {
+        matches!(self, Self::Send { source, .. } if source.kind() == io::ErrorKind::WouldBlock)
+    }
+}
 
 /// Where a frame should be sent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,8 +163,11 @@ impl XtremBus {
     ///
     /// The bus itself is not handed back — callers work through [`XtremBusHandle`], and the
     /// receive task lives exactly as long as the last handle.
-    pub fn open(config: XtremBusConfig) -> Result<XtremBusHandle, anyhow::Error> {
-        let std_socket = udp::bind_socket(config.bind_addr)?;
+    pub fn open(config: XtremBusConfig) -> Result<XtremBusHandle, BusError> {
+        let std_socket = udp::bind_socket(config.bind_addr).map_err(|source| BusError::Bind {
+            addr: config.bind_addr,
+            source,
+        })?;
 
         let runtime = get_async_runtime();
         let _guard = runtime.enter();
@@ -169,10 +206,10 @@ impl XtremBusHandle {
     }
 
     /// The address the socket actually bound to, which resolves an ephemeral port 0.
-    pub fn local_addr(&self) -> Result<SocketAddrV4, anyhow::Error> {
+    pub fn local_addr(&self) -> Result<SocketAddrV4, BusError> {
         match self.inner.socket.local_addr()? {
             SocketAddr::V4(addr) => Ok(addr),
-            SocketAddr::V6(addr) => Err(anyhow::anyhow!("bus bound to an IPv6 address: {addr}")),
+            SocketAddr::V6(addr) => Err(BusError::Ipv6Bound(addr)),
         }
     }
 
@@ -219,20 +256,28 @@ impl XtremBusHandle {
 
     /// Send without blocking. This is what a synchronous control loop should call.
     ///
-    /// Returns `WouldBlock` if the socket's send buffer is full; the caller should treat that
-    /// as "try again next tick" rather than as a failure.
-    pub fn try_send(&self, frame: &Frame, destination: Destination) -> Result<(), anyhow::Error> {
+    /// Fails with a `WouldBlock` send error (see [`BusError::is_would_block`]) if the socket's
+    /// send buffer is full; the caller should treat that as "try again next tick" rather than
+    /// as a failure.
+    pub fn try_send(&self, frame: &Frame, destination: Destination) -> Result<(), BusError> {
         let bytes = frame.to_bytes(self.inner.config.crlf);
         let addr = self.resolve(destination);
-        self.inner.socket.try_send_to(&bytes, addr.into())?;
+        self.inner
+            .socket
+            .try_send_to(&bytes, addr.into())
+            .map_err(|source| BusError::Send { to: addr, source })?;
         Ok(())
     }
 
     /// Send, waiting for socket writability. For async callers such as discovery.
-    pub async fn send(&self, frame: &Frame, destination: Destination) -> Result<(), anyhow::Error> {
+    pub async fn send(&self, frame: &Frame, destination: Destination) -> Result<(), BusError> {
         let bytes = frame.to_bytes(self.inner.config.crlf);
         let addr = self.resolve(destination);
-        self.inner.socket.send_to(&bytes, addr).await?;
+        self.inner
+            .socket
+            .send_to(&bytes, addr)
+            .await
+            .map_err(|source| BusError::Send { to: addr, source })?;
         Ok(())
     }
 

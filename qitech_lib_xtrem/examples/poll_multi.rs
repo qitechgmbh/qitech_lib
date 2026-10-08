@@ -23,7 +23,7 @@ struct Args {
     verify_lrc: bool,
 }
 
-fn parse_args() -> Result<Args, anyhow::Error> {
+fn parse_args() -> Result<Args, Box<dyn std::error::Error>> {
     let mut bind = None;
     let mut broadcast = None;
     let mut verify_lrc = true;
@@ -34,23 +34,26 @@ fn parse_args() -> Result<Args, anyhow::Error> {
             "--bind" => bind = Some(expect(&mut argv, "--bind")?.parse()?),
             "--broadcast" => broadcast = Some(expect(&mut argv, "--broadcast")?.parse()?),
             "--no-lrc" => verify_lrc = false,
-            other => return Err(anyhow::anyhow!("unknown argument {other:?}")),
+            other => return Err(format!("unknown argument {other:?}").into()),
         }
     }
 
     Ok(Args {
-        bind: bind.ok_or_else(|| anyhow::anyhow!("--bind is required"))?,
-        broadcast: broadcast.ok_or_else(|| anyhow::anyhow!("--broadcast is required"))?,
+        bind: bind.ok_or_else(|| format!("--bind is required"))?,
+        broadcast: broadcast.ok_or_else(|| format!("--broadcast is required"))?,
         verify_lrc,
     })
 }
 
-fn expect(argv: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, anyhow::Error> {
+fn expect(
+    argv: &mut impl Iterator<Item = String>,
+    flag: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     argv.next()
-        .ok_or_else(|| anyhow::anyhow!("{flag} needs a value"))
+        .ok_or_else(|| format!("{flag} needs a value").into())
 }
 
-fn main() -> Result<(), anyhow::Error> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = parse_args()?;
     let runtime = get_async_runtime();
 
@@ -75,10 +78,11 @@ fn main() -> Result<(), anyhow::Error> {
 
     let colliding = probes.iter().filter(|p| p.id_collision).count();
     if colliding > 0 {
-        return Err(anyhow::anyhow!(
+        return Err(format!(
             "{colliding} module(s) share a device ID - run `examples/assign_ids` first, \
              otherwise their readings will overwrite each other"
-        ));
+        )
+        .into());
     }
 
     println!("found {} module(s):", probes.len());

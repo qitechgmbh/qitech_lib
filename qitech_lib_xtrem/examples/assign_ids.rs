@@ -33,7 +33,7 @@ struct Args {
     dry_run: bool,
 }
 
-fn parse_args() -> Result<Args, anyhow::Error> {
+fn parse_args() -> Result<Args, Box<dyn std::error::Error>> {
     let mut bind = None;
     let mut broadcast = None;
     let mut verify_lrc = true;
@@ -48,26 +48,29 @@ fn parse_args() -> Result<Args, anyhow::Error> {
             "--no-lrc" => verify_lrc = false,
             "--start-id" => start_id = expect(&mut argv, "--start-id")?.parse()?,
             "--dry-run" => dry_run = true,
-            other => return Err(anyhow::anyhow!("unknown argument {other:?}")),
+            other => return Err(format!("unknown argument {other:?}").into()),
         }
     }
 
     Ok(Args {
-        bind: bind.ok_or_else(|| anyhow::anyhow!("--bind is required"))?,
-        broadcast: broadcast.ok_or_else(|| anyhow::anyhow!("--broadcast is required"))?,
+        bind: bind.ok_or_else(|| format!("--bind is required"))?,
+        broadcast: broadcast.ok_or_else(|| format!("--broadcast is required"))?,
         verify_lrc,
         start_id,
         dry_run,
     })
 }
 
-fn expect(argv: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, anyhow::Error> {
+fn expect(
+    argv: &mut impl Iterator<Item = String>,
+    flag: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     argv.next()
-        .ok_or_else(|| anyhow::anyhow!("{flag} needs a value"))
+        .ok_or_else(|| format!("{flag} needs a value").into())
 }
 
 /// The next device ID that is neither reserved (`00h` host / `FFh` broadcast) nor already taken.
-fn next_free_id(used: &HashSet<u8>, from: u8) -> Result<u8, anyhow::Error> {
+fn next_free_id(used: &HashSet<u8>, from: u8) -> Result<u8, Box<dyn std::error::Error>> {
     let mut candidate = from;
     loop {
         if candidate != 0x00 && candidate != 0xFF && !used.contains(&candidate) {
@@ -75,7 +78,7 @@ fn next_free_id(used: &HashSet<u8>, from: u8) -> Result<u8, anyhow::Error> {
         }
         candidate = candidate
             .checked_add(1)
-            .ok_or_else(|| anyhow::anyhow!("ran out of device IDs (reached 0xFF)"))?;
+            .ok_or_else(|| format!("ran out of device IDs (reached 0xFF)"))?;
     }
 }
 
@@ -98,7 +101,7 @@ fn print_probes(probes: &[XtremProbe]) {
     }
 }
 
-fn main() -> Result<(), anyhow::Error> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = parse_args()?;
     let runtime = get_async_runtime();
 

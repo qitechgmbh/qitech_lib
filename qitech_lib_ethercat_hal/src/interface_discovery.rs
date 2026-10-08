@@ -1,3 +1,4 @@
+use crate::InterfaceError;
 use libc::{freeifaddrs, getifaddrs, ifaddrs};
 use std::ffi::CStr;
 use std::ptr;
@@ -40,13 +41,12 @@ fn is_wired_ethernet_device(name: &str) -> bool {
     is_physical && !is_virtual
 }
 
-pub fn list_ethernet_interfaces() -> Result<Vec<Interface>, anyhow::Error> {
+pub fn list_ethernet_interfaces() -> Result<Vec<Interface>, InterfaceError> {
     let mut ifaddr: *mut ifaddrs = ptr::null_mut();
     // getifaddrs populates a linked list of interface structures.
     unsafe {
         if getifaddrs(&mut ifaddr) == -1 {
-            eprintln!("Error calling getifaddrs");
-            return Err(anyhow::anyhow!("Error calling getifaddrs"));
+            return Err(InterfaceError::last_os_error("getifaddrs"));
         }
         let mut vec: Vec<Interface> = vec![];
         let mut curr = ifaddr;
@@ -128,21 +128,19 @@ pub fn list_ethernet_interfaces() -> Result<Vec<Interface>, anyhow::Error> {
 
 // RawFd is just a c_int (i32 basically)
 #[cfg(target_os = "linux")]
-fn open_raw_socket_libc(iface: &str) -> Result<RawFd, anyhow::Error> {
+fn open_raw_socket_libc(iface: &str) -> Result<RawFd, InterfaceError> {
     unsafe {
         let protocol = (0x88a4u16).to_be() as i32; // EtherCAT EtherType
         let fd = libc::socket(libc::AF_PACKET, libc::SOCK_RAW, protocol);
         if fd < 0 {
-            return Err(anyhow::anyhow!(
-                "Socket creation failed: {}",
-                std::io::Error::last_os_error()
-            ));
+            return Err(InterfaceError::last_os_error("socket"));
         }
-        let if_name = CString::new(iface).map_err(|_| anyhow::anyhow!("Invalid interface name"))?;
+        let if_name =
+            CString::new(iface).map_err(|_| InterfaceError::InvalidName(iface.to_string()))?;
         let if_index = libc::if_nametoindex(if_name.as_ptr());
         if if_index == 0 {
             libc::close(fd);
-            return Err(anyhow::anyhow!("Interface {} not found", iface));
+            return Err(InterfaceError::NotFound(iface.to_string()));
         }
 
         let mut addr: libc::sockaddr_ll = mem::zeroed();
@@ -154,9 +152,9 @@ fn open_raw_socket_libc(iface: &str) -> Result<RawFd, anyhow::Error> {
         let addr_len = mem::size_of::<libc::sockaddr_ll>() as libc::socklen_t;
 
         if libc::bind(fd, addr_ptr, addr_len) == -1 {
-            let err = std::io::Error::last_os_error();
+            let err = InterfaceError::last_os_error("bind");
             libc::close(fd);
-            return Err(anyhow::anyhow!("Bind failed: {}", err));
+            return Err(err);
         }
 
         let timeout = libc::timeval {
@@ -191,7 +189,7 @@ fn test_discovery(fd: RawFd, packet: &[u8]) -> bool {
 }
 
 #[cfg(target_os = "linux")]
-pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
+pub fn test_interface(interface_name: &str) -> Result<(), InterfaceError> {
     const ETHERCAT_DISCOVERY_FRAME: [u8; 29] = [
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x88, 0xa4, 0xd, 0x10,
         0x8, 0x1, 0x0, 0x0, 0x3, 0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
@@ -200,10 +198,7 @@ pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
     let result = if test_discovery(fd, &ETHERCAT_DISCOVERY_FRAME) {
         Ok(())
     } else {
-        Err(anyhow::anyhow!(
-            "Interface {:?} is not Ethercat",
-            interface_name
-        ))
+        Err(InterfaceError::NoResponse(interface_name.to_string()))
     };
     unsafe { libc::close(fd) };
     result
@@ -216,7 +211,7 @@ pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
 use std::{ffi::CString, mem, os::fd::RawFd};
 
 #[cfg(target_os = "macos")]
-fn open_bpf(interface_name: &str) -> Result<RawFd, anyhow::Error> {
+fn open_bpf(interface_name: &str) -> Result<RawFd, InterfaceError> {
     unsafe {
         for i in 0..16 {
             let dev = CString::new(format!("/dev/bpf{i}")).unwrap();
@@ -225,13 +220,14 @@ fn open_bpf(interface_name: &str) -> Result<RawFd, anyhow::Error> {
                 if std::io::Error::last_os_error().raw_os_error() == Some(libc::EBUSY) {
                     continue;
                 }
-                return Err(anyhow::anyhow!("Failed to open /dev/bpf{i}"));
+                return Err(InterfaceError::last_os_error("open /dev/bpf"));
             }
 
             let one: libc::c_uint = 1;
             if libc::ioctl(fd, libc::BIOCIMMEDIATE, &one) == -1 {
+                let err = InterfaceError::last_os_error("ioctl BIOCIMMEDIATE");
                 libc::close(fd);
-                return Err(anyhow::anyhow!("BIOCIMMEDIATE failed"));
+                return Err(err);
             }
 
             let mut ifr: libc::ifreq = mem::zeroed();
@@ -240,13 +236,14 @@ fn open_bpf(interface_name: &str) -> Result<RawFd, anyhow::Error> {
             }
 
             if libc::ioctl(fd, libc::BIOCSETIF, &ifr) == -1 {
+                let err = InterfaceError::last_os_error("ioctl BIOCSETIF");
                 libc::close(fd);
-                return Err(anyhow::anyhow!("BIOCSETIF({interface_name}) failed"));
+                return Err(err);
             }
 
             return Ok(fd);
         }
-        Err(anyhow::anyhow!("No free BPF device"))
+        Err(InterfaceError::NoFreeBpfDevice)
     }
 }
 
@@ -274,7 +271,7 @@ fn contains_ethercat_frame(data: &[u8]) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
+pub fn test_interface(interface_name: &str) -> Result<(), InterfaceError> {
     const FRAME: [u8; 60] = [
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x88, 0xa4, 0x0d,
         0x10, 0x08, 0x01, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -290,14 +287,17 @@ pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
 }
 
 #[cfg(target_os = "macos")]
-fn probe_ethercat(fd: RawFd, interface_name: &str, frame: &[u8]) -> Result<(), anyhow::Error> {
+fn probe_ethercat(fd: RawFd, interface_name: &str, frame: &[u8]) -> Result<(), InterfaceError> {
     unsafe {
         let mut buf = [0u8; 4096];
         while libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) > 0 {}
 
         let n = libc::write(fd, frame.as_ptr() as *const libc::c_void, frame.len());
         if n != frame.len() as isize {
-            return Err(anyhow::anyhow!("BPF write: sent {n}/{}", frame.len()));
+            return Err(InterfaceError::ShortWrite {
+                sent: n,
+                len: frame.len(),
+            });
         }
 
         let start = std::time::Instant::now();
@@ -307,7 +307,7 @@ fn probe_ethercat(fd: RawFd, interface_name: &str, frame: &[u8]) -> Result<(), a
                 return Ok(());
             }
             if start.elapsed() >= std::time::Duration::from_secs(2) {
-                return Err(anyhow::anyhow!("No EtherCAT response on {interface_name}"));
+                return Err(InterfaceError::NoResponse(interface_name.to_string()));
             }
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
@@ -316,9 +316,6 @@ fn probe_ethercat(fd: RawFd, interface_name: &str, frame: &[u8]) -> Result<(), a
 
 // ── Other platforms (neither Linux nor macOS) ─────────────────────────
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-pub fn test_interface(interface_name: &str) -> Result<(), anyhow::Error> {
-    Err(anyhow::anyhow!(
-        "EtherCAT interface discovery is not available on this platform (interface: {})",
-        interface_name
-    ))
+pub fn test_interface(_interface_name: &str) -> Result<(), InterfaceError> {
+    Err(InterfaceError::UnsupportedPlatform)
 }

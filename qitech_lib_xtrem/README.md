@@ -138,8 +138,8 @@ a unique ID to `0001h`, one module at a time.
 
 ```rust
 pub trait XtremDevice {
-    fn send_next_request(&mut self) -> Result<(), anyhow::Error>;
-    fn handle_response(&mut self) -> Result<(), anyhow::Error>;
+    fn send_next_request(&mut self) -> Result<(), DeviceError>;
+    fn handle_response(&mut self) -> Result<(), DeviceError>;
     fn as_any(&self) -> &dyn std::any::Any;
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }

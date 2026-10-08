@@ -1,5 +1,6 @@
 use super::EthercatDeviceProcessing;
 use super::{NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::DeviceError;
 use crate::EtherCATThreadChannel;
 use crate::io::analog_input::physical::AnalogInputRange;
 use crate::io::analog_input::{AnalogInputDevice, AnalogInputInput};
@@ -76,7 +77,7 @@ impl NewEthercatDevice for EL3024 {
 }
 
 impl AnalogInputDevice for EL3024 {
-    fn get_input(&self, port: usize) -> Result<AnalogInputInput, anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput, DeviceError> {
         let raw_value = match port {
             0 => match &self.txpdo {
                 EL3024TxPdo {
@@ -122,7 +123,12 @@ impl AnalogInputDevice for EL3024 {
                 } => ai_compact_channel4.value,
                 _ => panic!("Invalid TxPdo assignment"),
             },
-            _ => return Err(anyhow::anyhow!("EL3024 only has 4 ports")),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "EL3024",
+                    port,
+                });
+            }
         };
         let raw_value = U16SigningConverter::load_raw(raw_value);
 
@@ -131,7 +137,12 @@ impl AnalogInputDevice for EL3024 {
             1 => self.configuration.channel2.presentation,
             2 => self.configuration.channel3.presentation,
             3 => self.configuration.channel4.presentation,
-            _ => return Err(anyhow::anyhow!("EL3024 only has 4 ports")),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "EL3024",
+                    port,
+                });
+            }
         };
 
         let value: i16 = match presentation {
@@ -171,7 +182,7 @@ impl ConfigurableDevice<EL3024Configuration> for EL3024 {
         channel: EtherCATThreadChannel,
         device_address: u16,
         config: &EL3024Configuration,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         config.write_config(channel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
@@ -218,7 +229,7 @@ impl Configuration for EL3024Configuration {
         &self,
         channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         self.channel1
             .write_channel_config(channel.clone(), device_address, 0x8000)?;
         self.channel2

@@ -1,4 +1,5 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::DeviceError;
 use crate::EtherCATThreadChannel;
 use crate::io::analog_input::{AnalogInputDevice, AnalogInputInput};
 use crate::{
@@ -45,7 +46,7 @@ impl NewEthercatDevice for EL3001 {
 }
 
 impl AnalogInputDevice for EL3001 {
-    fn get_input(&self, port: usize) -> Result<AnalogInputInput, anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput, DeviceError> {
         let raw_value = match port {
             0 => match &self.txpdo {
                 EL3001TxPdo {
@@ -58,7 +59,12 @@ impl AnalogInputDevice for EL3001 {
                 } => ai_compact.value,
                 _ => panic!("EL3001 only has one port"),
             },
-            _ => return Err(anyhow::anyhow!("EL3001 Only has ONE port")),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "EL3001",
+                    port,
+                });
+            }
         };
         let channel_config = &self.configuration.channel_1;
         let raw_value = U16SigningConverter::load_raw(raw_value);
@@ -94,7 +100,7 @@ impl ConfigurableDevice<EL3001Configuration> for EL3001 {
         channel: EtherCATThreadChannel,
         device_address: u16,
         config: &EL3001Configuration,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         config.write_config(channel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
@@ -133,7 +139,7 @@ impl Configuration for EL3001Configuration {
         &self,
         channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         self.channel_1
             .write_channel_config(channel.clone(), 0, 0x8000)?;
         self.pdo_assignment

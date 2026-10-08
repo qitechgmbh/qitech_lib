@@ -1,9 +1,10 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use crate::DeviceError;
 use crate::EtherCATThreadChannel;
+use crate::PdoError;
 use crate::coe::{ConfigurableDevice, Configuration};
 use crate::io::serial_interface::{SerialEncoding, SerialInterfaceDevice};
 use crate::pdo::{PredefinedPdoAssignment, RxPdo, RxPdoObject, TxPdo, TxPdoObject};
-use anyhow::{Error, anyhow};
 use bitvec::field::BitField;
 use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;
@@ -55,7 +56,7 @@ pub enum EL6021PdoPreset {
 
 // Implement From<u8> for EL6021Baudrate
 impl TryFrom<u8> for EL6021Baudrate {
-    type Error = anyhow::Error;
+    type Error = DeviceError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
@@ -66,9 +67,10 @@ impl TryFrom<u8> for EL6021Baudrate {
             8 => Ok(Self::B38400),
             9 => Ok(Self::B57600),
             10 => Ok(Self::B115200),
-            _ => Err(anyhow::anyhow!(
-                "Error: specified Baudrate is not supported!"
-            )),
+            _ => Err(DeviceError::UnknownValue {
+                what: "EL6021Baudrate",
+                value: value as u64,
+            }),
         }
     }
 }
@@ -117,7 +119,7 @@ impl ConfigurableDevice<EL6021Configuration> for EL6021 {
         channel: EtherCATThreadChannel,
         device_address: u16,
         config: &EL6021Configuration,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         config.write_config(channel, device_address)?;
         self.configuration = config.clone();
         self.txpdo = config.pdo_assignment.txpdo_assignment();
@@ -221,7 +223,7 @@ impl Configuration for EL6021Configuration {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         match (self.baud_rate, self.data_frame) {
             (EL6021Baudrate::B2400, SerialEncoding::Coding7E1)
             | (EL6021Baudrate::B4800, SerialEncoding::Coding7O1)
@@ -231,9 +233,11 @@ impl Configuration for EL6021Configuration {
             | (EL6021Baudrate::B57600, SerialEncoding::Coding7E2)
             | (EL6021Baudrate::B115200, SerialEncoding::Coding7O2) => {}
             _ => {
-                return Err(anyhow!(
-                    "ERROR: EL6021Configuration::write_config Baudrate and Encoding is not compatible!"
-                ));
+                return Err(DeviceError::InvalidState {
+                    device: "EL6021",
+                    reason: "baudrate and encoding are not compatible",
+                }
+                .into());
             }
         }
         ecat_channel.sdo_write(device_address, 0x8000, 0x2, self.xon_on_supported_tx)?;
@@ -464,24 +468,26 @@ impl SerialInterfaceDevice for EL6021 {
         &mut self,
         _port: usize,
         message: Vec<u8>,
-    ) -> Result<bool, Error> {
+    ) -> Result<bool, DeviceError> {
         let tx_pdo_opt = &mut self.txpdo.com_tx_pdo_map_22_byte;
         let tx_pdo = match tx_pdo_opt {
             Some(tx_pdo_opt) => tx_pdo_opt,
-            None => return Err(anyhow::anyhow!("TXPDO Unavailable!!")),
+            None => return Err(PdoError::MissingObject("com_tx_pdo_map_22_byte").into()),
         };
 
         let rx_pdo_opt = &mut self.rxpdo.com_rx_pdo_map_22_byte;
         let rx_pdo = match rx_pdo_opt {
             Some(rx_pdo_opt) => rx_pdo_opt,
-            None => return Err(anyhow::anyhow!("RXPDO Unavailable!!")),
+            None => return Err(PdoError::MissingObject("com_rx_pdo_map_22_byte").into()),
         };
 
         // perhaps the 22 could be a constant
         if message.len() > 22 {
-            return Err(anyhow::anyhow!(
-                "Message is too long for RxPdo Buffer of 22 bytes!"
-            ));
+            return Err(PdoError::MessageTooLong {
+                len: message.len(),
+                max: 22,
+            }
+            .into());
         }
         // If we write a message of len zero, then this means we are waiting for our write_message to finish on the EL6021
         if message.is_empty() {

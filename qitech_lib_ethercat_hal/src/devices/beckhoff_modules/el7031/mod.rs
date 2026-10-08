@@ -1,3 +1,4 @@
+use crate::{DeviceError, PdoError};
 pub mod coe;
 pub mod pdo;
 use crate::{
@@ -8,7 +9,6 @@ use crate::{
     pdo::{PredefinedPdoAssignment, RxPdo, TxPdo},
     shared_config::el70x1::EL70x1OperationMode,
 };
-use anyhow::anyhow;
 use coe::EL7031Configuration;
 use pdo::{EL7031RxPdo, EL7031TxPdo};
 use qitech_lib_ethercat_hal_derive::EthercatDevice;
@@ -24,10 +24,10 @@ pub struct EL7031 {
 }
 
 impl EthercatDeviceProcessing for EL7031 {
-    fn input_post_process(&mut self) -> Result<(), anyhow::Error> {
+    fn input_post_process(&mut self) -> Result<(), DeviceError> {
         let enc_status_compact = match &self.txpdo.enc_status_compact {
             Some(value) => value,
-            None => return Err(anyhow!("enc_status_compact is None")),
+            None => return Err(PdoError::MissingObject("enc_status_compact").into()),
         };
 
         // update the counter wrapper
@@ -39,25 +39,25 @@ impl EthercatDeviceProcessing for EL7031 {
         Ok(())
     }
 
-    fn output_pre_process(&mut self) -> Result<(), anyhow::Error> {
+    fn output_pre_process(&mut self) -> Result<(), DeviceError> {
         let enc_status_compact = match &self.txpdo.enc_status_compact {
             Some(value) => value,
-            None => return Err(anyhow!("enc_status_compact is None")),
+            None => return Err(PdoError::MissingObject("enc_status_compact").into()),
         };
 
         let enc_control_compact = match &mut self.rxpdo.enc_control_compact {
             Some(value) => value,
-            None => return Err(anyhow!("enc_control_compact is None")),
+            None => return Err(PdoError::MissingObject("enc_control_compact").into()),
         };
 
         let stm_status = match &self.txpdo.stm_status {
             Some(value) => value,
-            None => return Err(anyhow!("stm_status is None")),
+            None => return Err(PdoError::MissingObject("stm_status").into()),
         };
 
         let stm_control = match &mut self.rxpdo.stm_control {
             Some(value) => value,
-            None => return Err(anyhow!("stm_control is None")),
+            None => return Err(PdoError::MissingObject("stm_control").into()),
         };
 
         // reset errors
@@ -104,7 +104,7 @@ impl StepperVelocityEL70x1Device for EL7031 {
         &mut self,
         port: usize,
         value: StepperVelocityEL70x1Output,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), DeviceError> {
         // check if operating mode is velocity
         if self.configuration.stm_features.operation_mode != EL70x1OperationMode::DirectVelocity {
             panic!(
@@ -127,7 +127,7 @@ impl StepperVelocityEL70x1Device for EL7031 {
                         stm_control.reset = value.reset;
                     }
                     None => {
-                        return Err(anyhow!("stm_control is None"));
+                        return Err(PdoError::MissingObject("stm_control").into());
                     }
                 }
                 match &mut self.rxpdo.stm_velocity {
@@ -135,34 +135,34 @@ impl StepperVelocityEL70x1Device for EL7031 {
                         stm_velocity.velocity = value.velocity;
                     }
                     None => {
-                        return Err(anyhow!("stm_velocity is None"));
+                        return Err(PdoError::MissingObject("stm_velocity").into());
                     }
                 }
                 Ok(())
             }
             _ => {
-                return Err(anyhow!(
-                    "[{}::StepperVelocityEL70x1Device::stepper_velocity_state] Invalid Port",
-                    module_path!()
-                ));
+                return Err(DeviceError::InvalidPort {
+                    device: "EL7031",
+                    port,
+                });
             }
         }
     }
 
-    fn get_input(&self, port: usize) -> Result<StepperVelocityEL70x1Input, anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<StepperVelocityEL70x1Input, DeviceError> {
         // check if operating mode is velocity
         if self.configuration.stm_features.operation_mode != EL70x1OperationMode::DirectVelocity {
-            return Err(anyhow!(
-                "Operation mode is not velocity, but {:?}",
-                self.configuration.stm_features.operation_mode
-            ));
+            return Err(DeviceError::InvalidState {
+                device: "EL7031",
+                reason: "operation mode is not velocity",
+            });
         }
 
         match port {
             0 => {
                 let stm_status = match &self.txpdo.stm_status {
                     Some(value) => value,
-                    None => return Err(anyhow!("stm_status is None")),
+                    None => return Err(PdoError::MissingObject("stm_status").into()),
                 };
 
                 Ok(StepperVelocityEL70x1Input {
@@ -177,10 +177,10 @@ impl StepperVelocityEL70x1Device for EL7031 {
                 })
             }
             _ => {
-                return Err(anyhow!(
-                    "[{}::StepperVelocityEL70x1Device::stepper_velocity_state] Invalid Port",
-                    module_path!()
-                ));
+                return Err(DeviceError::InvalidPort {
+                    device: "EL7031",
+                    port,
+                });
             }
         }
     }
@@ -189,25 +189,25 @@ impl StepperVelocityEL70x1Device for EL7031 {
         self.configuration.stm_features.speed_range
     }
 
-    fn get_output(&self, port: usize) -> Result<StepperVelocityEL70x1Output, anyhow::Error> {
+    fn get_output(&self, port: usize) -> Result<StepperVelocityEL70x1Output, DeviceError> {
         // check if operating mode is velocity
         if self.configuration.stm_features.operation_mode != EL70x1OperationMode::DirectVelocity {
-            return Err(anyhow!(
-                "Operation mode is not velocity, but {:?}",
-                self.configuration.stm_features.operation_mode
-            ));
+            return Err(DeviceError::InvalidState {
+                device: "EL7031",
+                reason: "operation mode is not velocity",
+            });
         }
 
         match port {
             0 => {
                 let stm_control = match &self.rxpdo.stm_control {
                     Some(value) => value,
-                    None => return Err(anyhow!("stm_control is None")),
+                    None => return Err(PdoError::MissingObject("stm_control").into()),
                 };
 
                 let stm_velocity = match &self.rxpdo.stm_velocity {
                     Some(value) => value,
-                    None => return Err(anyhow!("stm_velocity is None")),
+                    None => return Err(PdoError::MissingObject("stm_velocity").into()),
                 };
 
                 Ok(StepperVelocityEL70x1Output {
@@ -219,10 +219,10 @@ impl StepperVelocityEL70x1Device for EL7031 {
                 })
             }
             _ => {
-                return Err(anyhow!(
-                    "[{}::StepperVelocityEL70x1Device::stepper_velocity_state] Invalid Port",
-                    module_path!()
-                ));
+                return Err(DeviceError::InvalidPort {
+                    device: "EL7031",
+                    port,
+                });
             }
         }
     }
@@ -231,12 +231,11 @@ impl StepperVelocityEL70x1Device for EL7031 {
         1
     }
 
-    fn get_digital_input(&self, port: usize) -> Result<bool, anyhow::Error> {
-        let error1 = anyhow::anyhow!(
-            "[{}::Device::digital_input_state] Port {:?} is not available",
-            module_path!(),
-            port
-        );
+    fn get_digital_input(&self, port: usize) -> Result<bool, DeviceError> {
+        let error1 = DeviceError::InvalidPort {
+            device: "EL7031",
+            port,
+        };
 
         Ok(match port {
             0 => {
@@ -254,10 +253,10 @@ impl StepperVelocityEL70x1Device for EL7031 {
                     .digital_input_2
             }
             _ => {
-                return Err(anyhow!(
-                    "Port {:?} is not supported for digital input EL7041_0052",
-                    port
-                ));
+                return Err(DeviceError::InvalidPort {
+                    device: "EL7031",
+                    port,
+                });
             }
         })
     }
@@ -269,8 +268,11 @@ impl StepperVelocityEL70x1Device for EL7031 {
     fn get_analog_input(
         &self,
         _port: usize,
-    ) -> Result<crate::io::analog_input::AnalogInputInput, anyhow::Error> {
-        Err(anyhow!("EL7031 has no analog in ports",))
+    ) -> Result<crate::io::analog_input::AnalogInputInput, DeviceError> {
+        Err(DeviceError::Unsupported {
+            device: "EL7031",
+            feature: "analog inputs",
+        })
     }
 
     fn get_analog_port_count(&self) -> usize {
@@ -309,7 +311,7 @@ impl StepperVelocityEL70x1Device for EL7031 {
         let _ = self.set_output(port, output);
     }
 
-    fn set_speed(&mut self, port: usize, steps_per_second: f64) -> Result<(), anyhow::Error> {
+    fn set_speed(&mut self, port: usize, steps_per_second: f64) -> Result<(), DeviceError> {
         // Get current state to preserve other output values
         let mut output = self.get_output(port).unwrap();
 

@@ -1,3 +1,4 @@
+use crate::DeviceError;
 use ethercrab::{SubDevice, SubDeviceRef};
 use std::fmt;
 
@@ -94,7 +95,7 @@ impl SubdeviceDiagnosisEntry {
 
 pub fn convert_raw_diagnosis_bytes(
     message: [u8; DIAG_MESSAGE_LENGTH],
-) -> Result<SubdeviceDiagnosisEntry, anyhow::Error> {
+) -> Result<SubdeviceDiagnosisEntry, DeviceError> {
     let diag_code_bytes = [message[0], message[1], message[2], message[3]];
     let diag_code = u32::from_le_bytes(diag_code_bytes);
 
@@ -128,10 +129,10 @@ pub fn convert_raw_diagnosis_bytes(
     };
 
     if p1 == 0 {
-        return Err(anyhow::anyhow!(
-            "convert_raw_diagnosis_bytes: Datatype_p1 is unknown {:?}",
-            data_type_p1
-        ));
+        return Err(DeviceError::UnknownValue {
+            what: "diagnosis message data type p1",
+            value: data_type_p1 as u64,
+        });
     }
 
     // flags_p2 is packed, whatever thats supposed to mean

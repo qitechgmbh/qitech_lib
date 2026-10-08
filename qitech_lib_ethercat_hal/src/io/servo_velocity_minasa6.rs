@@ -1,8 +1,8 @@
+use crate::DeviceError;
 use crate::devices::{
     EthercatDevice,
     panasonic_modules::minas_a6::{PositionSpec, PositionTransitionSpec, State},
 };
-use anyhow::Error;
 
 /// Snapshot of the motor's current status (derived from TxPDO + internal state machine).
 #[derive(Debug, Clone)]
@@ -61,8 +61,8 @@ pub struct MinasA6BOutput {
 }
 
 pub trait MinasA6BDevice: EthercatDevice {
-    fn get_input(&self) -> Result<MinasA6BInput, Error>;
-    fn get_output(&self) -> Result<MinasA6BOutput, Error>;
+    fn get_input(&self) -> Result<MinasA6BInput, DeviceError>;
+    fn get_output(&self) -> Result<MinasA6BOutput, DeviceError>;
 
     fn get_position(&self) -> Option<f64> {
         self.get_input().ok().and_then(|i| i.position)
@@ -83,27 +83,27 @@ pub trait MinasA6BDevice: EthercatDevice {
         self.get_input().map(|i| i.has_error).unwrap_or(false)
     }
 
-    fn enable(&mut self) -> Result<(), Error>;
-    fn disable(&mut self) -> Result<(), Error>;
-    fn shut_down(&mut self) -> Result<(), Error> {
+    fn enable(&mut self) -> Result<(), DeviceError>;
+    fn disable(&mut self) -> Result<(), DeviceError>;
+    fn shut_down(&mut self) -> Result<(), DeviceError> {
         self.disable()
     }
 
-    fn quick_stop(&mut self) -> Result<(), Error>;
-    fn leave_quick_stop(&mut self) -> Result<(), Error>;
+    fn quick_stop(&mut self) -> Result<(), DeviceError>;
+    fn leave_quick_stop(&mut self) -> Result<(), DeviceError>;
 
     fn move_position(
         &mut self,
         position: PositionSpec,
         transition: Option<PositionTransitionSpec>,
-    ) -> Result<(), Error>;
+    ) -> Result<(), DeviceError>;
 
     fn move_positions(
         &mut self,
         positions: Vec<PositionSpec>,
         transition: Option<PositionTransitionSpec>,
-    ) -> Result<(), Error>;
+    ) -> Result<(), DeviceError>;
 
-    fn abort_motion(&mut self) -> Result<(), Error>;
-    fn home(&mut self) -> Result<(), Error>;
+    fn abort_motion(&mut self) -> Result<(), DeviceError>;
+    fn home(&mut self) -> Result<(), DeviceError>;
 }

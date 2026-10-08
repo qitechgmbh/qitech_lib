@@ -103,18 +103,34 @@ fn set_irq_affinity_raw(irq: u32, cpu: &str) -> Result<(), io::Error> {
     Ok(())
 }
 
+/// Everything that can go wrong while pinning an interface's IRQ to a CPU.
+#[cfg(target_os = "linux")]
+#[derive(Debug, thiserror::Error)]
+pub enum IrqAffinityError {
+    /// `/proc/interrupts` could not be read.
+    #[error("couldn't read /proc/interrupts")]
+    ReadInterrupts(#[source] io::Error),
+    /// No line in `/proc/interrupts` mentions the requested name.
+    #[error("couldn't find irq number for {irq_name:?}")]
+    IrqNotFound { irq_name: String },
+    /// `/proc/irq/<irq>/smp_affinity_list` could not be opened or written.
+    #[error("couldn't write affinity list for irq {irq}")]
+    WriteAffinity {
+        irq: u32,
+        #[source]
+        source: io::Error,
+    },
+}
+
 /// Example input: irq_name: "eno1" , cpu: 2
 #[cfg(target_os = "linux")]
-pub fn set_irq_affinity(irq_name: &str, cpu: u32) -> Result<(), anyhow::Error> {
-    let proc_contents = read_proc_interrupts()?;
-    let irq = get_interface_irq(&proc_contents, irq_name);
-    if irq.is_none() {
-        return Err(anyhow::anyhow!("Couldnt find irq number!"));
-    }
-    let res = set_irq_affinity_raw(irq.unwrap(), &cpu.to_string());
-    if res.is_err() {
-        return Err(anyhow::anyhow!("Couldnt write affinity list!"));
-    } else {
-        return Ok(());
-    }
+pub fn set_irq_affinity(irq_name: &str, cpu: u32) -> Result<(), IrqAffinityError> {
+    let proc_contents = read_proc_interrupts().map_err(IrqAffinityError::ReadInterrupts)?;
+    let irq = get_interface_irq(&proc_contents, irq_name).ok_or_else(|| {
+        IrqAffinityError::IrqNotFound {
+            irq_name: irq_name.to_string(),
+        }
+    })?;
+    set_irq_affinity_raw(irq, &cpu.to_string())
+        .map_err(|source| IrqAffinityError::WriteAffinity { irq, source })
 }

@@ -1,3 +1,4 @@
+use crate::ChannelError;
 use crate::EncoderResolution;
 use crate::devices::panasonic_modules::minas_a6::{
     GET_DATA_MAPPING, MinasA6BMotor, MotorHomingConfig, Reg, SET_DATA_MAPPING,
@@ -26,7 +27,7 @@ fn write_pdo_mapping(
     addr: u16,
     pdo_index: u16,
     entries: &[PdoMapping],
-) -> Result<(), anyhow::Error> {
+) -> Result<(), crate::Error> {
     // 1. Clear mapping count
     ch.sdo_write(addr, pdo_index, 0, 0u8)?;
     // 2. Write each mapping entry
@@ -44,7 +45,7 @@ fn assign_pdos(
     addr: u16,
     assign_reg: u16,
     pdo_indices: &[u16],
-) -> Result<(), anyhow::Error> {
+) -> Result<(), crate::Error> {
     ch.sdo_write(addr, assign_reg, 0, 0u8)?;
     for (i, &pdo) in pdo_indices.iter().enumerate() {
         ch.sdo_write(addr, assign_reg, (i + 1) as u8, pdo)?;
@@ -53,7 +54,7 @@ fn assign_pdos(
     Ok(())
 }
 
-fn configure_drive(ch: &EtherCATThreadChannel, addr: u16) -> Result<(), anyhow::Error> {
+fn configure_drive(ch: &EtherCATThreadChannel, addr: u16) -> Result<(), crate::Error> {
     // PDO mapping
     write_pdo_mapping(ch, addr, Reg::RX_PDO, &SET_DATA_MAPPING)?;
     write_pdo_mapping(ch, addr, Reg::TX_PDO, &GET_DATA_MAPPING)?;
@@ -74,13 +75,11 @@ fn configure_drive(ch: &EtherCATThreadChannel, addr: u16) -> Result<(), anyhow::
 fn read_encoder_resolution(
     ch: &EtherCATThreadChannel,
     addr: u16,
-) -> Result<EncoderResolution, anyhow::Error> {
+) -> Result<EncoderResolution, crate::Error> {
     let increments: u32 = ch.sdo_read(addr, Reg::ENCODER_RESOLUTION, 1)?;
     let revolutions: u32 = ch.sdo_read(addr, Reg::ENCODER_RESOLUTION, 2)?;
     if revolutions == 0 {
-        return Err(anyhow::anyhow!(
-            "ENCODER_RESOLUTION sub-index 2 returned 0 revolutions"
-        ));
+        return Err(ChannelError::InvalidResponse("ENCODER_RESOLUTION revolutions").into());
     }
     Ok(EncoderResolution {
         increments,
@@ -93,7 +92,7 @@ fn setup_homing(
     addr: u16,
     enc: &EncoderResolution,
     homing: &MotorHomingConfig,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), crate::Error> {
     ch.sdo_write(
         addr,
         Reg::HOMING_MODE,
@@ -127,7 +126,7 @@ impl MinasA6BConfiguration {
         &self,
         ch: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<EncoderResolution, anyhow::Error> {
+    ) -> Result<EncoderResolution, crate::Error> {
         configure_drive(&ch, device_address)?;
         let enc = read_encoder_resolution(&ch, device_address)?;
         setup_homing(&ch, device_address, &enc, &self.homing_config)?;
@@ -140,7 +139,7 @@ impl Configuration for MinasA6BConfiguration {
         &self,
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         self.write_config_and_get_resolution(ecat_channel, device_address)
             .map(|_| ())
     }
@@ -152,7 +151,7 @@ impl ConfigurableDevice<MinasA6BConfiguration> for MinasA6BMotor {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         config: &MinasA6BConfiguration,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         let encoder_resolution =
             config.write_config_and_get_resolution(ecat_channel, device_address)?;
 

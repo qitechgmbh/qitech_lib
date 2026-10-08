@@ -15,7 +15,7 @@ const BECKHOFF_CODEWORD_INDEX: u16 = 0xF008;
 // This is useful if you have a usecase where you very often write into CoE registers, as writes to EEPROM after a long time degrage the EEPROM
 pub async fn set_mut_beckhoff_eeprom_lock_active<'a>(
     subdevice: &SubDeviceRef<'a, &mut SubDevice>,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), ethercrab::error::Error> {
     let code_word = match subdevice.sdo_read::<u32>(BECKHOFF_CODEWORD_INDEX, 0).await {
         Ok(code_word) => code_word,
         // This happens when the subdevice has no mailbox
@@ -46,7 +46,7 @@ pub async fn set_mut_beckhoff_eeprom_lock_active<'a>(
 
 pub async fn set_beckhoff_eeprom_lock_active<'a>(
     subdevice: &SubDeviceRef<'a, &SubDevice>,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), ethercrab::error::Error> {
     let code_word = match subdevice.sdo_read::<u32>(BECKHOFF_CODEWORD_INDEX, 0).await {
         Ok(code_word) => code_word,
         // This happens when the subdevice has no mailbox

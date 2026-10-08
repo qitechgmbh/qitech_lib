@@ -1,3 +1,5 @@
+use crate::DeviceError;
+use crate::PdoError;
 use bitvec::field::BitField;
 
 use crate::devices::{
@@ -96,7 +98,7 @@ impl EthercatDevice for Wago750_652 {
     fn input(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         self.tx_pdo.in_buffer.fill(0u8);
         let base = self.tx_bit_offset;
 
@@ -135,7 +137,7 @@ impl EthercatDevice for Wago750_652 {
     fn output(
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         let base = self.rx_bit_offset;
         let mut ol0_i = 5; // Ol0 starts at bit 5 and goes to bit 7 (inclusive) 
         let mut ol1_i = 8;
@@ -187,14 +189,14 @@ impl EthercatDevice for Wago750_652 {
     fn input_checked(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         self.input(input)
     }
 
     fn output_checked(
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         self.output(output)?;
         Ok(())
     }
@@ -260,11 +262,13 @@ impl SerialInterfaceDevice for Wago750_652 {
         &mut self,
         _port: usize,
         message: Vec<u8>,
-    ) -> Result<bool, anyhow::Error> {
+    ) -> Result<bool, DeviceError> {
         if message.len() > WAGO750_652_MAX_BUF_LENGTH {
-            return Err(anyhow::anyhow!(
-                "Message is too long for RxPdo Buffer of 22 bytes!"
-            ));
+            return Err(PdoError::MessageTooLong {
+                len: message.len(),
+                max: 22,
+            }
+            .into());
         }
 
         if message.is_empty() {

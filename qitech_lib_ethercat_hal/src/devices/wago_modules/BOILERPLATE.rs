@@ -1,3 +1,4 @@
+use crate::{DeviceError, PdoError};
 // =============================================================================
 // WAGO 750-XXX Device Driver Boilerplate
 // =============================================================================
@@ -58,7 +59,7 @@ use crate::devices::{
 // }
 //
 // impl DigitalInputDevice<Wago750_XXXInputPort> for Wago750_XXX {
-//     fn get_input(&self, port: Wago750_XXXInputPort) -> Result<DigitalInputInput, anyhow::Error> {
+//     fn get_input(&self, port: Wago750_XXXInputPort) -> Result<DigitalInputInput, DeviceError> {
 //         Ok(DigitalInputInput {
 //             value: match port {
 //                 Wago750_XXXInputPort::DI1 => self.tx_pdo.port1,
@@ -212,7 +213,7 @@ use crate::devices::{
 // }
 //
 // impl DigitalInputDevice<Wago750_XXXInputPort> for Wago750_XXX {
-//     fn get_input(&self, port: Wago750_XXXInputPort) -> Result<DigitalInputInput, anyhow::Error> {
+//     fn get_input(&self, port: Wago750_XXXInputPort) -> Result<DigitalInputInput, DeviceError> {
 //         Ok(DigitalInputInput {
 //             value: match port {
 //                 Wago750_XXXInputPort::DI1 => self.tx_pdo.port1,
@@ -454,7 +455,7 @@ impl EthercatDevice for Wago750_XXX {
     fn input(
         &mut self,
         _input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         // TODO: paste input body from your chosen section
         Ok(())
     }
@@ -466,7 +467,7 @@ impl EthercatDevice for Wago750_XXX {
     fn output(
         &self,
         _output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         // TODO: paste output body from your chosen section
         Ok(())
     }
@@ -490,7 +491,7 @@ impl EthercatDevice for Wago750_XXX {
     fn input_checked(
         &mut self,
         _input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         // For analog inputs: self.input(_input)
         // For everything else: Ok(())
         Ok(())
@@ -499,7 +500,7 @@ impl EthercatDevice for Wago750_XXX {
     fn output_checked(
         &self,
         _output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 

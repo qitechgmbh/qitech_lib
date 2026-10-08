@@ -1,3 +1,4 @@
+use crate::DeviceError;
 use physical::{AnalogInputRange, AnalogInputValue};
 use qitech_lib_units::{ElectricCurrent, electric_current::ampere};
 pub mod physical;
@@ -67,13 +68,13 @@ impl AnalogInputInput {
 }
 
 pub trait AnalogInputDevice {
-    fn get_input(&self, port: usize) -> Result<AnalogInputInput, anyhow::Error>;
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput, DeviceError>;
     fn analog_input_range(&self) -> AnalogInputRange;
     fn get_port_count(&self) -> usize;
 }
 
 impl<T: AnalogCurrentInputDevice> AnalogInputDevice for T {
-    fn get_input(&self, port: usize) -> Result<AnalogInputInput, anyhow::Error> {
+    fn get_input(&self, port: usize) -> Result<AnalogInputInput, DeviceError> {
         if let Some(value) = self.get_current_relative(port) {
             Ok(AnalogInputInput {
                 normalized: value as f32,

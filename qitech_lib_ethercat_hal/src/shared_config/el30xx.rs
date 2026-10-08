@@ -6,7 +6,7 @@ impl EL30XXChannelConfiguration {
         ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         base_index: u16,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), crate::Error> {
         ecat_channel.sdo_write(device_address, base_index, 0x01, self.enable_user_scale)?;
         ecat_channel.sdo_write(
             device_address,

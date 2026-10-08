@@ -1,10 +1,10 @@
-use crate::EtherCATThreadChannel;
+use crate::{Error, EtherCATThreadChannel};
 pub trait Configuration {
     fn write_config(
         &self,
         channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), anyhow::Error>;
+    ) -> Result<(), Error>;
 }
 
 /// Wraps functionality of [`Configuration`] and adds getter/setter for the config
@@ -17,7 +17,7 @@ where
         channel: EtherCATThreadChannel,
         device_address: u16,
         config: &C,
-    ) -> Result<(), anyhow::Error>;
+    ) -> Result<(), Error>;
     fn get_config(&self) -> C;
 }
 

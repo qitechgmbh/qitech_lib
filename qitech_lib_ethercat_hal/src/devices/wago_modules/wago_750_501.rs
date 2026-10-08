@@ -1,3 +1,4 @@
+use crate::PdoError;
 use crate::devices::{
     DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, Module, SubDeviceProductTuple,
 };
@@ -83,7 +84,7 @@ impl EthercatDevice for Wago750_501 {
     fn input(
         &mut self,
         _input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 
@@ -94,7 +95,7 @@ impl EthercatDevice for Wago750_501 {
     fn output(
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         output.set(
             self.rx_bit_offset + Into::<usize>::into(Wago750_501Port::Port1),
             self.rxpdo.port1,
@@ -125,14 +126,14 @@ impl EthercatDevice for Wago750_501 {
     fn input_checked(
         &mut self,
         _input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 
     fn output_checked(
         &self,
         _output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 

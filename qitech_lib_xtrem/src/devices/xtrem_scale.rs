@@ -1,4 +1,4 @@
-use super::{XtremDevice, XtremError};
+use super::{DeviceError, XtremDevice, XtremError};
 use crate::protocol::{
     DataAddress, DeviceState, ExecuteResult, Frame, Function, RegisterValue, WeighingStatus,
     Weight, WriteResult,
@@ -101,7 +101,7 @@ struct Pending {
 ///
 /// ```no_run
 /// # use qitech_lib_xtrem::{XtremDevice, XtremScale};
-/// # fn tick(scale: &mut XtremScale) -> Result<(), anyhow::Error> {
+/// # fn tick(scale: &mut XtremScale) -> Result<(), qitech_lib_xtrem::DeviceError> {
 /// scale.send_next_request()?;
 /// scale.handle_response()?;
 /// if let Some(reading) = scale.reading {
@@ -344,7 +344,7 @@ impl XtremScale {
 }
 
 impl XtremDevice for XtremScale {
-    fn send_next_request(&mut self) -> Result<(), anyhow::Error> {
+    fn send_next_request(&mut self) -> Result<(), DeviceError> {
         if let Some(pending) = self.pending {
             if pending.sent_at.elapsed() < self.request_timeout {
                 // Already waiting; do not pipeline.
@@ -375,16 +375,15 @@ impl XtremDevice for XtremScale {
         Ok(())
     }
 
-    fn handle_response(&mut self) -> Result<(), anyhow::Error> {
+    fn handle_response(&mut self) -> Result<(), DeviceError> {
         loop {
             match self.inbox.try_recv() {
                 Ok(inbound) => self.apply(inbound),
                 Err(mpsc::error::TryRecvError::Empty) => return Ok(()),
                 Err(mpsc::error::TryRecvError::Disconnected) => {
-                    return Err(anyhow::anyhow!(
-                        "xtrem bus closed while device {:02X}h was attached",
-                        self.device_id
-                    ));
+                    return Err(DeviceError::BusClosed {
+                        device_id: self.device_id,
+                    });
                 }
             }
         }
