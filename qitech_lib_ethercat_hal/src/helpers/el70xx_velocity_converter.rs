@@ -23,8 +23,7 @@ impl EL70x1VelocityConverter {
     /// Convert steps per second to the i16 velocity value used by the EL7031
     pub fn steps_to_velocity(&self, steps_per_second: f64, propability_rounding: bool) -> i16 {
         // Calculate the velocity value (10000 = 100% of max speed)
-        let velocity_f64 =
-            (steps_per_second / self.max_steps_per_seconds as f64) * std::i16::MAX as f64;
+        let velocity_f64 = (steps_per_second / self.max_steps_per_seconds as f64) * i16::MAX as f64;
 
         match propability_rounding {
             true => round_propabilistic(velocity_f64),
@@ -36,7 +35,7 @@ impl EL70x1VelocityConverter {
     pub fn velocity_to_steps(&self, velocity: i16, propability_rounding: bool) -> i16 {
         // Calculate steps per second from velocity value
         let steps_per_second =
-            (velocity as f64 / std::i16::MAX as f64) * self.max_steps_per_seconds as f64;
+            (velocity as f64 / i16::MAX as f64) * self.max_steps_per_seconds as f64;
 
         match propability_rounding {
             true => round_propabilistic(steps_per_second),
