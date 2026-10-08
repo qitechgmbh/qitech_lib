@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
+      - staging
   pull_request:
     branches:
       - main
+      - staging
 
 env:
   CARGO_TERM_COLOR: always
@@ -50,7 +52,7 @@ jobs:
       - name: Build
         env:
           RUSTFLAGS: "-D warnings"
-        run: cargo build --workspace --all-targets --verbose
+        run: cargo build --workspace --all-targets --all-features --verbose
 
   format:
     runs-on: ubuntu-latest
@@ -61,20 +63,6 @@ jobs:
 
       - name: Format
         run: cargo fmt --all --check --verbose
-
-  examples:
-    runs-on: ubuntu-latest
-
-    steps:
-      - *checkout
-      - *setup-rust
-      - *setup-rust
-      - *cargo-cache
-
-      - name: Build Examples
-        env:
-          RUSTFLAGS: "-D warnings"
-        run: cargo build --workspace --examples --verbose
 
   sbom:
     runs-on: ubuntu-latest

@@ -29,5 +29,4 @@ approx.workspace = true
 
 [features]
 default = []
-mock = []
 legacy_code = []
