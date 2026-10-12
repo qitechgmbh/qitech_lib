@@ -31,35 +31,31 @@ fn main() {
     let mut channels: [Channel; N_CHANNELS] = Default::default();
     let mut el1259: EL1259 = EL1259::new();
     let interface = env::args().nth(1).expect("No Interface-name given");
-    let eth_control = init_ethercat(&interface, None);
-    let mut eth_handle = eth_control.app_handle;
+    let mut eth_control = init_ethercat(&interface, None);
     eth_control
-        .channel
         .change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into PreOp");
 
-    for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
+    for subdevice in eth_control.try_get_subdevices_vec_sync().unwrap() {
         if subdevice.product_id == EL1259_PRODUCT_ID {
             el1259
                 .write_config(
-                    eth_control.channel.clone(),
+                    eth_control.get_channel(),
                     subdevice.device_address,
                     &el1259.get_config(),
                 )
                 .expect("Failed to write config");
             eth_control
-                .channel
                 .enable_dc_sync0(subdevice.device_address)
                 .expect("Failed to enable DC Sync!");
         }
     }
 
     eth_control
-        .channel
         .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into OP");
 
-    let dc_system_start_ns = eth_handle.get_dc_sys_time_ns();
+    let dc_system_start_ns = eth_control.get_dc_sys_time_ns();
     println!("DC System Start Time {} ns", dc_system_start_ns);
     for (i, channel) in channels.iter_mut().enumerate() {
         channel.burst_start_ns = dc_system_start_ns + INIT_DELAY_NS;
@@ -68,10 +64,10 @@ fn main() {
         channel.pulse_delay_ns = PULSE_DELAY_NS * (1 << i) as u64;
     }
 
-    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
     loop {
-        while eth_handle.check_inputs_ready() == false {}
-        if let Some(input) = eth_handle.get_inputs() {
+        while eth_control.check_inputs_ready() == false {}
+        if let Some(input) = eth_control.get_inputs() {
             for subdevice in &subdevices {
                 if subdevice.product_id == EL1259_PRODUCT_ID {
                     let input = &input[subdevice.start_tx..subdevice.end_tx];
@@ -86,7 +82,7 @@ fn main() {
         }
 
         for (channel_index, channel) in channels.iter_mut().enumerate() {
-            if channel.burst_start_ns < eth_handle.get_dc_sys_time_ns() {
+            if channel.burst_start_ns < eth_control.get_dc_sys_time_ns() {
                 channel.burst_start_ns =
                     channel.burst_start_ns.wrapping_add(channel.burst_delay_ns);
 
@@ -114,7 +110,7 @@ fn main() {
             }
         }
 
-        if let Some(output) = eth_handle.write_outputs() {
+        if let Some(output) = eth_control.write_outputs() {
             for subdevice in &subdevices {
                 if subdevice.product_id == EL1259_PRODUCT_ID {
                     el1259
@@ -127,6 +123,6 @@ fn main() {
                 }
             }
         }
-        eth_handle.send_outputs();
+        eth_control.send_outputs();
     }
 }

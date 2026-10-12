@@ -6,17 +6,14 @@ fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
     let eth_control = init_ethercat(&interface, None);
     eth_control
-        .channel
         .change_state(EtherCATState::PreOp, Duration::from_secs(5))
         .expect("Failed to go into PreOp");
 
     let idents = eth_control
-        .channel
         .read_device_identifications()
         .expect("Failed to read indents!");
 
     let subdevices = eth_control
-        .app_handle
         .try_get_subdevices_vec_sync()
         .expect("Failed to read subdevices");
 

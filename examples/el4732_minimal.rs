@@ -94,19 +94,16 @@ fn main() {
         op_ramp_grace_cycles: 10000,
     };
 
-    let eth_control = init_ethercat(&interface, Some(config));
-    let mut eth_handle = eth_control.app_handle;
+    let mut eth_control = init_ethercat(&interface, Some(config));
 
     eth_control
-        .channel
         .change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into PreOp");
 
-    for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
+    for subdevice in eth_control.try_get_subdevices_vec_sync().unwrap() {
         if subdevice.product_id == EL4732_PRODUCT_ID {
             if oversampling_factor > 1 {
                 eth_control
-                    .channel
                     .configure_oversampling(
                         subdevice.device_address,
                         el4732.configuration.oversampling_config.clone(),
@@ -116,14 +113,12 @@ fn main() {
 
             let s1 = Duration::from_micros(sync1_period_us);
             eth_control
-                .channel
                 .enable_dc_sync01(subdevice.device_address, s1)
                 .expect("Failed to enable DC sync01");
         }
     }
 
     eth_control
-        .channel
         .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into OP");
 
@@ -132,8 +127,8 @@ fn main() {
         sinewave_freq, oversampling_factor, cycle_time_us, sync0_period_us, sync1_period_us
     );
 
-    let mut last_cycle = eth_handle.get_current_cycle();
-    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    let mut last_cycle = eth_control.get_current_cycle();
+    let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
     apply_rt();
     loop {
         for (i, slot) in samples_ch1.iter_mut().enumerate() {
@@ -143,7 +138,7 @@ fn main() {
 
         {
             let output = loop {
-                if let Some(out) = eth_handle.write_outputs() {
+                if let Some(out) = eth_control.write_outputs() {
                     break out;
                 }
             };
@@ -168,11 +163,11 @@ fn main() {
                 }
             }
         }
-        let current_cycle = eth_handle.get_current_cycle();
+        let current_cycle = eth_control.get_current_cycle();
         let cycles_elapsed = current_cycle.wrapping_sub(last_cycle);
         last_cycle = current_cycle;
 
         phase = (phase + phase_step_per_cycle * cycles_elapsed as f64) % (2.0 * PI);
-        eth_handle.send_outputs();
+        eth_control.send_outputs();
     }
 }

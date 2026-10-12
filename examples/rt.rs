@@ -1,6 +1,6 @@
 use qitech_lib_ethercat_hal::{
-    DcConfiguration, Error, EtherCATState, EtherCATThreadChannel, MasterConfiguration,
-    RtOptimizationConfig, StdEcatHandle, init_ethercat, set_current_thread_rt_priority,
+    DcConfiguration, Error, EtherCATState, MasterConfiguration, RtOptimizationConfig,
+    StdEcatControl, init_ethercat, set_current_thread_rt_priority,
 };
 use std::fs::File;
 use std::io::Write;
@@ -11,8 +11,7 @@ const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 struct Setup {
     pub total_cycles: usize,
     pub cycle_time_us: u64,
-    pub ec_interface: Option<StdEcatHandle>,
-    pub ec_config_interface: Option<EtherCATThreadChannel>,
+    pub ec_control: Option<StdEcatControl>,
 }
 
 fn setup() -> Setup {
@@ -29,8 +28,7 @@ fn setup() -> Setup {
             .expect("No total_cycles given")
             .parse()
             .expect("total_cycles must be a valid number"),
-        ec_interface: None,
-        ec_config_interface: None,
+        ec_control: None,
     };
     let mut dc_config = DcConfiguration::default();
     dc_config.start_delay = Duration::from_millis(100);
@@ -60,9 +58,7 @@ fn setup() -> Setup {
         wkc_mismatch_threshold: 5,
         op_ramp_grace_cycles: 10000,
     };
-    let ethercat_control = init_ethercat(&interface, Some(config));
-    setup.ec_interface = Some(ethercat_control.app_handle);
-    setup.ec_config_interface = Some(ethercat_control.channel);
+    setup.ec_control = Some(init_ethercat(&interface, Some(config)));
     return setup;
 }
 
@@ -80,33 +76,29 @@ fn apply_rt() {
     core_affinity::set_for_current(id);
 }
 
-fn move_to_op(
-    ec_config_interface: &EtherCATThreadChannel,
-    ec_app_interface: &StdEcatHandle,
-) -> Result<(), Error> {
-    ec_config_interface.change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)?;
+fn move_to_op(ec_control: &StdEcatControl) -> Result<(), Error> {
+    ec_control.change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)?;
 
     println!(
         "found {:?} ethercat terminals: ",
-        ec_app_interface.get_subdevice_count()
+        ec_control.get_subdevice_count()
     );
 
-    let subdevices = ec_app_interface.try_get_subdevices_vec_sync().unwrap();
-    for i in 0..ec_app_interface.get_subdevice_count() {
+    let subdevices = ec_control.try_get_subdevices_vec_sync().unwrap();
+    for i in 0..ec_control.get_subdevice_count() {
         println!("{:?}", subdevices[i as usize].get_name());
         let addr = subdevices[i as usize].device_address;
         if subdevices[i as usize].get_name().unwrap() != "EL4008" {
-            ec_config_interface.enable_dc_sync0(addr)?;
+            ec_control.enable_dc_sync0(addr)?;
         }
     }
-    ec_config_interface.change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
+    ec_control.change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let setup = setup();
     let total_cycles = setup.total_cycles;
-    let ec_config_interface = setup.ec_config_interface.unwrap();
-    let mut ec_app_interface = setup.ec_interface.unwrap();
+    let mut ec_control = setup.ec_control.unwrap();
 
     // Rust is playing smart here
     // and doesnt actually touch any pages here (on linux)
@@ -118,26 +110,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     warm_up_memory(&mut cycle_times);
     warm_up_memory(&mut jitters);
-    move_to_op(&ec_config_interface, &ec_app_interface)?;
-    //let op_subdevices = ec_app_interface.try_get_subdevices_vec_sync().unwrap();
+    move_to_op(&ec_control)?;
     apply_rt();
 
     // Even though no frame was actually missed. For more accurate logic the counter of missed_frames
     // should be moved to the controller logic
     while cycles_recorded < total_cycles {
-        while ec_app_interface.check_inputs_ready() == false {}
-        let _inputs = ec_app_interface.get_inputs().unwrap();
+        while ec_control.check_inputs_ready() == false {}
+        let _inputs = ec_control.get_inputs().unwrap();
         // Do something with the inputs here
         // ...
-        ec_app_interface.finish_read();
+        ec_control.finish_read();
 
-        while ec_app_interface.write_outputs().is_none() {}
-        let outputs = ec_app_interface.write_outputs().unwrap();
+        while ec_control.write_outputs().is_none() {}
+        let outputs = ec_control.write_outputs().unwrap();
         outputs[0] = 0;
-        ec_app_interface.send_outputs();
+        ec_control.send_outputs();
 
         // Spin until io thread has advanced past our last seen cycle
-        let current_controller_cycle = ec_app_interface.get_current_cycle();
+        let current_controller_cycle = ec_control.get_current_cycle();
         if last_cycle != 0 {
             if current_controller_cycle - last_cycle > 1 {
                 missed_frames += (current_controller_cycle - last_cycle - 1) as usize;
@@ -146,7 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if current_controller_cycle > last_cycle {
             last_cycle = current_controller_cycle;
-            let cycle_time = ec_app_interface.get_cycle_time_us();
+            let cycle_time = ec_control.get_cycle_time_us();
             cycle_times[cycles_recorded] = cycle_time;
             let jitter = (cycle_time as i64 - setup.cycle_time_us as i64).abs() as u64;
             jitters[cycles_recorded] = jitter;

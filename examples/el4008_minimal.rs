@@ -18,24 +18,21 @@ const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Best viewed with an oscilloscope.
 fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
-    let eth_control = init_ethercat(&interface, None);
-    let mut eth_handle = eth_control.app_handle;
+    let mut eth_control = init_ethercat(&interface, None);
 
     eth_control
-        .channel
         .change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into PreOp");
 
     println!("preop");
 
     eth_control
-        .channel
         .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into OP");
 
     println!("op");
 
-    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
 
     // This variable "knows" how to format the Rx PDOs for the EL4008
     let mut el4008: EL4008 = EL4008::new();
@@ -49,7 +46,7 @@ fn main() {
         }
 
         // We ONLY have outputs so no need to call get_inputs
-        if let Some(outputs) = eth_handle.write_outputs() {
+        if let Some(outputs) = eth_control.write_outputs() {
             for subdevice in &subdevices {
                 // Loop over the subdevices until the EL4008 is found
                 if subdevice.vendor == BECKHOFF_VENDOR_ID
@@ -67,7 +64,7 @@ fn main() {
         }
 
         // Send the output through the EtherCAT terminals
-        eth_handle.send_outputs();
+        eth_control.send_outputs();
         std::thread::sleep(Duration::from_millis(50));
     }
 }
