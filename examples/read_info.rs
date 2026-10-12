@@ -7,16 +7,8 @@ fn main() {
     let eth_control = init_ethercat(&interface, None);
     eth_control
         .channel
-        .request_state_change(EtherCATState::PreOp)
-        .expect("Channel was not ready");
-
-    loop {
-        let val = eth_control.app_handle.get_state();
-        match val {
-            EtherCATState::PreOp => break,
-            _ => std::thread::sleep(Duration::from_millis(10)),
-        }
-    }
+        .change_state(EtherCATState::PreOp, Duration::from_secs(30))
+        .expect("Failed to go into PreOp");
 
     let idents = eth_control
         .channel

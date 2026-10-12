@@ -1,4 +1,5 @@
 use crate::ChannelRequest;
+use crate::EtherCATThreadResponseChannel;
 use crate::EthercatErr;
 use crate::RtOptimizationConfig;
 use crate::TripleBufProducer;
@@ -112,32 +113,32 @@ fn setup_tx_rx_thread(
     return maindevice;
 }
 
-/*
-    if ecat OP state
-*/
+/// Handle a request in PreOp. Returns the response channel of an accepted request to go to OP,
+/// which is answered once the transition has finished.
 fn handle_channel_requests(
     msg: ChannelRequest,
     maindev: &MainDevice<'_>,
     mut preop_group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>,
-) -> bool {
+) -> Option<EtherCATThreadResponseChannel> {
     match msg.channel_request {
         ChannelRequests::ChangeState(ether_catstate) => {
-            return match ether_catstate {
-                EtherCATState::NoInterface => {
-                    //self.state.store(ether_catstate.into(), Relaxed);
-                    send_response(msg.response_channel, ChannelResponse::ChangeState(Ok(())));
-                    false
-                }
-                EtherCATState::Op => true,
-                _ => false,
+            let res = match ether_catstate {
+                EtherCATState::Op => return Some(msg.response_channel),
+                EtherCATState::NoInterface | EtherCATState::PreOp => Ok(()),
+                to => Err(EthercatErr::InvalidStateChange {
+                    from: EtherCATState::PreOp,
+                    to,
+                }),
             };
+            send_response(msg.response_channel, ChannelResponse::ChangeState(res));
+            None
         }
         // Not yet implemented
-        ChannelRequests::Shutdown() => false,
+        ChannelRequests::Shutdown() => None,
         ChannelRequests::SdoWriteRequest(request) => {
             let res = sdo_write(maindev, preop_group, request);
             send_response(msg.response_channel, ChannelResponse::SdoWriteResponse(res));
-            false
+            None
         }
         ChannelRequests::SdoReadRequest(request) => {
             match request.type_flag {
@@ -167,7 +168,7 @@ fn handle_channel_requests(
                 }
             }
 
-            false
+            None
         }
         ChannelRequests::ReadMachineIdent() => {
             let res = read_device_identifications(preop_group, maindev);
@@ -175,7 +176,7 @@ fn handle_channel_requests(
                 msg.response_channel,
                 ChannelResponse::MachineDeviceInfoResponse(res),
             );
-            false
+            None
         }
         ChannelRequests::WriteMachineIdent(identifications) => {
             let res = write_device_identifications(preop_group, maindev, &identifications);
@@ -183,7 +184,7 @@ fn handle_channel_requests(
                 msg.response_channel,
                 ChannelResponse::WriteMachineInfoResponse(res),
             );
-            false
+            None
         }
         ChannelRequests::EnableDCSync0(device_address) => {
             let res = enable_dc_sync(&mut preop_group, maindev, device_address);
@@ -191,7 +192,7 @@ fn handle_channel_requests(
                 msg.response_channel,
                 ChannelResponse::EnableDCSync0Response(res),
             );
-            false
+            None
         }
         ChannelRequests::EnableDCSync01(device_address, sync1_period) => {
             let res = enable_dc_sync01(&mut preop_group, maindev, device_address, sync1_period);
@@ -199,7 +200,7 @@ fn handle_channel_requests(
                 msg.response_channel,
                 ChannelResponse::EnableDCSync01Response(res),
             );
-            false
+            None
         }
         ChannelRequests::ConfigureOversampling(device_address, oversampling_settings) => {
             let res = configure_oversampling(
@@ -212,7 +213,7 @@ fn handle_channel_requests(
                 msg.response_channel,
                 ChannelResponse::ConfigureOversamplingResponse(res),
             );
-            false
+            None
         }
     }
 }
@@ -288,41 +289,23 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
     }
 
     fn handle_preop(
-        &self,
+        &mut self,
         group_opt: Option<PreopGroup>,
         maindevice: &MainDevice<'_>,
         spinner: SpinSleeper,
     ) -> Result<PreopResult, EthercatErr> {
-        let mut i = 0;
-        let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
-        let rt = get_async_runtime();
         let mut group = group_opt.unwrap();
-        for subdevice in group.iter(maindevice) {
-            let bytes = subdevice.name().as_bytes();
-            let len = std::cmp::min(bytes.len(), 127);
-            // Copy the slice into the array
-            subdevice_guard[i].name[..len].copy_from_slice(&bytes[..len]);
-            subdevice_guard[i].product_id = subdevice.identity().product_id;
-            subdevice_guard[i].revision = subdevice.identity().revision;
-            subdevice_guard[i].vendor = subdevice.identity().vendor_id;
-            subdevice_guard[i].device_address = subdevice.configured_address();
-            i += 1;
-        }
-        drop(subdevice_guard);
-        self.subdevice_count.store(i as u64, Relaxed);
-        get_async_runtime().block_on(self.service_diagnostic_request(maindevice));
-
+        let rt = get_async_runtime();
+        rt.block_on(self.service_diagnostic_request(maindevice));
         let msg = match self.rx_channel.try_recv() {
             Ok(value) => value,
             Err(_e) => return Ok(PreopResult::Preop(group)),
         };
 
-        let should_not_restart_loop = handle_channel_requests(msg, maindevice, &mut group);
-
-        match should_not_restart_loop {
-            true => (),
-            false => return Ok(PreopResult::Preop(group)),
+        let Some(op_request) = handle_channel_requests(msg, maindevice, &mut group) else {
+            return Ok(PreopResult::Preop(group));
         };
+        self.pending_state_change = Some(op_request);
 
         let mut group_preop_pdi: PreopPdiNoDcGroup = rt.block_on(self.transition(
             EtherCATTransition::PreOpToPreOpPdi,
@@ -338,20 +321,18 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         );
 
         // A bad DC config shows up as InvalidDcSyncConfiguration (0x0030).
-        let group_preop_pdi_dc = rt
-            .block_on(self.transition(
-                EtherCATTransition::ConfigureDcSync,
+        let group_preop_pdi_dc = rt.block_on(self.transition(
+            EtherCATTransition::ConfigureDcSync,
+            maindevice,
+            group_preop_pdi.configure_dc_sync(
                 maindevice,
-                group_preop_pdi.configure_dc_sync(
-                    maindevice,
-                    DcConfiguration {
-                        start_delay: self.current_config.dc_config.start_delay,
-                        sync0_period: self.current_config.dc_config.sync0_period,
-                        sync0_shift: self.current_config.dc_config.sync0_shift,
-                    },
-                ),
-            ))
-            .expect("msg");
+                DcConfiguration {
+                    start_delay: self.current_config.dc_config.start_delay,
+                    sync0_period: self.current_config.dc_config.sync0_period,
+                    sync0_shift: self.current_config.dc_config.sync0_shift,
+                },
+            ),
+        ))?;
         self.state.store(EtherCATState::PreopPdi.into(), Relaxed);
         return Ok(PreopResult::PreopPdiDc(group_preop_pdi_dc));
     }
@@ -475,6 +456,9 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     drop(subdevice_guard);
                     not_all_op_cycles = 0;
                     is_all_op = true;
+                    if let Some(response_channel) = self.pending_state_change.take() {
+                        send_response(response_channel, ChannelResponse::ChangeState(Ok(())));
+                    }
                 } else {
                     spinner.sleep_until(self.next_cycle);
                     self.cycle_time_us
@@ -550,6 +534,18 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
     }
 
     pub fn ethercat_state_machine(&mut self) -> Result<(), EthercatErr> {
+        let result = self.run_state_machine();
+        // The state machine only returns on failure, so tell a waiting state change why.
+        if let (Err(err), Some(response_channel)) = (&result, self.pending_state_change.take()) {
+            send_response(
+                response_channel,
+                ChannelResponse::ChangeState(Err(err.clone())),
+            );
+        }
+        result
+    }
+
+    fn run_state_machine(&mut self) -> Result<(), EthercatErr> {
         let mut _ethercat_tx_rx_handle: Result<JoinHandle<()>, std::io::Error>;
         let mut group: Option<SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock>> =
             None;
@@ -583,7 +579,17 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     match msg.channel_request {
                         ChannelRequests::ChangeState(ether_catstate) => match ether_catstate {
                             EtherCATState::PreOp => (),
-                            _ => continue,
+                            to => {
+                                let err = EthercatErr::InvalidStateChange {
+                                    from: EtherCATState::Init,
+                                    to,
+                                };
+                                send_response(
+                                    msg.response_channel,
+                                    ChannelResponse::ChangeState(Err(err)),
+                                );
+                                continue;
+                            }
                         },
                         // Not implemented yet
                         ChannelRequests::Shutdown() => continue,
@@ -615,6 +621,22 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                                 continue;
                             }
                         });
+
+                        let mut i = 0;
+                        let mut subdevice_guard = rt.block_on(self.subdevices.lock());
+                        for subdevice in group.as_ref().unwrap().iter(maindev) {
+                            let bytes = subdevice.name().as_bytes();
+                            let len = std::cmp::min(bytes.len(), 127);
+                            // Copy the slice into the array
+                            subdevice_guard[i].name[..len].copy_from_slice(&bytes[..len]);
+                            subdevice_guard[i].product_id = subdevice.identity().product_id;
+                            subdevice_guard[i].revision = subdevice.identity().revision;
+                            subdevice_guard[i].vendor = subdevice.identity().vendor_id;
+                            subdevice_guard[i].device_address = subdevice.configured_address();
+                            i += 1;
+                        }
+                        self.subdevice_count.store(i as u64, Relaxed);
+                        drop(subdevice_guard);
                         self.state.store(EtherCATState::PreOp.into(), Relaxed);
                         send_response(msg.response_channel, ChannelResponse::ChangeState(Ok(())));
                     }
@@ -646,7 +668,6 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     });
                 }
             }
-            self.requested_state = None;
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }

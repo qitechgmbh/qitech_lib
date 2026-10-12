@@ -1,4 +1,4 @@
-use crate::{ChannelError, DiagnosticRequest, DiagnosticResponse};
+use crate::{ChannelError, DiagnosticRequest, DiagnosticResponse, Error};
 use crate::{ChannelRequest, ChannelResponse, EtherCATThreadResponseChannel};
 use crate::{
     EtherCATState, EtherCATThreadChannel, SdoReadRequest, SdoRequest, SdoType,
@@ -323,14 +323,38 @@ impl EtherCATThreadChannel {
         }
     }
 
+    /// Request a state change without waiting for it. Use [`Self::change_state`] to wait.
     pub fn request_state_change(&self, state: EtherCATState) -> Result<(), ChannelError> {
-        let (tx, _rx) = std::sync::mpsc::channel::<ChannelResponse>();
+        self.send_state_change(state)?;
+        Ok(())
+    }
+
+    /// Request a state change and block until the master has finished it.
+    ///
+    /// For [`EtherCATState::Op`] this returns once every subdevice has confirmed OP. A failed
+    /// transition returns its error, and `get_last_transition_failure()` on the app handle has
+    /// the AL status of each subdevice. In OP the master no longer takes state requests, so
+    /// another request then runs into the timeout. After a timeout the transition may still
+    /// finish in the background.
+    pub fn change_state(&self, state: EtherCATState, timeout: Duration) -> Result<(), Error> {
+        let rx = self.send_state_change(state)?;
+        match recv(&rx, timeout)? {
+            ChannelResponse::ChangeState(result) => Ok(result?),
+            _ => Err(ChannelError::UnexpectedResponse.into()),
+        }
+    }
+
+    fn send_state_change(
+        &self,
+        state: EtherCATState,
+    ) -> Result<Receiver<ChannelResponse>, ChannelError> {
+        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::ChangeState(state),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
-        let _res = self.0.send(req);
-        Ok(())
+        self.0.send(req).map_err(|_| ChannelError::Disconnected)?;
+        Ok(rx)
     }
 
     pub fn enable_dc_sync0(&self, device_address: u16) -> Result<(), ChannelError> {

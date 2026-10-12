@@ -9,27 +9,18 @@ use qitech_lib_ethercat_hal::{
     io::digital_input::DigitalInputDevice,
 };
 use std::{env, time::Duration};
-
+const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(30);
 /// This example showcases a very bare bones application to read the LEDs on an EL1002
+
 fn main() {
     // Initialize EtherCAT Master with the default configuration
     let interface = env::args().nth(1).expect("No Interface-name given");
     let eth_control = init_ethercat(&interface, None);
     let mut eth_handle = eth_control.app_handle;
-
     eth_control
         .channel
-        .request_state_change(EtherCATState::PreOp)
-        .expect("Channel was not ready");
-
-    // Wait for state change
-    loop {
-        let val = eth_handle.get_state();
-        match val {
-            EtherCATState::PreOp => break,
-            _ => std::thread::sleep(Duration::from_millis(10)),
-        }
-    }
+        .change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)
+        .expect("Failed to go into PreOp");
 
     println!(
         "found {:?} ethercat terminals: ",
@@ -38,16 +29,8 @@ fn main() {
 
     eth_control
         .channel
-        .request_state_change(EtherCATState::Op)
+        .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into OP");
-
-    // Wait for state change
-    loop {
-        match eth_handle.get_state() {
-            EtherCATState::Op => break,
-            _ => std::thread::sleep(Duration::from_millis(10)),
-        }
-    }
 
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
     for sdev in &subdevices {
@@ -66,7 +49,6 @@ fn main() {
                 {
                     // Get the part of the Rx PDO that is used by the EL2004
                     let subdevice_inputs = &inputs[subdevice.start_tx..subdevice.end_tx];
-
                     // Create the actual Rx PDO and put it into the output
                     el1002
                         .input(BitSlice::<u8, Lsb0>::from_slice(subdevice_inputs))
@@ -74,11 +56,9 @@ fn main() {
                 }
             }
         }
-
         // Tick our application.
         // Here, we just alternate which LED is on
         print!("[");
-
         for i in 0..el1002.get_port_count() {
             let input = if el1002
                 .get_input(i)

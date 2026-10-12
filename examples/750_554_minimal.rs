@@ -14,6 +14,8 @@ use qitech_lib_ethercat_hal::{
 use qitech_lib_units::electric_current::milliampere;
 use std::{env, time::Duration};
 
+const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(30);
+
 fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
     let eth_control = init_ethercat(&interface, None);
@@ -22,14 +24,8 @@ fn main() {
     // Transition to PreOp
     eth_control
         .channel
-        .request_state_change(EtherCATState::PreOp)
-        .expect("Channel was not ready");
-    loop {
-        match eth_handle.get_state() {
-            EtherCATState::PreOp => break,
-            _ => std::thread::sleep(Duration::from_millis(10)),
-        }
-    }
+        .change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)
+        .expect("Failed to go into PreOp");
 
     println!(
         "Found {:?} EtherCAT terminals",
@@ -80,14 +76,8 @@ fn main() {
     // Transition to Op
     eth_control
         .channel
-        .request_state_change(EtherCATState::Op)
+        .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into OP");
-    loop {
-        match eth_handle.get_state() {
-            EtherCATState::Op => break,
-            _ => std::thread::sleep(Duration::from_millis(10)),
-        }
-    }
 
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
     let coupler_subdev = subdevices

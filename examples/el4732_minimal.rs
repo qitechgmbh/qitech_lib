@@ -11,6 +11,8 @@ use qitech_lib_ethercat_hal::{
 };
 use std::{env, f64::consts::PI, time::Duration};
 
+const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(30);
+
 fn apply_rt() {
     let id = core_affinity::CoreId { id: 2 };
     set_current_thread_rt_priority(99);
@@ -97,14 +99,8 @@ fn main() {
 
     eth_control
         .channel
-        .request_state_change(EtherCATState::PreOp)
-        .expect("Channel was not ready");
-    loop {
-        if matches!(eth_handle.get_state(), EtherCATState::PreOp) {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
+        .change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)
+        .expect("Failed to go into PreOp");
 
     for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
         if subdevice.product_id == EL4732_PRODUCT_ID {
@@ -128,16 +124,8 @@ fn main() {
 
     eth_control
         .channel
-        .request_state_change(EtherCATState::Op)
-        .expect("Channel was not ready");
-    std::thread::sleep(Duration::from_millis(5000));
-    loop {
-        if eth_handle.check_all_op() {
-            break;
-        } else {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
+        .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
+        .expect("Failed to go into OP");
 
     println!(
         "EL4732 running: {}Hz sine, oversample factor {}, cycle {}us, sync0 {}us, sync1 {}us",

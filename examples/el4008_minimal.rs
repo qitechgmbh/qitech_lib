@@ -10,6 +10,8 @@ use qitech_lib_ethercat_hal::{
 };
 use std::{env, time::Duration};
 
+const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Minimal example for the EL4008 digital output (0V to 10V).
 ///
 /// It create a stepfunction with 16 individual values.
@@ -21,32 +23,15 @@ fn main() {
 
     eth_control
         .channel
-        .request_state_change(EtherCATState::PreOp)
-        .expect("Channel was not ready");
-
-    // Wait for state change
-    loop {
-        let val = eth_handle.get_state();
-        match val {
-            EtherCATState::PreOp => break,
-            _ => std::thread::sleep(Duration::from_millis(10)),
-        }
-    }
+        .change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)
+        .expect("Failed to go into PreOp");
 
     println!("preop");
 
     eth_control
         .channel
-        .request_state_change(EtherCATState::Op)
+        .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into OP");
-
-    // Wait for state change
-    loop {
-        match eth_handle.get_state() {
-            EtherCATState::Op => break,
-            _ => std::thread::sleep(Duration::from_millis(10)),
-        }
-    }
 
     println!("op");
 

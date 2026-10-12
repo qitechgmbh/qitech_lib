@@ -10,6 +10,7 @@ use qitech_lib_ethercat_hal::{
     io::multi_timestamp::{MultiTimestampEvent, MultiTimestampOutput},
 };
 use std::{env, time::Duration};
+const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(30);
 const INIT_DELAY_NS: u64 = 20_000_000;
 const PULSE_DELAY_NS: u64 = 200_000;
 const PULSE_WIDTH_NS: u64 = 50_000;
@@ -34,14 +35,8 @@ fn main() {
     let mut eth_handle = eth_control.app_handle;
     eth_control
         .channel
-        .request_state_change(EtherCATState::PreOp)
-        .expect("Channel was not ready");
-    loop {
-        if matches!(eth_handle.get_state(), EtherCATState::PreOp) {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
+        .change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)
+        .expect("Failed to go into PreOp");
 
     for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
         if subdevice.product_id == EL1259_PRODUCT_ID {
@@ -61,18 +56,8 @@ fn main() {
 
     eth_control
         .channel
-        .request_state_change(EtherCATState::Op)
-        .expect("Channel was not ready");
-
-    'outer: loop {
-        std::thread::sleep(Duration::from_millis(10));
-        for subdevice in eth_handle.try_get_subdevices_vec_sync().unwrap() {
-            if !subdevice.initialized {
-                continue 'outer;
-            }
-        }
-        break;
-    }
+        .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
+        .expect("Failed to go into OP");
 
     let dc_system_start_ns = eth_handle.get_dc_sys_time_ns();
     println!("DC System Start Time {} ns", dc_system_start_ns);

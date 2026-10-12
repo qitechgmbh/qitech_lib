@@ -1,10 +1,12 @@
 use qitech_lib_ethercat_hal::{
-    DcConfiguration, EtherCATState, EtherCATThreadChannel, MasterConfiguration,
+    DcConfiguration, Error, EtherCATState, EtherCATThreadChannel, MasterConfiguration,
     RtOptimizationConfig, StdEcatHandle, init_ethercat, set_current_thread_rt_priority,
 };
 use std::fs::File;
 use std::io::Write;
 use std::{env, time::Duration};
+
+const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(30);
 
 struct Setup {
     pub total_cycles: usize,
@@ -78,9 +80,11 @@ fn apply_rt() {
     core_affinity::set_for_current(id);
 }
 
-fn move_to_op(ec_config_interface: &EtherCATThreadChannel, ec_app_interface: &StdEcatHandle) {
-    let _res = ec_config_interface.request_state_change(EtherCATState::PreOp);
-    std::thread::sleep(Duration::from_millis(5000));
+fn move_to_op(
+    ec_config_interface: &EtherCATThreadChannel,
+    ec_app_interface: &StdEcatHandle,
+) -> Result<(), Error> {
+    ec_config_interface.change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)?;
 
     println!(
         "found {:?} ethercat terminals: ",
@@ -92,11 +96,10 @@ fn move_to_op(ec_config_interface: &EtherCATThreadChannel, ec_app_interface: &St
         println!("{:?}", subdevices[i as usize].get_name());
         let addr = subdevices[i as usize].device_address;
         if subdevices[i as usize].get_name().unwrap() != "EL4008" {
-            ec_config_interface.enable_dc_sync0(addr).unwrap();
+            ec_config_interface.enable_dc_sync0(addr)?;
         }
     }
-    let _res = ec_config_interface.request_state_change(EtherCATState::Op);
-    std::thread::sleep(Duration::from_millis(5000));
+    ec_config_interface.change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -115,7 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     warm_up_memory(&mut cycle_times);
     warm_up_memory(&mut jitters);
-    move_to_op(&ec_config_interface, &ec_app_interface);
+    move_to_op(&ec_config_interface, &ec_app_interface)?;
     //let op_subdevices = ec_app_interface.try_get_subdevices_vec_sync().unwrap();
     apply_rt();
 
