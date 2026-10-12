@@ -1,4 +1,6 @@
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use super::{
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+};
 use crate::DeviceError;
 use crate::EtherCATThreadChannel;
 use crate::io::analog_input::{AnalogInputDevice, AnalogInputInput};
@@ -307,11 +309,10 @@ impl PredefinedPdoAssignment<EL3062_0030TxPdo, EL3062_0030RxPdo>
     }
 }
 
-pub const EL3062_0030_VENDOR_ID: u32 = 0x2;
-pub const EL3062_0030_PRODUCT_ID: u32 = 0x0bf63052;
-pub const EL3062_0030_REVISION_A: u32 = 0x0017001e;
-pub const EL3062_0030_IDENTITY_A: SubDeviceIdentityTuple = (
-    EL3062_0030_VENDOR_ID,
-    EL3062_0030_PRODUCT_ID,
-    EL3062_0030_REVISION_A,
-);
+impl IdentifiedDevice for EL3062_0030 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 0x0bf63052,
+        revisions: &[0x0017001e],
+    };
+}

@@ -1,6 +1,6 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice};
 use crate::DeviceError;
-use crate::devices::SubDeviceIdentityTuple;
+use crate::devices::{EthercatDeviceIdentity, IdentifiedDevice};
 use crate::io::digital_input::DigitalInputDevice;
 use crate::io::digital_output::DigitalOutputDevice;
 use crate::pdo::basic::BoolPdoObject;
@@ -254,11 +254,10 @@ impl Default for EP2339_0021TxPdo {
     }
 }
 
-pub const EP2339_0021_VENDOR_ID: u32 = 0x2;
-pub const EP2339_0021_PRODUCT_ID_A: u32 = 0x9234052;
-pub const EP2339_0021_REVISION_A: u32 = 0x130015;
-pub const EP2339_0021_IDENTITY_A: SubDeviceIdentityTuple = (
-    EP2339_0021_VENDOR_ID,
-    EP2339_0021_PRODUCT_ID_A,
-    EP2339_0021_REVISION_A,
-);
+impl IdentifiedDevice for EP2339_0021 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 0x9234052,
+        revisions: &[0x130015],
+    };
+}

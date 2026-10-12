@@ -1,4 +1,6 @@
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use super::{
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+};
 use crate::DeviceError;
 use crate::io::digital_input::DigitalInputDevice;
 use crate::pdo::basic::BoolPdoObject;
@@ -143,9 +145,10 @@ impl PredefinedPdoAssignment<EL1124TxPdo, ()> for EL1124PredefinedPdoAssignment 
     }
 }
 
-pub const EL1124_VENDOR_ID: u32 = 0x2;
-pub const EL1124_PRODUCT_ID: u32 = 0x04643052;
-pub const EL1124_REVISION_A: u32 = 0x00120000;
-
-pub const EL1124_IDENTITY_A: SubDeviceIdentityTuple =
-    (EL1124_VENDOR_ID, EL1124_PRODUCT_ID, EL1124_REVISION_A);
+impl IdentifiedDevice for EL1124 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 0x04643052,
+        revisions: &[0x00120000],
+    };
+}

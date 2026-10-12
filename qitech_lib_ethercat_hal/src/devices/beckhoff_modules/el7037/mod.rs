@@ -14,7 +14,9 @@ use coe::EL7037Configuration;
 use pdo::{EL7037RxPdo, EL7037TxPdo};
 use qitech_lib_ethercat_hal_derive::EthercatDevice;
 
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use super::{
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+};
 
 #[derive(Debug, Clone, EthercatDevice)]
 pub struct EL7037 {
@@ -337,8 +339,10 @@ impl StepperVelocityEL70x1Device for EL7037 {
     }
 }
 
-pub const EL7037_VENDOR_ID: u32 = 0x2;
-pub const EL7037_PRODUCT_ID: u32 = 0x1b7d3052;
-pub const EL7037_REVISION_A: u32 = 0x00170000;
-pub const EL7037_IDENTITY_A: SubDeviceIdentityTuple =
-    (EL7037_VENDOR_ID, EL7037_PRODUCT_ID, EL7037_REVISION_A);
+impl IdentifiedDevice for EL7037 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 0x1b7d3052,
+        revisions: &[0x00170000],
+    };
+}

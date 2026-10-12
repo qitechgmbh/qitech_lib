@@ -6,7 +6,9 @@ use crate::{
 };
 use qitech_lib_ethercat_hal_derive::{EthercatDevice, TxPdo};
 
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use super::{
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+};
 
 /// EL3204 4-channel temperature input device
 ///
@@ -106,13 +108,10 @@ impl Default for EL3204TxPdo {
     }
 }
 
-pub const EL3204_VENDOR_ID: u32 = 0x2;
-pub const EL3204_PRODUCT_ID: u32 = 0xc843052;
-pub const EL3204_REVISION_A: u32 = 0x160000;
-pub const EL3204_REVISION_B: u32 = 0x150000;
-
-pub const EL3204_IDENTITY_A: SubDeviceIdentityTuple =
-    (EL3204_VENDOR_ID, EL3204_PRODUCT_ID, EL3204_REVISION_A);
-
-pub const EL3204_IDENTITY_B: SubDeviceIdentityTuple =
-    (EL3204_VENDOR_ID, EL3204_PRODUCT_ID, EL3204_REVISION_B);
+impl IdentifiedDevice for EL3204 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 0xc843052,
+        revisions: &[0x160000, 0x150000],
+    };
+}

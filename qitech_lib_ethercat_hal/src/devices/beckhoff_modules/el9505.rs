@@ -1,4 +1,6 @@
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use super::{
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+};
 use qitech_lib_ethercat_hal_derive::EthercatDevice;
 
 /// EL9505 power supply terminal, 5 V DC output voltage.
@@ -20,8 +22,10 @@ impl std::fmt::Debug for EL9505 {
     }
 }
 
-pub const EL9505_VENDOR_ID: u32 = 0x2;
-pub const EL9505_PRODUCT_ID: u32 = 0x25213052;
-pub const EL9505_REVISION_A: u32 = 0x00120000;
-pub const EL9505_IDENTITY_A: SubDeviceIdentityTuple =
-    (EL9505_VENDOR_ID, EL9505_PRODUCT_ID, EL9505_REVISION_A);
+impl IdentifiedDevice for EL9505 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 0x25213052,
+        revisions: &[0x00120000],
+    };
+}

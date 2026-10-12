@@ -1,4 +1,6 @@
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use super::{
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+};
 use crate::DeviceError;
 use crate::EtherCATThreadChannel;
 use crate::PdoError;
@@ -637,22 +639,10 @@ mod tests {
     }
 }
 
-pub const EL6021_VENDOR_ID: u32 = 2;
-pub const EL6021_PRODUCT_ID: u32 = 0x17853052;
-
-pub const EL6021_REVISION_A: u32 = 0x150000;
-pub const EL6021_REVISION_B: u32 = 0x140000;
-pub const EL6021_REVISION_C: u32 = 0x160000;
-pub const EL6021_REVISION_D: u32 = 0x100000;
-
-pub const EL6021_IDENTITY_A: SubDeviceIdentityTuple =
-    (EL6021_VENDOR_ID, EL6021_PRODUCT_ID, EL6021_REVISION_A);
-
-pub const EL6021_IDENTITY_B: SubDeviceIdentityTuple =
-    (EL6021_VENDOR_ID, EL6021_PRODUCT_ID, EL6021_REVISION_B);
-
-pub const EL6021_IDENTITY_C: SubDeviceIdentityTuple =
-    (EL6021_VENDOR_ID, EL6021_PRODUCT_ID, EL6021_REVISION_C);
-
-pub const EL6021_IDENTITY_D: SubDeviceIdentityTuple =
-    (EL6021_VENDOR_ID, EL6021_PRODUCT_ID, EL6021_REVISION_D);
+impl IdentifiedDevice for EL6021 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 2,
+        product: 0x17853052,
+        revisions: &[0x150000, 0x140000, 0x160000, 0x100000],
+    };
+}

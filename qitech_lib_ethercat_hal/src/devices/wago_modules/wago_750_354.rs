@@ -14,8 +14,8 @@ use super::{
 use crate::EtherCATThreadChannel;
 use crate::PdoError;
 use crate::devices::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, Module, NewEthercatDevice,
-    SubDeviceIdentityTuple,
+    DynamicEthercatDevice, EthercatDevice, EthercatDeviceIdentity, EthercatDeviceProcessing,
+    IdentifiedDevice, Module, NewEthercatDevice,
 };
 const MODULE_COUNT_INDEX: (u16, u8) = (0xf050, 0x00);
 const TX_MAPPING_INDEX: (u16, u8) = (0x1c13, 0x00);
@@ -236,7 +236,7 @@ impl Wago750_354 {
             let mut module = Module {
                 slot: i as u16,
                 belongs_to_addr: device_address,
-                vendor_id: WAGO_750_354_VENDOR_ID,
+                vendor_id: Wago750_354::IDENTITY.vendor,
                 product_id: ident_iom,
                 has_tx: false,
                 has_rx: false,
@@ -408,12 +408,10 @@ impl Wago750_354 {
     }
 }
 
-pub const WAGO_750_354_VENDOR_ID: u32 = 0x00000021;
-pub const WAGO_750_354_PRODUCT_ID: u32 = 0x07500354;
-pub const WAGO_750_354_REVISION_A: u32 = 0x2;
-
-pub const WAGO_750_354_IDENTITY_A: SubDeviceIdentityTuple = (
-    WAGO_750_354_VENDOR_ID,
-    WAGO_750_354_PRODUCT_ID,
-    WAGO_750_354_REVISION_A,
-);
+impl IdentifiedDevice for Wago750_354 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x00000021,
+        product: 0x07500354,
+        revisions: &[0x2],
+    };
+}

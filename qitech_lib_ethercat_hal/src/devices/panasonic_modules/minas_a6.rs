@@ -9,8 +9,8 @@ use crate::PdoError;
 
 use crate::EncoderResolution;
 use crate::devices::{
-    EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, Module, NewEthercatDevice,
-    SubDeviceIdentityTuple,
+    EthercatDevice, EthercatDeviceIdentity, EthercatDeviceProcessing, EthercatDynamicPDO,
+    IdentifiedDevice, Module, NewEthercatDevice,
 };
 use crate::helpers::ethercrab_types::EthercrabSubDevicePreoperational;
 use crate::helpers::minas_a6_subdevice_wrapper::{EtherCATSlaveWrapper, PdoMapping};
@@ -1472,11 +1472,10 @@ impl MinasA6BDevice for MinasA6BMotor {
     }
 }
 
-pub const MINAS_A6_VENDOR_ID: u32 = 0x66f;
-pub const MINAS_A6_PRODUCT_ID_A: u32 = 0x613c0006;
-pub const MINAS_A6_REVISION_A: u32 = 0x10000;
-pub const MINAS_A6_IDENTITY_A: SubDeviceIdentityTuple = (
-    MINAS_A6_VENDOR_ID,
-    MINAS_A6_PRODUCT_ID_A,
-    MINAS_A6_REVISION_A,
-);
+impl IdentifiedDevice for MinasA6BMotor {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x66f,
+        product: 0x613c0006,
+        revisions: &[0x10000],
+    };
+}

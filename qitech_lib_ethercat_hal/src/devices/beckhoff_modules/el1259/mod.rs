@@ -1,4 +1,6 @@
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use super::{
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+};
 use crate::DeviceError;
 use crate::EtherCATThreadChannel;
 use crate::coe::{ConfigurableDevice, Configuration};
@@ -229,8 +231,10 @@ impl PredefinedPdoAssignment<EL1259TxPdo, EL1259RxPdo> for EL1259Configuration {
     }
 }
 
-pub const EL1259_VENDOR_ID: u32 = BECKHOFF_VENDOR_ID;
-pub const EL1259_PRODUCT_ID: u32 = 82522194;
-pub const EL1259_REVISION_A: u32 = 0;
-pub const EL1259_IDENTITY_A: SubDeviceIdentityTuple =
-    (EL1259_VENDOR_ID, EL1259_PRODUCT_ID, EL1259_REVISION_A);
+impl IdentifiedDevice for EL1259 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: BECKHOFF_VENDOR_ID,
+        product: 82522194,
+        revisions: &[0],
+    };
+}

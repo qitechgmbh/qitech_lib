@@ -3,7 +3,9 @@ use qitech_lib_ethercat_hal_derive::{EthercatDevice, RxPdo};
 use qitech_lib_units::{ElectricPotential, electric_potential::volt};
 
 use crate::{
-    devices::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple},
+    devices::{
+        EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+    },
     pdo::el40xx::AnalogOutput,
 };
 
@@ -103,8 +105,10 @@ impl Default for EL4008RxPdo {
     }
 }
 
-pub const EL4008_VENDOR_ID: u32 = 0x2;
-pub const EL4008_PRODUCT_ID: u32 = 0x0fa83052;
-pub const EL4008_REVISION_A: u32 = 0x00140000;
-pub const EL4008_IDENTITY_A: SubDeviceIdentityTuple =
-    (EL4008_VENDOR_ID, EL4008_PRODUCT_ID, EL4008_REVISION_A);
+impl IdentifiedDevice for EL4008 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 0x0fa83052,
+        revisions: &[0x00140000],
+    };
+}

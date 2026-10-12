@@ -3,7 +3,8 @@ use crate::DeviceError;
 use crate::EtherCATThreadChannel;
 use crate::PdoError;
 use crate::devices::{
-    EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple,
+    EthercatDevice, EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice,
+    NewEthercatDevice,
 };
 use crate::{
     devices::{DynamicEthercatDevice, Module},
@@ -361,7 +362,7 @@ impl IP20EcDi8Do8 {
             let mut module = Module {
                 slot: i as u16,
                 belongs_to_addr: device_address,
-                vendor_id: IP20_EC_DI8_DO8_VENDOR_ID,
+                vendor_id: IP20EcDi8Do8::IDENTITY.vendor,
                 product_id: ident_iom,
                 has_tx: false,
                 has_rx: false,
@@ -473,11 +474,10 @@ impl IP20EcDi8Do8 {
     }
 }
 
-pub const IP20_EC_DI8_DO8_VENDOR_ID: u32 = 0x741;
-pub const IP20_EC_DI8_DO8_PRODUCT_ID: u32 = 0x117b6722;
-pub const IP20_EC_DI8_DO8_REVISION: u32 = 0x1;
-pub const IP20_EC_DI8_DO8_IDENTITY: SubDeviceIdentityTuple = (
-    IP20_EC_DI8_DO8_VENDOR_ID,
-    IP20_EC_DI8_DO8_PRODUCT_ID,
-    IP20_EC_DI8_DO8_REVISION,
-);
+impl IdentifiedDevice for IP20EcDi8Do8 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x741,
+        product: 0x117b6722,
+        revisions: &[0x1],
+    };
+}
