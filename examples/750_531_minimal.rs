@@ -20,21 +20,19 @@ const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 fn main() {
     // Initialize EtherCAT Master with the default configuration
     let interface = env::args().nth(1).expect("No Interface-name given");
-    let eth_control = init_ethercat(&interface, None);
-    let mut eth_handle = eth_control.app_handle;
+    let mut eth_control = init_ethercat(&interface, None);
 
     // Transition to PreOp
     eth_control
-        .channel
         .change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into PreOp");
 
     println!(
         "Found {:?} EtherCAT terminals",
-        eth_handle.get_subdevice_count()
+        eth_control.get_subdevice_count()
     );
 
-    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
     for sdev in &subdevices {
         println!(" - {:?}", sdev);
     }
@@ -51,7 +49,7 @@ fn main() {
     // Initialize the coupler and discover its bus modules (750-531, etc.)
     let mut coupler = Wago750_354::new();
     let modules =
-        Wago750_354::initialize_modules(eth_control.channel.clone(), coupler_subdev.device_address)
+        Wago750_354::initialize_modules(eth_control.get_channel(), coupler_subdev.device_address)
             .expect("Failed to initialize coupler modules");
     for module in &modules {
         println!(
@@ -62,7 +60,7 @@ fn main() {
     for module in modules {
         coupler.set_module(module);
     }
-    coupler.init_slot_modules(eth_control.channel.clone(), coupler_subdev.device_address);
+    coupler.init_slot_modules(eth_control.get_channel(), coupler_subdev.device_address);
 
     // Verify slot 0 has a device
     assert!(
@@ -74,13 +72,12 @@ fn main() {
 
     // Transition to Op
     eth_control
-        .channel
         .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into OP");
 
     // Re-fetch subdevices now that we're in Op — the PDO offsets (start_rx, end_rx, etc.)
     // are only populated during the SafeOp transition, so the earlier snapshot had zeros.
-    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
     let coupler_subdev = subdevices
         .iter()
         .find(|s| {
@@ -106,14 +103,14 @@ fn main() {
 
         // Write outputs to the EtherCAT bus
         // The coupler's output() delegates to all slot devices
-        if let Some(outputs) = eth_handle.write_outputs() {
+        if let Some(outputs) = eth_control.write_outputs() {
             let subdevice_outputs = &mut outputs[coupler_subdev.start_rx..coupler_subdev.end_rx];
             coupler
                 .output(BitSlice::<u8, Lsb0>::from_slice_mut(subdevice_outputs))
                 .expect("Failed to write Rx PDO");
         }
 
-        eth_handle.send_outputs();
+        eth_control.send_outputs();
         std::thread::sleep(Duration::from_millis(500));
     }
 }

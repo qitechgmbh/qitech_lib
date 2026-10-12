@@ -18,21 +18,19 @@ const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
-    let eth_control = init_ethercat(&interface, None);
-    let mut eth_handle = eth_control.app_handle;
+    let mut eth_control = init_ethercat(&interface, None);
 
     // Transition to PreOp
     eth_control
-        .channel
         .change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into PreOp");
 
     println!(
         "Found {:?} EtherCAT terminals",
-        eth_handle.get_subdevice_count()
+        eth_control.get_subdevice_count()
     );
 
-    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
     for sdev in &subdevices {
         println!(" - {:?}", sdev);
     }
@@ -48,7 +46,7 @@ fn main() {
     // Initialize the coupler and discover its bus modules
     let mut coupler = Wago750_354::new();
     let modules =
-        Wago750_354::initialize_modules(eth_control.channel.clone(), coupler_subdev.device_address)
+        Wago750_354::initialize_modules(eth_control.get_channel(), coupler_subdev.device_address)
             .expect("Failed to initialize coupler modules");
     for module in &modules {
         println!(
@@ -59,7 +57,7 @@ fn main() {
     for module in modules {
         coupler.set_module(module);
     }
-    coupler.init_slot_modules(eth_control.channel.clone(), coupler_subdev.device_address);
+    coupler.init_slot_modules(eth_control.get_channel(), coupler_subdev.device_address);
 
     // Find the 750-554 and 750-455 slots
     let ao_slot = coupler
@@ -75,11 +73,10 @@ fn main() {
 
     // Transition to Op
     eth_control
-        .channel
         .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into OP");
 
-    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
     let coupler_subdev = subdevices
         .iter()
         .find(|s| {
@@ -116,19 +113,19 @@ fn main() {
         }
 
         // Write outputs to the EtherCAT bus
-        if let Some(outputs) = eth_handle.write_outputs() {
+        if let Some(outputs) = eth_control.write_outputs() {
             let subdevice_outputs = &mut outputs[coupler_subdev.start_rx..coupler_subdev.end_rx];
             coupler
                 .output(BitSlice::<u8, Lsb0>::from_slice_mut(subdevice_outputs))
                 .expect("Failed to write Rx PDO");
         }
-        eth_handle.send_outputs();
+        eth_control.send_outputs();
 
         // Let the DAC and ADC settle
         std::thread::sleep(Duration::from_millis(250));
 
         // Read inputs from the EtherCAT bus
-        if let Some(inputs) = eth_handle.get_inputs() {
+        if let Some(inputs) = eth_control.get_inputs() {
             let subdevice_inputs = &inputs[coupler_subdev.start_tx..coupler_subdev.end_tx];
             coupler
                 .input(BitSlice::<u8, Lsb0>::from_slice(subdevice_inputs))

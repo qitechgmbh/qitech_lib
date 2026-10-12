@@ -337,17 +337,204 @@ pub struct EtherCATThreadChannel(pub Sender<ChannelRequest>, pub Sender<Diagnost
 #[derive(Clone)]
 pub struct EtherCATThreadResponseChannel(pub Sender<ChannelResponse>);
 
+/// The application's handle to the EtherCAT master: state changes, SDO access, diagnostics
+/// and the cyclic process image.
 pub struct EtherCATControl<C, P>
 where
     C: Consumer,
     P: Producer,
 {
-    pub channel: EtherCATThreadChannel,
-    pub app_handle: EtherCATAppHandle<C, P>,
+    channel: EtherCATThreadChannel,
+    app_handle: EtherCATAppHandle<C, P>,
     pub join_handle: Option<JoinHandle<Result<(), EthercatErr>>>,
 }
 
+impl<C, P> EtherCATControl<C, P>
+where
+    C: Consumer,
+    P: Producer,
+{
+    /// The request channel to the master thread, for driver configuration that takes it
+    /// (`write_config`, WAGO module discovery). Everything else is a method on this type.
+    pub fn get_channel(&self) -> EtherCATThreadChannel {
+        self.channel.clone()
+    }
+
+    // State
+
+    /// Request a state change and block until the master has finished it.
+    /// See [`EtherCATThreadChannel::change_state`].
+    pub fn change_state(&self, state: EtherCATState, timeout: Duration) -> Result<(), Error> {
+        self.channel.change_state(state, timeout)
+    }
+
+    /// Request a state change without waiting for it.
+    pub fn request_state_change(&self, state: EtherCATState) -> Result<(), ChannelError> {
+        self.channel.request_state_change(state)
+    }
+
+    pub fn get_state(&self) -> EtherCATState {
+        self.app_handle.get_state()
+    }
+
+    pub fn check_all_op(&self) -> bool {
+        self.app_handle.check_all_op()
+    }
+
+    // Subdevices
+
+    pub fn get_subdevice_count(&self) -> u64 {
+        self.app_handle.get_subdevice_count()
+    }
+
+    pub fn try_get_subdevices_vec_sync(&self) -> Result<Vec<MetaSubdevice>, ChannelError> {
+        self.app_handle.try_get_subdevices_vec_sync()
+    }
+
+    pub async fn try_get_subdevices_vec(&self) -> Result<Vec<MetaSubdevice>, ChannelError> {
+        self.app_handle.try_get_subdevices_vec().await
+    }
+
+    // Process image
+
+    pub fn check_inputs_ready(&self) -> bool {
+        self.app_handle.check_inputs_ready()
+    }
+
+    pub fn get_inputs(&mut self) -> Option<&[u8]> {
+        self.app_handle.get_inputs()
+    }
+
+    pub fn finish_read(&mut self) {
+        self.app_handle.finish_read()
+    }
+
+    pub fn write_outputs(&mut self) -> Option<&mut [u8; ETHERCAT_TX_RX_SIZE]> {
+        self.app_handle.write_outputs()
+    }
+
+    pub fn send_outputs(&mut self) {
+        self.app_handle.send_outputs()
+    }
+
+    // Timing
+
+    pub fn get_current_cycle(&self) -> u64 {
+        self.app_handle.get_current_cycle()
+    }
+
+    pub fn get_cycle_time_us(&self) -> u64 {
+        self.app_handle.get_cycle_time_us()
+    }
+
+    pub fn get_next_cycle_us(&self) -> u64 {
+        self.app_handle.get_next_cycle_us()
+    }
+
+    pub fn get_dc_sys_time_ns(&self) -> u64 {
+        self.app_handle.get_dc_sys_time_ns()
+    }
+
+    // SDO and DC configuration
+
+    pub fn sdo_read<T: 'static>(
+        &self,
+        device_address: u16,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<T, ChannelError>
+    where
+        T: ecat_channel_impl::EthercatSdoBytes + ecat_channel_impl::EthercatResponseTypedResult,
+    {
+        self.channel.sdo_read(device_address, index, sub_index)
+    }
+
+    pub fn sdo_write<T: 'static>(
+        &self,
+        device_address: u16,
+        index: u16,
+        sub_index: u8,
+        value: T,
+    ) -> Result<(), ChannelError>
+    where
+        T: ethercrab::EtherCrabWireWrite + ecat_channel_impl::EthercatSdoBytes,
+    {
+        self.channel
+            .sdo_write(device_address, index, sub_index, value)
+    }
+
+    pub fn enable_dc_sync0(&self, device_address: u16) -> Result<(), ChannelError> {
+        self.channel.enable_dc_sync0(device_address)
+    }
+
+    pub fn enable_dc_sync01(
+        &self,
+        device_address: u16,
+        sync1_period: Duration,
+    ) -> Result<(), ChannelError> {
+        self.channel.enable_dc_sync01(device_address, sync1_period)
+    }
+
+    pub fn configure_oversampling(
+        &self,
+        device_address: u16,
+        oversampling_settings: Vec<(u16, u16)>,
+    ) -> Result<(), ChannelError> {
+        self.channel
+            .configure_oversampling(device_address, oversampling_settings)
+    }
+
+    pub fn set_mut_beckhoff_eeprom_lock_active(
+        &self,
+        device_address: u16,
+    ) -> Result<(), ChannelError> {
+        self.channel
+            .set_mut_beckhoff_eeprom_lock_active(device_address)
+    }
+
+    // Machine identification
+
+    pub fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, ChannelError> {
+        self.channel.read_device_identifications()
+    }
+
+    pub fn write_machine_device_info_eeprom(
+        &self,
+        info: Vec<MachineDeviceInfo>,
+    ) -> Result<(), ChannelError> {
+        self.channel.write_machine_device_info_eeprom(info)
+    }
+
+    // Diagnostics
+
+    pub fn register_read(
+        &self,
+        device_address: u16,
+        register: impl Into<u16>,
+    ) -> Result<u16, ChannelError> {
+        self.channel.register_read(device_address, register)
+    }
+
+    pub fn al_status_snapshot(
+        &self,
+    ) -> Result<Vec<al_diagnostics::SubDeviceAlStatus>, ChannelError> {
+        self.channel.al_status_snapshot()
+    }
+
+    /// Every transition attempted so far, oldest first. See
+    /// [`EtherCATAppHandle::get_transition_reports`].
+    pub fn get_transition_reports(&self) -> Vec<TransitionReport> {
+        self.app_handle.get_transition_reports()
+    }
+
+    /// The most recent failed transition, i.e. why the master is not in OP.
+    pub fn get_last_transition_failure(&self) -> Option<TransitionReport> {
+        self.app_handle.get_last_transition_failure()
+    }
+}
+
 pub type StdEcatHandle = EtherCATAppHandle<TripleBufConsumer, Arc<Mailbox>>;
+pub type StdEcatControl = EtherCATControl<TripleBufConsumer, Arc<Mailbox>>;
 pub type StdEcatController = EtherCATController<Arc<Mailbox>, TripleBufProducer>;
 
 /// Metadata for a Subdevice Contains start and end of the given subdevices pdu

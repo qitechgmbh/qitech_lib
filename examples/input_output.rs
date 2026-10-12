@@ -24,25 +24,22 @@ const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 fn main() {
     // Initialize EtherCAT Master with the default configuration
     let interface = env::args().nth(1).expect("No Interface-name given");
-    let eth_control = init_ethercat(&interface, None);
-    let mut eth_handle = eth_control.app_handle;
+    let mut eth_control = init_ethercat(&interface, None);
 
     eth_control
-        .channel
         .change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into PreOp");
 
     println!(
         "found {:?} ethercat terminals: ",
-        eth_handle.get_subdevice_count()
+        eth_control.get_subdevice_count()
     );
 
     eth_control
-        .channel
         .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into OP");
 
-    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
     for sdev in &subdevices {
         println!(" - {:?}", sdev);
     }
@@ -54,8 +51,8 @@ fn main() {
     loop {
         // You can ignore this boolean but if you start reading while this is false you will
         // get stale data (might actually be fine depending on your use case)
-        while eth_handle.check_inputs_ready() == false {}
-        let inputs = eth_handle.get_inputs().unwrap();
+        while eth_control.check_inputs_ready() == false {}
+        let inputs = eth_control.get_inputs().unwrap();
         for subdevice in &subdevices {
             if subdevice.vendor == BECKHOFF_VENDOR_ID && subdevice.product_id == EL1008_PRODUCT_ID {
                 let input_slice = &inputs[subdevice.start_tx..subdevice.end_tx];
@@ -74,7 +71,7 @@ fn main() {
         }
 
         // We ONLY have outputs so no need to call get_inputs
-        if let Some(outputs) = eth_handle.write_outputs() {
+        if let Some(outputs) = eth_control.write_outputs() {
             for subdevice in &subdevices {
                 // Loop over the subdevices until the EL2004 is found
                 if subdevice.vendor == BECKHOFF_VENDOR_ID
@@ -92,7 +89,7 @@ fn main() {
         }
 
         // Send the output through the EtherCAT terminals
-        eth_handle.send_outputs();
+        eth_control.send_outputs();
         std::thread::sleep(Duration::from_millis(50));
     }
 }
