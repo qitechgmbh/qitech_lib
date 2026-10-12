@@ -1,6 +1,12 @@
 use qitech_lib_ethercat_hal::{EtherCATState, init_ethercat};
 use std::{env, time::Duration};
 
+// EEPROM words where QiTech stores the machine identification of a subdevice
+const MACHINE_VENDOR_WORD: u16 = 0x0028;
+const MACHINE_ID_WORD: u16 = 0x0029;
+const MACHINE_SERIAL_WORD: u16 = 0x002a;
+const MACHINE_ROLE_WORD: u16 = 0x002b;
+
 /// This example reads all information from the devices that is available in PreOP
 fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
@@ -9,18 +15,20 @@ fn main() {
         .change_state(EtherCATState::PreOp, Duration::from_secs(5))
         .expect("Failed to go into PreOp");
 
-    let idents = eth_control
-        .read_device_identifications()
-        .expect("Failed to read indents!");
-
     let subdevices = eth_control
         .try_get_subdevices_vec_sync()
         .expect("Failed to read subdevices");
 
     for (index, subdevice) in subdevices.iter().enumerate() {
-        let ident = idents
-            .iter()
-            .find(|info| info.device_address == subdevice.device_address);
+        let read_word = |word| eth_control.eeprom_read(subdevice.device_address, word);
+        let ident = (|| {
+            Ok::<_, qitech_lib_ethercat_hal::ChannelError>((
+                read_word(MACHINE_VENDOR_WORD)?,
+                read_word(MACHINE_ID_WORD)?,
+                read_word(MACHINE_SERIAL_WORD)?,
+                read_word(MACHINE_ROLE_WORD)?,
+            ))
+        })();
         let name = subdevice.get_name().expect("Failed to read name!");
 
         let (trunk, branch) = if index == subdevices.len() - 1 {
@@ -43,11 +51,12 @@ fn main() {
             subdevice.start_rx
         );
 
-        if let Some(ident) = ident {
-            println!(
+        match ident {
+            Ok((machine_vendor, machine_id, machine_serial, role)) => println!(
                 "{}   └──Machine Identification: machine_vendor: {}, machine_id: {}, machine_serial: {}, role: {}",
-                trunk, ident.machine_vendor, ident.machine_id, ident.machine_serial, ident.role,
-            );
+                trunk, machine_vendor, machine_id, machine_serial, role,
+            ),
+            Err(e) => println!("{}   └──Machine Identification: unavailable ({})", trunk, e),
         }
     }
 }

@@ -4,16 +4,15 @@ use crate::EthercatErr;
 use crate::RtOptimizationConfig;
 use crate::TripleBufProducer;
 use crate::ethercrab_impl::configure_oversampling;
+use crate::ethercrab_impl::eeprom_read;
+use crate::ethercrab_impl::eeprom_write;
 use crate::ethercrab_impl::enable_dc_sync;
 use crate::ethercrab_impl::enable_dc_sync01;
 use crate::ethercrab_impl::sdo_read;
 use crate::ethercrab_impl::sdo_write;
 use crate::{
     ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES,
-    PDI_LEN, PDU_STORAGE, Producer, SdoType,
-    al_diagnostics::EtherCATTransition,
-    get_async_runtime,
-    machine_ident_read::{read_device_identifications, write_device_identifications},
+    PDI_LEN, PDU_STORAGE, Producer, SdoType, al_diagnostics::EtherCATTransition, get_async_runtime,
     send_response,
 };
 use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority};
@@ -170,19 +169,26 @@ fn handle_channel_requests(
 
             None
         }
-        ChannelRequests::ReadMachineIdent() => {
-            let res = read_device_identifications(preop_group, maindev);
+        ChannelRequests::EepromRead {
+            device_address,
+            word_address,
+        } => {
+            let res = eeprom_read(maindev, preop_group, device_address, word_address);
             send_response(
                 msg.response_channel,
-                ChannelResponse::MachineDeviceInfoResponse(res),
+                ChannelResponse::EepromReadResponse(res),
             );
             None
         }
-        ChannelRequests::WriteMachineIdent(identifications) => {
-            let res = write_device_identifications(preop_group, maindev, &identifications);
+        ChannelRequests::EepromWrite {
+            device_address,
+            word_address,
+            value,
+        } => {
+            let res = eeprom_write(maindev, preop_group, device_address, word_address, value);
             send_response(
                 msg.response_channel,
-                ChannelResponse::WriteMachineInfoResponse(res),
+                ChannelResponse::EepromWriteResponse(res),
             );
             None
         }

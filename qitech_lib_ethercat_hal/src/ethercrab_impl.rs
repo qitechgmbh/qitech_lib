@@ -72,6 +72,40 @@ where
     Err(ChannelError::UnknownSubdevice(request.device_address))
 }
 
+pub fn eeprom_read(
+    maindevice: &MainDevice,
+    group: &SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
+    device_address: u16,
+    word_address: u16,
+) -> Result<u16, ChannelError> {
+    for device in group.iter(maindevice) {
+        if device.configured_address() == device_address {
+            let runtime = get_async_runtime();
+            let res = runtime.block_on(device.eeprom_read::<u16>(maindevice, word_address));
+            return Ok(res?);
+        }
+    }
+    Err(ChannelError::UnknownSubdevice(device_address))
+}
+
+pub fn eeprom_write(
+    maindevice: &MainDevice,
+    group: &SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
+    device_address: u16,
+    word_address: u16,
+    value: u16,
+) -> Result<(), ChannelError> {
+    for device in group.iter(maindevice) {
+        if device.configured_address() == device_address {
+            let runtime = get_async_runtime();
+            let res =
+                runtime.block_on(device.eeprom_write_dangerously(maindevice, word_address, value));
+            return Ok(res?);
+        }
+    }
+    Err(ChannelError::UnknownSubdevice(device_address))
+}
+
 pub fn enable_dc_sync(
     group: &mut SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN>,
     maindevice: &MainDevice,

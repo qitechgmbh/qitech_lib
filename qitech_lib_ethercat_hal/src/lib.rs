@@ -12,12 +12,8 @@ pub mod io;
 pub mod pdo;
 pub mod shared_config;
 
-//#[cfg(feature = "legacy_code")]
-pub mod machine_ident_read;
-
 use al_diagnostics::{TransitionLog, TransitionReport};
 use ethercrab::PduStorage;
-use machine_ident_read::MachineDeviceInfo;
 use std::cell::UnsafeCell;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
@@ -476,15 +472,18 @@ where
             .set_mut_beckhoff_eeprom_lock_active(device_address)
     }
 
-    pub fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, ChannelError> {
-        self.channel.read_device_identifications()
+    pub fn eeprom_read(&self, device_address: u16, word_address: u16) -> Result<u16, ChannelError> {
+        self.channel.eeprom_read(device_address, word_address)
     }
 
-    pub fn write_machine_device_info_eeprom(
+    pub fn eeprom_write(
         &self,
-        info: Vec<MachineDeviceInfo>,
+        device_address: u16,
+        word_address: u16,
+        value: u16,
     ) -> Result<(), ChannelError> {
-        self.channel.write_machine_device_info_eeprom(info)
+        self.channel
+            .eeprom_write(device_address, word_address, value)
     }
 
     pub fn register_read(
@@ -667,9 +666,6 @@ pub enum DiagnosticResponse {
     AlStatusSnapshotResponse(Vec<al_diagnostics::SubDeviceAlStatus>),
 }
 
-// LEGACY CODE HIDE BEHIND FLAG
-pub struct MachineIdent {}
-
 #[derive(Debug)]
 pub enum ChannelResponse {
     SdoResponseBool(Result<bool, ChannelError>),
@@ -680,8 +676,8 @@ pub enum ChannelResponse {
     SdoResponseI32(Result<i32, ChannelError>),
     SdoWriteResponse(Result<(), ChannelError>),
     ChangeState(Result<(), EthercatErr>),
-    MachineDeviceInfoResponse(Result<Vec<MachineDeviceInfo>, ChannelError>),
-    WriteMachineInfoResponse(Result<(), ChannelError>),
+    EepromReadResponse(Result<u16, ChannelError>),
+    EepromWriteResponse(Result<(), ChannelError>),
     EnableDCSync0Response(Result<(), ChannelError>),
     EnableDCSync01Response(Result<(), ChannelError>),
     ConfigureOversamplingResponse(Result<(), ChannelError>),
@@ -695,11 +691,17 @@ pub enum ChannelRequests {
     // usize in this case is the device_address
     EnableDCSync0(usize),
     Shutdown(),
-    // Legacy code, only usable when feature legacy_code is set
-    ReadMachineIdent(),
     EnableDCSync01(usize, Duration),
     ConfigureOversampling(usize, Vec<(u16, u16)>),
-    WriteMachineIdent(Vec<MachineDeviceInfo>),
+    EepromRead {
+        device_address: u16,
+        word_address: u16,
+    },
+    EepromWrite {
+        device_address: u16,
+        word_address: u16,
+        value: u16,
+    },
 }
 
 pub struct ChannelRequest {
