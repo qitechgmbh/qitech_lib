@@ -13,6 +13,8 @@ use qitech_lib_ethercat_hal::{
 };
 use std::{env, time::Duration};
 
+const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// This example showcases a very bare bones application to toggle the outputs
 /// on a Wago 750-531 (4x digital output) sitting behind a Wago 750-354 coupler.
 fn main() {
@@ -24,14 +26,8 @@ fn main() {
     // Transition to PreOp
     eth_control
         .channel
-        .request_state_change(EtherCATState::PreOp)
-        .expect("Channel was not ready");
-    loop {
-        match eth_handle.get_state() {
-            EtherCATState::PreOp => break,
-            _ => std::thread::sleep(Duration::from_millis(10)),
-        }
-    }
+        .change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)
+        .expect("Failed to go into PreOp");
 
     println!(
         "Found {:?} EtherCAT terminals",
@@ -79,14 +75,8 @@ fn main() {
     // Transition to Op
     eth_control
         .channel
-        .request_state_change(EtherCATState::Op)
+        .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into OP");
-    loop {
-        match eth_handle.get_state() {
-            EtherCATState::Op => break,
-            _ => std::thread::sleep(Duration::from_millis(10)),
-        }
-    }
 
     // Re-fetch subdevices now that we're in Op — the PDO offsets (start_rx, end_rx, etc.)
     // are only populated during the SafeOp transition, so the earlier snapshot had zeros.

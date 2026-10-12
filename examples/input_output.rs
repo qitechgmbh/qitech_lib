@@ -18,6 +18,8 @@ use qitech_lib_ethercat_hal::{
 };
 use std::{env, time::Duration};
 
+const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// This example showcases a very bare bones application to toggle the LEDs on an EL2004
 fn main() {
     // Initialize EtherCAT Master with the default configuration
@@ -27,17 +29,8 @@ fn main() {
 
     eth_control
         .channel
-        .request_state_change(EtherCATState::PreOp)
-        .expect("Channel was not ready");
-
-    // Wait for state change
-    loop {
-        let val = eth_handle.get_state();
-        match val {
-            EtherCATState::PreOp => break,
-            _ => std::thread::sleep(Duration::from_millis(10)),
-        }
-    }
+        .change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)
+        .expect("Failed to go into PreOp");
 
     println!(
         "found {:?} ethercat terminals: ",
@@ -46,16 +39,8 @@ fn main() {
 
     eth_control
         .channel
-        .request_state_change(EtherCATState::Op)
+        .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into OP");
-
-    // Wait for state change
-    loop {
-        match eth_handle.get_state() {
-            EtherCATState::Op => break,
-            _ => std::thread::sleep(Duration::from_millis(10)),
-        }
-    }
 
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
     for sdev in &subdevices {

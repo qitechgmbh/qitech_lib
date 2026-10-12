@@ -68,7 +68,8 @@ where
     inputs_ready: Arc<AtomicBool>,
     dc_system_time_ns: Arc<AtomicU64>,
     current_config: MasterConfiguration,
-    requested_state: Option<EtherCATState>,
+    /// Answered once a requested transition to OP has finished or failed.
+    pending_state_change: Option<EtherCATThreadResponseChannel>,
     rx_channel: Receiver<ChannelRequest>,
     /// Separate from `rx_channel` so it can be drained in every state without swallowing a
     /// `ChangeState`/`Shutdown` the current arm cannot honour.
@@ -108,7 +109,7 @@ where
             next_cycle: std::time::Instant::now(),
             subdevices,
             state,
-            requested_state: None,
+            pending_state_change: None,
             rx_channel: rx,
             diagnostic_channel,
             transition_log,

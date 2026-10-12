@@ -163,8 +163,14 @@ impl InterfaceError {
 }
 
 /// Failures of the EtherCAT state machine and its transitions.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum EthercatErr {
+    /// The master can not go to the requested state from the one it is in.
+    #[error("can not change state from {from:?} to {to:?}")]
+    InvalidStateChange {
+        from: crate::EtherCATState,
+        to: crate::EtherCATState,
+    },
     #[error("Ethercat-error: {0}")]
     Custom(String),
     #[error("Failed to transition to PREOP state")]
