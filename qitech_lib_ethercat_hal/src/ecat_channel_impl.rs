@@ -2,7 +2,7 @@ use crate::{ChannelError, DiagnosticRequest, DiagnosticResponse, Error};
 use crate::{ChannelRequest, ChannelResponse, EtherCATThreadResponseChannel};
 use crate::{
     EtherCATState, EtherCATThreadChannel, SdoReadRequest, SdoRequest, SdoType,
-    al_diagnostics::SubDeviceAlStatus, machine_ident_read::MachineDeviceInfo,
+    al_diagnostics::SubDeviceAlStatus,
 };
 use ethercrab::EtherCrabWireWrite;
 use std::any::TypeId;
@@ -250,39 +250,53 @@ impl EtherCATThreadChannel {
         }
     }
 
-    pub fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, ChannelError> {
+    /// Read one 16-bit word from a subdevice's EEPROM (SII). `word_address` counts words, not
+    /// bytes. Only serviced in PreOp.
+    pub fn eeprom_read(&self, device_address: u16, word_address: u16) -> Result<u16, ChannelError> {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
-            channel_request: crate::ChannelRequests::ReadMachineIdent(),
+            channel_request: crate::ChannelRequests::EepromRead {
+                device_address,
+                word_address,
+            },
             response_channel: EtherCATThreadResponseChannel(tx),
         };
 
         self.0.send(req).map_err(|_| ChannelError::Disconnected)?;
 
-        let response = recv(&rx, Duration::from_millis(5000))?;
+        let response = recv(&rx, Duration::from_millis(1000))?;
         match response {
-            ChannelResponse::MachineDeviceInfoResponse(machine_device_infos) => {
-                machine_device_infos
-            }
+            ChannelResponse::EepromReadResponse(result) => result,
             _ => Err(ChannelError::UnexpectedResponse),
         }
     }
 
-    pub fn write_machine_device_info_eeprom(
+    /// Write one 16-bit word to a subdevice's EEPROM (SII). `word_address` counts words, not
+    /// bytes. Only serviced in PreOp.
+    ///
+    /// Overwriting the identity or configuration area can leave the subdevice unusable, so only
+    /// write to words you know are free.
+    pub fn eeprom_write(
         &self,
-        info: Vec<MachineDeviceInfo>,
+        device_address: u16,
+        word_address: u16,
+        value: u16,
     ) -> Result<(), ChannelError> {
-        use crate::ChannelRequests;
-
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
         let req: ChannelRequest = ChannelRequest {
-            channel_request: ChannelRequests::WriteMachineIdent(info),
+            channel_request: crate::ChannelRequests::EepromWrite {
+                device_address,
+                word_address,
+                value,
+            },
             response_channel: EtherCATThreadResponseChannel(tx),
         };
+
         self.0.send(req).map_err(|_| ChannelError::Disconnected)?;
-        let response = recv(&rx, Duration::from_millis(5000))?;
+
+        let response = recv(&rx, Duration::from_millis(1000))?;
         match response {
-            ChannelResponse::WriteMachineInfoResponse(result) => result,
+            ChannelResponse::EepromWriteResponse(result) => result,
             _ => Err(ChannelError::UnexpectedResponse),
         }
     }

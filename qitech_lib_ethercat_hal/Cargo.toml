@@ -25,7 +25,3 @@ futures.workspace = true
 approx.workspace = true
 
 [lib]
-
-[features]
-default = []
-legacy_code = []
