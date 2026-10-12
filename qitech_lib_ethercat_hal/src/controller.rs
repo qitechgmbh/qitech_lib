@@ -66,9 +66,10 @@ fn setup_tx_rx_thread(
                     core_affinity::set_for_current(id);
                     #[cfg(target_os = "linux")]
                     if let Some(irq_core) = opt.pin_irq_core {
-                        let res = set_irq_affinity(&interface, irq_core as u32);
-                        if res.is_err() {
-                            eprintln!("set_irq_affinity failed performance may be degraded");
+                        if let Err(e) = set_irq_affinity(&interface, irq_core as u32) {
+                            tracing::warn!(
+                                "set_irq_affinity failed, performance may be degraded: {e}"
+                            );
                         }
                     }
                 }

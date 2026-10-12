@@ -120,7 +120,6 @@ impl EthercatDevice for Wago750_402 {
         &self,
         _output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-        //  println!("output: {} {}",self.rx_bit_offset,_output);
         Ok(())
     }
 

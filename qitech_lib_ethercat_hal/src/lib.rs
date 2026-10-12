@@ -738,19 +738,14 @@ pub fn set_current_thread_rt_priority(priority: i32) {
 
         if result != 0 {
             let err = std::io::Error::last_os_error();
-            eprintln!(
-                "Failed to set RT priority: {}. (Are you root / using sudo?)",
-                err
-            );
+            tracing::warn!("Failed to set RT priority: {err}. (Missing CAP_SYS_NICE or root?)");
         }
     }
 }
 
 #[cfg(not(target_os = "linux"))]
 pub fn set_current_thread_rt_priority(_priority: i32) {
-    eprintln!(
-        "set_current_thread_rt_priority: real-time scheduling is not available on this platform"
-    );
+    tracing::warn!("Real-time scheduling is not available on this platform");
 }
 
 // Currently ignored by controller, but should be used to select driver for txrx
