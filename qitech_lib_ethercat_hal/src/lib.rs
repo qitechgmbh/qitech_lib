@@ -337,8 +337,6 @@ pub struct EtherCATThreadChannel(pub Sender<ChannelRequest>, pub Sender<Diagnost
 #[derive(Clone)]
 pub struct EtherCATThreadResponseChannel(pub Sender<ChannelResponse>);
 
-/// The application's handle to the EtherCAT master: state changes, SDO access, diagnostics
-/// and the cyclic process image.
 pub struct EtherCATControl<C, P>
 where
     C: Consumer,
@@ -354,21 +352,15 @@ where
     C: Consumer,
     P: Producer,
 {
-    /// The request channel to the master thread, for driver configuration that takes it
-    /// (`write_config`, WAGO module discovery). Everything else is a method on this type.
+    /// For driver configuration that still takes the channel (`write_config`, WAGO modules).
     pub fn get_channel(&self) -> EtherCATThreadChannel {
         self.channel.clone()
     }
 
-    // State
-
-    /// Request a state change and block until the master has finished it.
-    /// See [`EtherCATThreadChannel::change_state`].
     pub fn change_state(&self, state: EtherCATState, timeout: Duration) -> Result<(), Error> {
         self.channel.change_state(state, timeout)
     }
 
-    /// Request a state change without waiting for it.
     pub fn request_state_change(&self, state: EtherCATState) -> Result<(), ChannelError> {
         self.channel.request_state_change(state)
     }
@@ -381,8 +373,6 @@ where
         self.app_handle.check_all_op()
     }
 
-    // Subdevices
-
     pub fn get_subdevice_count(&self) -> u64 {
         self.app_handle.get_subdevice_count()
     }
@@ -394,8 +384,6 @@ where
     pub async fn try_get_subdevices_vec(&self) -> Result<Vec<MetaSubdevice>, ChannelError> {
         self.app_handle.try_get_subdevices_vec().await
     }
-
-    // Process image
 
     pub fn check_inputs_ready(&self) -> bool {
         self.app_handle.check_inputs_ready()
@@ -417,8 +405,6 @@ where
         self.app_handle.send_outputs()
     }
 
-    // Timing
-
     pub fn get_current_cycle(&self) -> u64 {
         self.app_handle.get_current_cycle()
     }
@@ -434,8 +420,6 @@ where
     pub fn get_dc_sys_time_ns(&self) -> u64 {
         self.app_handle.get_dc_sys_time_ns()
     }
-
-    // SDO and DC configuration
 
     pub fn sdo_read<T: 'static>(
         &self,
@@ -492,8 +476,6 @@ where
             .set_mut_beckhoff_eeprom_lock_active(device_address)
     }
 
-    // Machine identification
-
     pub fn read_device_identifications(&self) -> Result<Vec<MachineDeviceInfo>, ChannelError> {
         self.channel.read_device_identifications()
     }
@@ -504,8 +486,6 @@ where
     ) -> Result<(), ChannelError> {
         self.channel.write_machine_device_info_eeprom(info)
     }
-
-    // Diagnostics
 
     pub fn register_read(
         &self,
@@ -521,13 +501,10 @@ where
         self.channel.al_status_snapshot()
     }
 
-    /// Every transition attempted so far, oldest first. See
-    /// [`EtherCATAppHandle::get_transition_reports`].
     pub fn get_transition_reports(&self) -> Vec<TransitionReport> {
         self.app_handle.get_transition_reports()
     }
 
-    /// The most recent failed transition, i.e. why the master is not in OP.
     pub fn get_last_transition_failure(&self) -> Option<TransitionReport> {
         self.app_handle.get_last_transition_failure()
     }

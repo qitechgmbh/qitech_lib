@@ -111,7 +111,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     warm_up_memory(&mut cycle_times);
     warm_up_memory(&mut jitters);
     move_to_op(&ec_control)?;
-    //let op_subdevices = ec_control.try_get_subdevices_vec_sync().unwrap();
     apply_rt();
 
     // Even though no frame was actually missed. For more accurate logic the counter of missed_frames
