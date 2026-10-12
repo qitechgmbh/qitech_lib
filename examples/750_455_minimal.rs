@@ -14,7 +14,7 @@ use qitech_lib_ethercat_hal::{
 use qitech_lib_units::electric_current::milliampere;
 use std::{env, time::Duration};
 
-const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(30);
+const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");

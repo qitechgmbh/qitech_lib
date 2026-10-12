@@ -7,7 +7,7 @@ fn main() {
     let eth_control = init_ethercat(&interface, None);
     eth_control
         .channel
-        .change_state(EtherCATState::PreOp, Duration::from_secs(30))
+        .change_state(EtherCATState::PreOp, Duration::from_secs(5))
         .expect("Failed to go into PreOp");
 
     let idents = eth_control

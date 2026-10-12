@@ -10,7 +10,7 @@ use qitech_lib_ethercat_hal::{
 };
 use std::{env, time::Duration};
 
-const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(30);
+const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// This example showcases a very bare bones application to toggle the LEDs on an EL2004
 fn main() {

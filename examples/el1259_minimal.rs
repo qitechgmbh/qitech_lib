@@ -10,7 +10,7 @@ use qitech_lib_ethercat_hal::{
     io::multi_timestamp::{MultiTimestampEvent, MultiTimestampOutput},
 };
 use std::{env, time::Duration};
-const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(30);
+const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 const INIT_DELAY_NS: u64 = 20_000_000;
 const PULSE_DELAY_NS: u64 = 200_000;
 const PULSE_WIDTH_NS: u64 = 50_000;

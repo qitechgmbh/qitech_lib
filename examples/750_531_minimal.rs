@@ -13,7 +13,7 @@ use qitech_lib_ethercat_hal::{
 };
 use std::{env, time::Duration};
 
-const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(30);
+const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// This example showcases a very bare bones application to toggle the outputs
 /// on a Wago 750-531 (4x digital output) sitting behind a Wago 750-354 coupler.
