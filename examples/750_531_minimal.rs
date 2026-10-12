@@ -2,11 +2,8 @@ use bitvec::{order::Lsb0, slice::BitSlice};
 use qitech_lib_ethercat_hal::{
     EtherCATState,
     devices::{
-        EthercatDevice, NewEthercatDevice,
-        wago_modules::{
-            wago_750_354::{WAGO_750_354_IDENTITY_A, Wago750_354},
-            wago_750_531::Wago750_531,
-        },
+        EthercatDevice, IdentifiedDevice, NewEthercatDevice,
+        wago_modules::{wago_750_354::Wago750_354, wago_750_531::Wago750_531},
     },
     init_ethercat,
     io::digital_output::DigitalOutputDevice,
@@ -38,12 +35,9 @@ fn main() {
     }
 
     // Find the Wago 750-354 coupler subdevice
-    // WAGO_750_354_IDENTITY_A is a (vendor_id, product_id, revision) tuple
     let coupler_subdev = subdevices
         .iter()
-        .find(|s| {
-            s.vendor == WAGO_750_354_IDENTITY_A.0 && s.product_id == WAGO_750_354_IDENTITY_A.1
-        })
+        .find(|s| Wago750_354::IDENTITY.matches(s))
         .expect("No Wago 750-354 coupler found on the bus");
 
     // Initialize the coupler and discover its bus modules (750-531, etc.)
@@ -80,9 +74,7 @@ fn main() {
     let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
     let coupler_subdev = subdevices
         .iter()
-        .find(|s| {
-            s.vendor == WAGO_750_354_IDENTITY_A.0 && s.product_id == WAGO_750_354_IDENTITY_A.1
-        })
+        .find(|s| Wago750_354::IDENTITY.matches(s))
         .expect("No Wago 750-354 coupler found on the bus");
 
     // Main loop: cycle through the 4 digital outputs
