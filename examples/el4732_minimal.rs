@@ -2,8 +2,8 @@ use bitvec::slice::BitSlice;
 use qitech_lib_ethercat_hal::{
     DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig,
     devices::{
-        EthercatDevice, EthercatDeviceProcessing,
-        beckhoff_modules::el4732::{EL4732, EL4732_PRODUCT_ID, EL4732Port},
+        EthercatDevice, EthercatDeviceProcessing, IdentifiedDevice,
+        beckhoff_modules::el4732::{EL4732, EL4732Port},
     },
     init_ethercat,
     io::analog_output::{AnalogOutputDevice, AnalogOutputOutput},
@@ -101,7 +101,7 @@ fn main() {
         .expect("Failed to go into PreOp");
 
     for subdevice in eth_control.try_get_subdevices_vec_sync().unwrap() {
-        if subdevice.product_id == EL4732_PRODUCT_ID {
+        if EL4732::IDENTITY.matches(&subdevice) {
             if oversampling_factor > 1 {
                 eth_control
                     .configure_oversampling(
@@ -152,7 +152,7 @@ fn main() {
             }
 
             for subdevice in &subdevices {
-                if subdevice.product_id == EL4732_PRODUCT_ID {
+                if EL4732::IDENTITY.matches(subdevice) {
                     el4732
                         .output_pre_process()
                         .expect("Failed to prepare output");

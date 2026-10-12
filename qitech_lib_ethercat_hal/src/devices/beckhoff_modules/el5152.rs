@@ -1,4 +1,6 @@
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use super::{
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+};
 use crate::DeviceError;
 use crate::EtherCATThreadChannel;
 use crate::coe::{ConfigurableDevice, Configuration};
@@ -350,8 +352,10 @@ impl Default for EL5152ChannelConfiguration {
     }
 }
 
-pub const EL5152_VENDOR_ID: u32 = 0x2;
-pub const EL5152_PRODUCT_ID: u32 = 0x14203052;
-pub const EL5152_REVISION_A: u32 = 0x140000;
-pub const EL5152_IDENTITY_A: SubDeviceIdentityTuple =
-    (EL5152_VENDOR_ID, EL5152_PRODUCT_ID, EL5152_REVISION_A);
+impl IdentifiedDevice for EL5152 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 0x14203052,
+        revisions: &[0x140000],
+    };
+}

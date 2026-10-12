@@ -1,4 +1,6 @@
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use super::{
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+};
 use qitech_lib_ethercat_hal_derive::EthercatDevice;
 
 /// EK1100 bus coupler
@@ -19,8 +21,10 @@ impl std::fmt::Debug for EK1100 {
     }
 }
 
-pub const EK1100_VENDOR_ID: u32 = 0x2;
-pub const EK1100_PRODUCT_ID: u32 = 0x044c2c52;
-pub const EK1100_REVISION_A: u32 = 0x00120000;
-pub const EK1100_IDENTITY_A: SubDeviceIdentityTuple =
-    (EK1100_VENDOR_ID, EK1100_PRODUCT_ID, EK1100_REVISION_A);
+impl IdentifiedDevice for EK1100 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 0x044c2c52,
+        revisions: &[0x00120000],
+    };
+}

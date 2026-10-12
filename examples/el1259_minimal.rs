@@ -3,8 +3,8 @@ use qitech_lib_ethercat_hal::{
     EtherCATState,
     coe::ConfigurableDevice,
     devices::{
-        EthercatDevice, EthercatDeviceProcessing, NewEthercatDevice,
-        beckhoff_modules::el1259::{EL1259, EL1259_PRODUCT_ID},
+        EthercatDevice, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+        beckhoff_modules::el1259::EL1259,
     },
     init_ethercat,
     io::multi_timestamp::{MultiTimestampEvent, MultiTimestampOutput},
@@ -37,7 +37,7 @@ fn main() {
         .expect("Failed to go into PreOp");
 
     for subdevice in eth_control.try_get_subdevices_vec_sync().unwrap() {
-        if subdevice.product_id == EL1259_PRODUCT_ID {
+        if EL1259::IDENTITY.matches(&subdevice) {
             el1259
                 .write_config(
                     eth_control.get_channel(),
@@ -69,7 +69,7 @@ fn main() {
         while eth_control.check_inputs_ready() == false {}
         if let Some(input) = eth_control.get_inputs() {
             for subdevice in &subdevices {
-                if subdevice.product_id == EL1259_PRODUCT_ID {
+                if EL1259::IDENTITY.matches(subdevice) {
                     let input = &input[subdevice.start_tx..subdevice.end_tx];
                     el1259
                         .input(BitSlice::from_slice(input))
@@ -112,7 +112,7 @@ fn main() {
 
         if let Some(output) = eth_control.write_outputs() {
             for subdevice in &subdevices {
-                if subdevice.product_id == EL1259_PRODUCT_ID {
+                if EL1259::IDENTITY.matches(subdevice) {
                     el1259
                         .output_pre_process()
                         .expect("Failed to prepare output");

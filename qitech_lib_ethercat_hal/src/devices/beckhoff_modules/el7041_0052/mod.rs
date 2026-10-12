@@ -2,7 +2,9 @@ use crate::{DeviceError, PdoError};
 use coe::EL7041_0052Configuration;
 use qitech_lib_ethercat_hal_derive::EthercatDevice;
 
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use super::{
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+};
 use crate::{
     helpers::counter_wrapper_u16_i128::CounterWrapperU16U128,
     io::{
@@ -341,11 +343,10 @@ pub enum EL7041_0052Port {
     DI2,
 }
 
-pub const EL7041_0052_VENDOR_ID: u32 = 0x2;
-pub const EL7041_0052_PRODUCT_ID: u32 = 461451346;
-pub const EL7041_0052_REVISION_A: u32 = 1048628;
-pub const EL7041_0052_IDENTITY_A: SubDeviceIdentityTuple = (
-    EL7041_0052_VENDOR_ID,
-    EL7041_0052_PRODUCT_ID,
-    EL7041_0052_REVISION_A,
-);
+impl IdentifiedDevice for EL7041_0052 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 461451346,
+        revisions: &[1048628],
+    };
+}

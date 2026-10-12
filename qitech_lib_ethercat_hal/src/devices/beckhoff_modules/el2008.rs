@@ -1,4 +1,6 @@
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use super::{
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+};
 use crate::io::digital_output::DigitalOutputDevice;
 use crate::pdo::{RxPdo, basic::BoolPdoObject};
 use qitech_lib_ethercat_hal_derive::{EthercatDevice, RxPdo};
@@ -95,12 +97,10 @@ impl Default for EL2008RxPdo {
     }
 }
 
-pub const EL2008_VENDOR_ID: u32 = 0x2;
-pub const EL2008_PRODUCT_ID_A: u32 = 0x07d83052;
-pub const EL2008_REVISION_A: u32 = 0x00110000;
-pub const EL2008_PRODUCT_ID_B: u32 = 0x7d83052;
-pub const EL2008_REVISION_B: u32 = 0x120000;
-pub const EL2008_IDENTITY_A: SubDeviceIdentityTuple =
-    (EL2008_VENDOR_ID, EL2008_PRODUCT_ID_A, EL2008_REVISION_A);
-pub const EL2008_IDENTITY_B: SubDeviceIdentityTuple =
-    (EL2008_VENDOR_ID, EL2008_PRODUCT_ID_B, EL2008_REVISION_B);
+impl IdentifiedDevice for EL2008 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 0x7d83052,
+        revisions: &[0x00110000, 0x120000],
+    };
+}

@@ -13,7 +13,9 @@ use coe::EL7031Configuration;
 use pdo::{EL7031RxPdo, EL7031TxPdo};
 use qitech_lib_ethercat_hal_derive::EthercatDevice;
 
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use super::{
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+};
 
 #[derive(Debug, Clone, EthercatDevice)]
 pub struct EL7031 {
@@ -347,11 +349,10 @@ pub enum EL7031DigitalInputPort {
     DI2,
 }
 
-pub const EL7031_VENDOR_ID: u32 = 0x2;
-pub const EL7031_PRODUCT_ID: u32 = 0x1b773052;
-pub const EL7031_REVISION_A: u32 = 0x1A0000;
-pub const EL7031_REVISION_B: u32 = 0x190000;
-pub const EL7031_IDENTITY_A: SubDeviceIdentityTuple =
-    (EL7031_VENDOR_ID, EL7031_PRODUCT_ID, EL7031_REVISION_A);
-pub const EL7031_IDENTITY_B: SubDeviceIdentityTuple =
-    (EL7031_VENDOR_ID, EL7031_PRODUCT_ID, EL7031_REVISION_B);
+impl IdentifiedDevice for EL7031 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 0x1b773052,
+        revisions: &[0x1A0000, 0x190000],
+    };
+}

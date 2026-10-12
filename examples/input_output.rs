@@ -5,13 +5,10 @@
 
 use bitvec::{order::Lsb0, slice::BitSlice};
 use qitech_lib_ethercat_hal::{
-    BECKHOFF_VENDOR_ID, EtherCATState,
+    EtherCATState,
     devices::{
-        EthercatDevice, NewEthercatDevice,
-        beckhoff_modules::{
-            el1008::{EL1008, EL1008_PRODUCT_ID},
-            el2004::{EL2004, EL2004_PRODUCT_ID},
-        },
+        EthercatDevice, IdentifiedDevice, NewEthercatDevice,
+        beckhoff_modules::{el1008::EL1008, el2004::EL2004},
     },
     init_ethercat,
     io::{digital_input::DigitalInputDevice, digital_output::DigitalOutputDevice},
@@ -54,7 +51,7 @@ fn main() {
         while eth_control.check_inputs_ready() == false {}
         let inputs = eth_control.get_inputs().unwrap();
         for subdevice in &subdevices {
-            if subdevice.vendor == BECKHOFF_VENDOR_ID && subdevice.product_id == EL1008_PRODUCT_ID {
+            if EL1008::IDENTITY.matches(subdevice) {
                 let input_slice = &inputs[subdevice.start_tx..subdevice.end_tx];
                 el1008
                     .input(BitSlice::<u8, Lsb0>::from_slice(input_slice))
@@ -74,9 +71,7 @@ fn main() {
         if let Some(outputs) = eth_control.write_outputs() {
             for subdevice in &subdevices {
                 // Loop over the subdevices until the EL2004 is found
-                if subdevice.vendor == BECKHOFF_VENDOR_ID
-                    && subdevice.product_id == EL2004_PRODUCT_ID
-                {
+                if EL2004::IDENTITY.matches(subdevice) {
                     // Get the part of the Rx PDO that is used by the EL2004
                     let subdevice_outputs = &mut outputs[subdevice.start_rx..subdevice.end_rx];
 

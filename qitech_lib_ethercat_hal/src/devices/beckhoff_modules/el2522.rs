@@ -1,4 +1,6 @@
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use super::{
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+};
 use crate::EtherCATThreadChannel;
 use crate::{
     coe::{ConfigurableDevice, Configuration},
@@ -668,8 +670,10 @@ mod tests {
     }
 }
 
-pub const EL2522_VENDOR_ID: u32 = 0x2;
-pub const EL2522_PRODUCT_ID: u32 = 0x09da3052;
-pub const EL2522_REVISION_A: u32 = 0x00160000;
-pub const EL2522_IDENTITY_A: SubDeviceIdentityTuple =
-    (EL2522_VENDOR_ID, EL2522_PRODUCT_ID, EL2522_REVISION_A);
+impl IdentifiedDevice for EL2522 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 0x09da3052,
+        revisions: &[0x00160000],
+    };
+}

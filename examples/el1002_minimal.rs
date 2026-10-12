@@ -1,9 +1,8 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use qitech_lib_ethercat_hal::{
-    BECKHOFF_VENDOR_ID, EtherCATState,
+    EtherCATState,
     devices::{
-        EthercatDevice, NewEthercatDevice,
-        beckhoff_modules::el1002::{EL1002, EL1002_PRODUCT_ID},
+        EthercatDevice, IdentifiedDevice, NewEthercatDevice, beckhoff_modules::el1002::EL1002,
     },
     init_ethercat,
     io::digital_input::DigitalInputDevice,
@@ -41,9 +40,7 @@ fn main() {
         if let Some(inputs) = eth_control.get_inputs() {
             for subdevice in &subdevices {
                 // Loop over the subdevices until the EL2004 is found
-                if subdevice.vendor == BECKHOFF_VENDOR_ID
-                    && subdevice.product_id == EL1002_PRODUCT_ID
-                {
+                if EL1002::IDENTITY.matches(subdevice) {
                     // Get the part of the Rx PDO that is used by the EL2004
                     let subdevice_inputs = &inputs[subdevice.start_tx..subdevice.end_tx];
                     // Create the actual Rx PDO and put it into the output

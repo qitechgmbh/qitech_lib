@@ -27,10 +27,11 @@ pub mod el7031_0030;
 /// This device is still too untested/unreliable with our implementation. Use at you own risk.
 pub mod el7037;
 pub mod el7041_0052;
+#[allow(dead_code)]
 pub(crate) mod el9505;
 pub mod ep2339_0021;
 
 // Re-export types that Beckhoff subdirectory devices access via `super::`
 pub(crate) use crate::devices::{
-    EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple,
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
 };

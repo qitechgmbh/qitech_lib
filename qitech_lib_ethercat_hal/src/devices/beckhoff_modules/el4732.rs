@@ -1,4 +1,6 @@
-use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
+use super::{
+    EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+};
 use crate::io::analog_output::{AnalogOutputDevice, AnalogOutputOutput};
 use crate::pdo::oversampling::{AnalogOutputOversample, CycleCount};
 use crate::pdo::{RxPdo, TxPdo};
@@ -206,18 +208,12 @@ impl Default for EL4732Configuration {
     }
 }
 
-pub const EL4732_VENDOR_ID: u32 = 0x2;
-pub const EL4732_PRODUCT_ID: u32 = 0x127C3052;
-
-// Revisions 0x00000000 and 0x00000001 are marked HideType (legacy) in the ESI
-// and are intentionally excluded.
-pub const EL4732_REVISION_A: u32 = 0x00020000;
-pub const EL4732_REVISION_B: u32 = 0x00030000;
-pub const EL4732_REVISION_C: u32 = 0x00040000;
-
-pub const EL4732_IDENTITY_A: SubDeviceIdentityTuple =
-    (EL4732_VENDOR_ID, EL4732_PRODUCT_ID, EL4732_REVISION_A);
-pub const EL4732_IDENTITY_B: SubDeviceIdentityTuple =
-    (EL4732_VENDOR_ID, EL4732_PRODUCT_ID, EL4732_REVISION_B);
-pub const EL4732_IDENTITY_C: SubDeviceIdentityTuple =
-    (EL4732_VENDOR_ID, EL4732_PRODUCT_ID, EL4732_REVISION_C);
+impl IdentifiedDevice for EL4732 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 0x127C3052,
+        // Revisions 0x00000000 and 0x00000001 are marked HideType (legacy) in the ESI
+        // and are intentionally excluded.
+        revisions: &[0x00020000, 0x00030000, 0x00040000],
+    };
+}
