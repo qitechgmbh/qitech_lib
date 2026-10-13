@@ -8,6 +8,7 @@ pub mod el70x1;
 pub mod el70x7;
 pub mod oversampling;
 use crate::PdoError;
+use crate::sdo::Configuration;
 use bitvec::prelude::*;
 
 /// This trait allows to know the size of a PDO object in bits.

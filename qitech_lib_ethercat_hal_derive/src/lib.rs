@@ -1,7 +1,28 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
+//use proc_macro_crate::{FoundCrate, crate_name};
 use quote::quote;
 use syn::{Data, DeriveInput, parse_macro_input};
+
+/*fn crate_path(name: &str) -> proc_macro2::TokenStream {
+    let ident = |n: &str| syn::Ident::new(&n.replace('-', "_"), proc_macro2::Span::call_site());
+    let name_ident = ident(name);
+    match crate_name(name) {
+        Ok(FoundCrate::Itself) => quote! { crate },
+        Ok(FoundCrate::Name(found)) => {
+            let found = ident(&found);
+            quote! { ::#found }
+        }
+        Err(_) => match crate_name("qitech_lib") {
+            Ok(FoundCrate::Name(found)) => {
+                let found = ident(&found);
+                quote! { ::#found::#name_ident }
+            }
+            Ok(FoundCrate::Itself) => quote! { crate::#name_ident },
+            Err(_) => quote! { ::#name_ident },
+        },
+    }
+}*/
 
 #[derive(deluxe::ExtractAttributes)]
 #[deluxe(attributes(pdo_object_index))]
@@ -58,7 +79,7 @@ fn sm_configuration_impl(
     let len = field_name.len();
 
     quote! {
-        impl #impl_generics  ::qitech_lib_ethercat_hal::device::SmConfiguration for #ident #ty_generics #where_clause {
+        impl #impl_generics  ::qitech_lib_ethercat_hal::SmConfiguration for #ident #ty_generics #where_clause {
             const ASSIGNMENT_REG: u16 = #assignment_reg;
 
             #[doc="Implemented by the ethercat_hal_derive PDO derive macros"]
@@ -87,10 +108,10 @@ fn rxpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::
 
     let ident = &ast.ident;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
-    let sm_impl = sm_configuration_impl(&ast, &field_name, pdo_index, {
-        quote! { ::qitech_lib_ethercat_hal::sdo::RX_PDO_ASSIGNMENT_REG }
+    let sm_impl = sm_configuration_impl(&ast, &field_name, pdo_index, {        
+        quote! { ::qitech_lib_ethercat_hal::RX_PDO_ASSIGNMENT_REG }
     });
-
+    
     let expanded = quote! {
         #sm_impl
 
@@ -123,7 +144,7 @@ fn txpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::
     let ident = &ast.ident;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
     let sm_impl = sm_configuration_impl(&ast, &field_name, pdo_index, {
-        quote! { ::qitech_lib_ethercat_hal::sdo::TX_PDO_ASSIGNMENT_REG }
+        quote! { ::qitech_lib_ethercat_hal::TX_PDO_ASSIGNMENT_REG }
     });
 
     let expanded = quote! {
@@ -280,6 +301,16 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
             fn is_module(&self) -> bool {
                 false
+            }
+
+            #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
+            fn get_module(&self) -> Option<::qitech_lib_ethercat_hal::device::Module> {
+                None
+            }
+
+            #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
+            fn set_module(&mut self,module : ::qitech_lib_ethercat_hal::device::Module){
+                ()
             }
         }
     };
