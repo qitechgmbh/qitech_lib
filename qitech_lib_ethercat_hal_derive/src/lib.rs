@@ -42,13 +42,13 @@ fn rxpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
     let expanded = quote! {
-        impl #impl_generics crate::coe::Configuration for #ident #ty_generics #where_clause {
+        impl #impl_generics ::qitech_lib_ethercat_hal::coe::Configuration for #ident #ty_generics #where_clause {
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::RxPdo derive macro"]
             fn write_config(
                 &self,
-                channel: crate::EtherCATThreadChannel,
+                channel: ::qitech_lib_ethercat_hal::EtherCATThreadChannel,
                 device_address : u16,
-            ) -> Result<(), crate::Error> {
+            ) -> Result<(), ::qitech_lib_ethercat_hal::Error> {
                 channel.sdo_write(device_address,0x1C12, 0, 0u8)?;
                 let mut len = 0;
                 #(
@@ -62,12 +62,12 @@ fn rxpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::
             }
         }
 
-        impl #impl_generics crate::pdo::RxPdo for #ident #ty_generics #where_clause {
+        impl #impl_generics ::qitech_lib_ethercat_hal::pdo::RxPdo for #ident #ty_generics #where_clause {
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::RxPdo derive macro"]
-            fn get_objects(&self) -> Box<[Option<&dyn crate::pdo::RxPdoObject>]> {
+            fn get_objects(&self) -> Box<[Option<&dyn ::qitech_lib_ethercat_hal::pdo::RxPdoObject>]> {
                 Box::new([
                     #(
-                        self.#field_name.as_ref().map(|o| o as &dyn crate::pdo::RxPdoObject),
+                        self.#field_name.as_ref().map(|o| o as &dyn ::qitech_lib_ethercat_hal::pdo::RxPdoObject),
                     )*
                 ])
             }
@@ -92,13 +92,13 @@ fn txpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
     let expanded = quote! {
-        impl #impl_generics crate::coe::Configuration for #ident #ty_generics #where_clause {
+        impl #impl_generics ::qitech_lib_ethercat_hal::coe::Configuration for #ident #ty_generics #where_clause {
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::TxPdo derive macro"]
             fn write_config(
                 &self,
-                channel: crate::EtherCATThreadChannel,
+                channel: ::qitech_lib_ethercat_hal::EtherCATThreadChannel,
                 device_address : u16,
-            ) -> Result<(), crate::Error> {
+            ) -> Result<(), ::qitech_lib_ethercat_hal::Error> {
                 channel.sdo_write(device_address,0x1C13, 0, 0u8)?;
                 let mut len = 0;
                 #(
@@ -112,21 +112,21 @@ fn txpdo_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_macro2::
             }
         }
 
-        impl #impl_generics crate::pdo::TxPdo for #ident #ty_generics #where_clause {
+        impl #impl_generics ::qitech_lib_ethercat_hal::pdo::TxPdo for #ident #ty_generics #where_clause {
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::TxPdo derive macro"]
-            fn get_objects(&self) -> Box<[Option<&dyn crate::pdo::TxPdoObject>]> {
+            fn get_objects(&self) -> Box<[Option<&dyn ::qitech_lib_ethercat_hal::pdo::TxPdoObject>]> {
                 Box::new([
                     #(
-                        self.#field_name.as_ref().map(|o| o as &dyn crate::pdo::TxPdoObject),
+                        self.#field_name.as_ref().map(|o| o as &dyn ::qitech_lib_ethercat_hal::pdo::TxPdoObject),
                     )*
                 ])
             }
 
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::TxPdo derive macro"]
-            fn get_objects_mut(&mut self) -> Box<[Option<&mut dyn crate::pdo::TxPdoObject>]> {
+            fn get_objects_mut(&mut self) -> Box<[Option<&mut dyn ::qitech_lib_ethercat_hal::pdo::TxPdoObject>]> {
                 Box::new([
                     #(
-                        self.#field_name.as_mut().map(|o| o as &mut dyn crate::pdo::TxPdoObject),
+                        self.#field_name.as_mut().map(|o| o as &mut dyn ::qitech_lib_ethercat_hal::pdo::TxPdoObject),
                     )*
                 ])
             }
@@ -151,7 +151,7 @@ fn pdo_object_derive2(item: proc_macro2::TokenStream) -> deluxe::Result<proc_mac
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
     let expanded = quote! {
-        impl #impl_generics crate::pdo::PdoObject for #ident #ty_generics #where_clause {
+        impl #impl_generics ::qitech_lib_ethercat_hal::pdo::PdoObject for #ident #ty_generics #where_clause {
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::PdoObject macro"]
             fn size(&self) -> usize {
                 #bits
@@ -195,7 +195,7 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
     if has_rxpdo {
         output_impl = quote! {
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
-            fn output(&self, output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>) -> Result<(), crate::PdoError> {
+            fn output(&self, output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>) -> Result<(), ::qitech_lib_ethercat_hal::PdoError> {
                 self.rxpdo.write(output)
             }
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
@@ -206,7 +206,7 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
     } else {
         output_impl = quote! {
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
-            fn output(&self, _output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>) -> Result<(), crate::PdoError> {
+            fn output(&self, _output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>) -> Result<(), ::qitech_lib_ethercat_hal::PdoError> {
                 Ok(())
             }
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
@@ -219,7 +219,7 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
     if has_txpdo {
         input_impl = quote! {
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
-            fn input(&mut self, input: & bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>) -> Result<(), crate::PdoError> {
+            fn input(&mut self, input: & bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>) -> Result<(), ::qitech_lib_ethercat_hal::PdoError> {
                 self.txpdo.read(input)
             }
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
@@ -230,7 +230,7 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
     } else {
         input_impl = quote! {
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
-            fn input(&mut self, _input: & bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>) -> Result<(), crate::PdoError> {
+            fn input(&mut self, _input: & bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>) -> Result<(), ::qitech_lib_ethercat_hal::PdoError> {
                 Ok(())
             }
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
@@ -241,7 +241,7 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
     }
 
     let expanded = quote! {
-        impl crate::devices::EthercatDevice for #name {
+        impl ::qitech_lib_ethercat_hal::device::EthercatDevice for #name {
             #output_impl
             #input_impl
 
@@ -267,12 +267,12 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
             }
 
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
-            fn get_module(&self) -> Option<crate::devices::Module> {
+            fn get_module(&self) -> Option<::qitech_lib_ethercat_hal::device::Module> {
                 None
             }
 
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
-            fn set_module(&mut self,module : crate::devices::Module){
+            fn set_module(&mut self,module : ::qitech_lib_ethercat_hal::device::Module){
                 ()
             }
         }

@@ -881,6 +881,7 @@ dependencies = [
  "postcard",
  "qitech_lib_common",
  "qitech_lib_ethercat_hal",
+ "qitech_lib_ethercat_hal_devices",
  "qitech_lib_units",
  "qitech_lib_xtrem",
  "serde",
@@ -925,6 +926,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "qitech_lib_ethercat_hal_devices"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "bitvec",
+ "qitech_lib_common",
+ "qitech_lib_ethercat_hal",
+ "qitech_lib_ethercat_hal_derive",
+ "qitech_lib_units",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

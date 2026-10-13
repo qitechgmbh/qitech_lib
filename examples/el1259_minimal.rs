@@ -2,12 +2,12 @@ use bitvec::slice::BitSlice;
 use qitech_lib_ethercat_hal::{
     EtherCATState,
     coe::ConfigurableDevice,
-    devices::{
-        EthercatDevice, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
-        beckhoff_modules::el1259::EL1259,
-    },
     init_ethercat,
     io::multi_timestamp::{MultiTimestampEvent, MultiTimestampOutput},
+};
+use qitech_lib_ethercat_hal_devices::{
+    EthercatDevice, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
+    beckhoff_modules::el1259::EL1259,
 };
 use std::{env, time::Duration};
 const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);

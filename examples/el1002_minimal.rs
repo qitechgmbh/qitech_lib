@@ -1,11 +1,9 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use qitech_lib_ethercat_hal::{
-    EtherCATState,
-    devices::{
-        EthercatDevice, IdentifiedDevice, NewEthercatDevice, beckhoff_modules::el1002::EL1002,
-    },
-    init_ethercat,
-    io::digital_input::DigitalInputDevice,
+    EtherCATState, init_ethercat, io::digital_input::DigitalInputDevice,
+};
+use qitech_lib_ethercat_hal_devices::{
+    EthercatDevice, IdentifiedDevice, NewEthercatDevice, beckhoff_modules::el1002::EL1002,
 };
 use std::{env, time::Duration};
 const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);

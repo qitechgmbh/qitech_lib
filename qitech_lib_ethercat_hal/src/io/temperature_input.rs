@@ -1,4 +1,4 @@
-use crate::{DeviceError, pdo::basic::Limit};
+use crate::{DeviceError, device::EthercatDevice, pdo::basic::Limit};
 
 pub enum TemperatureInputError {
     OverVoltage,
@@ -19,7 +19,7 @@ pub struct TemperatureInputInput {
     pub txpdo_toggle: bool,
 }
 
-pub trait TemperatureInputDevice {
+pub trait TemperatureInputDevice: EthercatDevice {
     fn get_input(&self, port: usize) -> Result<TemperatureInputInput, DeviceError>;
     fn get_port_count(&self) -> usize;
 }

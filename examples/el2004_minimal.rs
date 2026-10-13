@@ -1,11 +1,9 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use qitech_lib_ethercat_hal::{
-    EtherCATState,
-    devices::{
-        EthercatDevice, IdentifiedDevice, NewEthercatDevice, beckhoff_modules::el2004::EL2004,
-    },
-    init_ethercat,
-    io::digital_output::DigitalOutputDevice,
+    EtherCATState, init_ethercat, io::digital_output::DigitalOutputDevice,
+};
+use qitech_lib_ethercat_hal_devices::{
+    EthercatDevice, IdentifiedDevice, NewEthercatDevice, beckhoff_modules::el2004::EL2004,
 };
 use std::{env, time::Duration};
 
