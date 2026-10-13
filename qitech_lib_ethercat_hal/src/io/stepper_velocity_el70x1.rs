@@ -1,6 +1,6 @@
 use super::analog_input::{AnalogInputInput, physical::AnalogInputRange};
 use crate::DeviceError;
-use crate::{devices::EthercatDevice, helpers::el70xx_velocity_converter::EL70x1VelocityConverter};
+use crate::{device::EthercatDevice, helpers::el70xx_velocity_converter::EL70x1VelocityConverter};
 
 #[derive(Debug, Clone)]
 pub struct StepperVelocityEL70x1Input {

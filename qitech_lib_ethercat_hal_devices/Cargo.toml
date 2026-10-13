@@ -1,0 +1,20 @@
+[package]
+name = "qitech_lib_ethercat_hal_devices"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "EtherCAT terminal drivers (Beckhoff, WAGO, Panasonic) for qitech_lib_ethercat_hal"
+
+[dependencies]
+qitech_lib_ethercat_hal.workspace = true
+qitech_lib_ethercat_hal_derive.workspace = true
+qitech_lib_units.workspace = true
+qitech_lib_common.workspace = true
+bitvec = { workspace = true, features = ["alloc"] }
+tokio = { workspace = true, features = ["sync"] }
+tracing.workspace = true
+
+[dev-dependencies]
+approx.workspace = true
+
+[lib]

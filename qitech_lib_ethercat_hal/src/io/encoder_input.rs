@@ -1,5 +1,5 @@
 use crate::DeviceError;
-use crate::devices::EthercatDevice;
+use crate::device::EthercatDevice;
 
 #[derive(Debug, Clone)]
 pub struct EncoderInputCounter {

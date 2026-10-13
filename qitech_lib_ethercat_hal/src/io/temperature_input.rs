@@ -1,5 +1,5 @@
-use crate::DeviceError;
-use crate::{devices::EthercatDevice, pdo::basic::Limit};
+use crate::{DeviceError, device::EthercatDevice, pdo::basic::Limit};
+
 pub enum TemperatureInputError {
     OverVoltage,
     UnderVoltage,

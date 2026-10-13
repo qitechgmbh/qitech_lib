@@ -1,12 +1,10 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use qitech_lib_ethercat_hal::{
-    EtherCATState,
-    devices::{
-        EthercatDevice, IdentifiedDevice, NewEthercatDevice,
-        wago_modules::{wago_750_354::Wago750_354, wago_750_531::Wago750_531},
-    },
-    init_ethercat,
-    io::digital_output::DigitalOutputDevice,
+    EtherCATState, init_ethercat, io::digital_output::DigitalOutputDevice,
+};
+use qitech_lib_ethercat_hal_devices::{
+    EthercatDevice, IdentifiedDevice, NewEthercatDevice,
+    wago_modules::{wago_750_354::Wago750_354, wago_750_531::Wago750_531},
 };
 use std::{env, time::Duration};
 

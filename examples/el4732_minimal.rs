@@ -1,13 +1,12 @@
 use bitvec::slice::BitSlice;
 use qitech_lib_ethercat_hal::{
-    DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig,
-    devices::{
-        EthercatDevice, EthercatDeviceProcessing, IdentifiedDevice,
-        beckhoff_modules::el4732::{EL4732, EL4732Port},
-    },
-    init_ethercat,
+    DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig, init_ethercat,
     io::analog_output::{AnalogOutputDevice, AnalogOutputOutput},
     set_current_thread_rt_priority,
+};
+use qitech_lib_ethercat_hal_devices::{
+    EthercatDevice, EthercatDeviceProcessing, IdentifiedDevice,
+    beckhoff_modules::el4732::{EL4732, EL4732Port},
 };
 use std::{env, f64::consts::PI, time::Duration};
 

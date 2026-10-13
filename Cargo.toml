@@ -4,6 +4,7 @@ members = [
     "qitech_lib_common",
     "qitech_lib_ethercat_hal",
     "qitech_lib_ethercat_hal_derive",
+    "qitech_lib_ethercat_hal_devices",
     "qitech_lib_units",
     "qitech_lib_xtrem",
 ]
@@ -17,6 +18,7 @@ license = "LGPL-3.0-only"
 # Workspace crates
 qitech_lib_common = { path = "qitech_lib_common" }
 qitech_lib_ethercat_hal = { path = "qitech_lib_ethercat_hal" }
+qitech_lib_ethercat_hal_devices = { path = "qitech_lib_ethercat_hal_devices" }
 qitech_lib_ethercat_hal_derive = { path = "qitech_lib_ethercat_hal_derive" }
 qitech_lib_units = { path = "qitech_lib_units" }
 qitech_lib_xtrem = { path = "qitech_lib_xtrem" }
@@ -53,6 +55,7 @@ license.workspace = true
 bitvec.workspace = true
 qitech_lib_common.workspace = true
 qitech_lib_ethercat_hal.workspace = true
+qitech_lib_ethercat_hal_devices.workspace = true
 qitech_lib_units.workspace = true
 qitech_lib_xtrem.workspace = true
 

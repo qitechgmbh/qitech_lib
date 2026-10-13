@@ -1,8 +1,11 @@
+// Lets the derive macros' `::qitech_lib_ethercat_hal::...` paths resolve inside this crate too.
+extern crate self as qitech_lib_ethercat_hal;
+
 pub mod al_diagnostics;
 pub mod coe;
 pub mod controller;
 pub mod debugging;
-pub mod devices;
+pub mod device;
 pub mod ecat_channel_impl;
 pub mod error;
 pub(crate) mod ethercrab_impl;
@@ -26,6 +29,11 @@ use tokio::sync::Mutex;
 use triple_buffer::{Input, Output};
 
 pub use error::{ChannelError, DeviceError, Error, EthercatErr, InterfaceError, PdoError};
+
+// Re-exported so crates defining their own devices only need this crate: the derive macros, and
+// `bitvec`, whose types appear in `EthercatDevice` and in the derive output.
+pub use bitvec;
+pub use qitech_lib_ethercat_hal_derive::{EthercatDevice, PdoObject, RxPdo, TxPdo};
 
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -714,6 +722,31 @@ pub struct ChannelRequest {
 pub struct EncoderResolution {
     pub increments: u32,
     pub revolutions: u32,
+}
+
+impl EncoderResolution {
+    fn ratio(&self) -> f64 {
+        self.increments as f64 / self.revolutions as f64
+    }
+
+    pub fn to_increments(&self, revolutions: f64, residue: &mut f64, is_absolute: bool) -> i32 {
+        let f = if is_absolute {
+            revolutions * self.ratio()
+        } else {
+            revolutions * self.ratio() + *residue
+        };
+        let i = f.floor() as i32;
+        *residue = f - i as f64;
+        i
+    }
+
+    pub fn to_revolutions(&self, increments: i32) -> f64 {
+        increments as f64 / self.ratio()
+    }
+
+    pub fn rps_to_inc_per_sec(&self, rps: f64) -> u32 {
+        (rps * self.ratio()) as u32
+    }
 }
 
 pub fn send_response(response_channel: EtherCATThreadResponseChannel, response: ChannelResponse) {
