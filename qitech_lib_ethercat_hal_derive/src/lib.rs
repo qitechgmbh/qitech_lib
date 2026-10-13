@@ -195,7 +195,7 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
     if has_rxpdo {
         output_impl = quote! {
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
-            fn output(&self, output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>) -> Result<(), ::qitech_lib_ethercat_hal::PdoError> {
+            fn output(&self, output: &mut ::qitech_lib_ethercat_hal::bitvec::prelude::BitSlice<u8, ::qitech_lib_ethercat_hal::bitvec::prelude::Lsb0>) -> Result<(), ::qitech_lib_ethercat_hal::PdoError> {
                 self.rxpdo.write(output)
             }
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
@@ -206,7 +206,7 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
     } else {
         output_impl = quote! {
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
-            fn output(&self, _output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>) -> Result<(), ::qitech_lib_ethercat_hal::PdoError> {
+            fn output(&self, _output: &mut ::qitech_lib_ethercat_hal::bitvec::prelude::BitSlice<u8, ::qitech_lib_ethercat_hal::bitvec::prelude::Lsb0>) -> Result<(), ::qitech_lib_ethercat_hal::PdoError> {
                 Ok(())
             }
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
@@ -219,7 +219,7 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
     if has_txpdo {
         input_impl = quote! {
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
-            fn input(&mut self, input: & bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>) -> Result<(), ::qitech_lib_ethercat_hal::PdoError> {
+            fn input(&mut self, input: & ::qitech_lib_ethercat_hal::bitvec::prelude::BitSlice<u8, ::qitech_lib_ethercat_hal::bitvec::prelude::Lsb0>) -> Result<(), ::qitech_lib_ethercat_hal::PdoError> {
                 self.txpdo.read(input)
             }
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
@@ -230,7 +230,7 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
     } else {
         input_impl = quote! {
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
-            fn input(&mut self, _input: & bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>) -> Result<(), ::qitech_lib_ethercat_hal::PdoError> {
+            fn input(&mut self, _input: & ::qitech_lib_ethercat_hal::bitvec::prelude::BitSlice<u8, ::qitech_lib_ethercat_hal::bitvec::prelude::Lsb0>) -> Result<(), ::qitech_lib_ethercat_hal::PdoError> {
                 Ok(())
             }
             #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]

@@ -30,6 +30,11 @@ use triple_buffer::{Input, Output};
 
 pub use error::{ChannelError, DeviceError, Error, EthercatErr, InterfaceError, PdoError};
 
+// Re-exported so crates defining their own devices only need this crate: the derive macros, and
+// `bitvec`, whose types appear in `EthercatDevice` and in the derive output.
+pub use bitvec;
+pub use qitech_lib_ethercat_hal_derive::{EthercatDevice, PdoObject, RxPdo, TxPdo};
+
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 fn get_async_runtime() -> &'static Runtime {
