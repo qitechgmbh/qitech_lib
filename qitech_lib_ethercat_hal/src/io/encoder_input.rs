@@ -1,5 +1,4 @@
 use crate::DeviceError;
-use crate::devices::EthercatDevice;
 
 #[derive(Debug, Clone)]
 pub struct EncoderInputCounter {
@@ -16,7 +15,7 @@ pub struct EncoderInputPeriod {
     pub value: u32,
 }
 
-pub trait EncoderInputDevice: EthercatDevice {
+pub trait EncoderInputDevice {
     fn get_counter_value(&self, port: usize) -> Result<EncoderInputCounter, DeviceError>;
     fn get_frequency(&self, port: usize) -> Result<Option<EncoderInputFrequency>, DeviceError>;
     fn get_period(&self, port: usize) -> Result<Option<EncoderInputPeriod>, DeviceError>;

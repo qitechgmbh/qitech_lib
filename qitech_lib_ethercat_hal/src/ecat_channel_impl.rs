@@ -395,11 +395,8 @@ impl EtherCATThreadChannel {
             ),
             response_channel: EtherCATThreadResponseChannel(tx),
         };
-
         self.0.send(req).map_err(|_| ChannelError::Disconnected)?;
-
         let response = recv(&rx, Duration::from_millis(500))?;
-
         match response {
             ChannelResponse::EnableDCSync01Response(result) => result,
             _ => Err(ChannelError::UnexpectedResponse),
@@ -433,7 +430,6 @@ impl EtherCATThreadChannel {
     ) -> Result<(), ChannelError> {
         const BECKHOFF_EEPROM_LOCK_CODEWORD: u32 = 0x12345678;
         const BECKHOFF_CODEWORD_INDEX: u16 = 0xF008;
-
         let code_word = match self.sdo_read::<u32>(device_address, BECKHOFF_CODEWORD_INDEX, 0) {
             Ok(code_word) => code_word,
             // This happens when the subdevice has no mailbox
@@ -442,12 +438,10 @@ impl EtherCATThreadChannel {
             // This is why it returns OK on an error for sdo_read
             Err(_) => return Ok(()),
         };
-
         let eeprom_lock_toggled = match code_word {
             BECKHOFF_EEPROM_LOCK_CODEWORD => true,
             _ => false,
         };
-
         if !eeprom_lock_toggled {
             self.sdo_write(
                 device_address,
@@ -456,7 +450,6 @@ impl EtherCATThreadChannel {
                 BECKHOFF_EEPROM_LOCK_CODEWORD,
             )?;
         }
-
         Ok(())
     }
 }

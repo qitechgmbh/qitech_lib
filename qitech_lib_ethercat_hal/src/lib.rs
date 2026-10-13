@@ -2,7 +2,6 @@ pub mod al_diagnostics;
 pub mod coe;
 pub mod controller;
 pub mod debugging;
-pub mod devices;
 pub mod ecat_channel_impl;
 pub mod error;
 pub(crate) mod ethercrab_impl;

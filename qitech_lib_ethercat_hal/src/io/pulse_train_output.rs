@@ -1,5 +1,4 @@
 use std::{fmt, sync::Arc};
-
 use tokio::sync::RwLock;
 
 /// Pulse Train Output (PTO) device

@@ -1,6 +1,6 @@
 use super::analog_input::{AnalogInputInput, physical::AnalogInputRange};
 use crate::DeviceError;
-use crate::{devices::EthercatDevice, helpers::el70xx_velocity_converter::EL70x1VelocityConverter};
+use crate::{helpers::el70xx_velocity_converter::EL70x1VelocityConverter};
 
 #[derive(Debug, Clone)]
 pub struct StepperVelocityEL70x1Input {
@@ -47,7 +47,7 @@ pub struct StepperVelocityEL70x1Output {
     pub set_counter: Option<i128>,
 }
 
-pub trait StepperVelocityEL70x1Device: EthercatDevice {
+pub trait StepperVelocityEL70x1Device {
     fn set_output(
         &mut self,
         port: usize,
