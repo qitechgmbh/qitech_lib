@@ -8,7 +8,7 @@ pub mod el70x1;
 pub mod el70x7;
 pub mod oversampling;
 use crate::PdoError;
-use crate::coe::Configuration;
+use crate::sdo::Configuration;
 use bitvec::prelude::*;
 
 /// This trait allows to know the size of a PDO object in bits.
@@ -121,7 +121,7 @@ pub trait PredefinedPdoAssignment<TXPDOA, RXPDOA> {
 ///     pub channel2: Option<BoolPdoObject>,
 /// }
 /// ```
-pub trait RxPdo: Configuration {
+pub trait RxPdo {
     /// Get objects return an array of optinal references to the PDO objects
     ///
     /// This method is commonly derived using the [`qitech_lib_ethercat_hal_derive::RxPdo`] macro.
@@ -187,7 +187,7 @@ pub trait RxPdo: Configuration {
 ///     pub channel2: Option<BoolPdoObject>,
 /// }
 /// ```
-pub trait TxPdo: Configuration {
+pub trait TxPdo {
     /// Get objects return an array of optinal references to the PDO objects
     ///
     /// This method is commonly derived using the [`qitech_lib_ethercat_hal_derive::TxPdo`] macro.

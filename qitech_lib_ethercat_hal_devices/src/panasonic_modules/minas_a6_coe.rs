@@ -6,7 +6,7 @@ use qitech_lib_ethercat_hal::EncoderResolution;
 use qitech_lib_ethercat_hal::helpers::minas_a6_subdevice_wrapper::PdoMapping;
 use qitech_lib_ethercat_hal::{
     EtherCATThreadChannel,
-    coe::{ConfigurableDevice, Configuration},
+    sdo::{Configuration},
 };
 
 #[derive(Debug, Clone)]
@@ -136,7 +136,7 @@ impl MinasA6BConfiguration {
         Ok(enc)
     }
 }
-
+/*
 impl Configuration for MinasA6BConfiguration {
     fn write_config(
         &self,
@@ -169,3 +169,4 @@ impl ConfigurableDevice<MinasA6BConfiguration> for MinasA6BMotor {
         }
     }
 }
+*/

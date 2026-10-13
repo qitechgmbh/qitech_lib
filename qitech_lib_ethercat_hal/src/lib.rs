@@ -2,7 +2,7 @@
 extern crate self as qitech_lib_ethercat_hal;
 
 pub mod al_diagnostics;
-pub mod coe;
+pub mod sdo;
 pub mod controller;
 pub mod debugging;
 pub mod device;
@@ -27,9 +27,7 @@ use std::time::{Duration, Instant};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Mutex;
 use triple_buffer::{Input, Output};
-
 pub use error::{ChannelError, DeviceError, Error, EthercatErr, InterfaceError, PdoError};
-
 // Re-exported so crates defining their own devices only need this crate: the derive macros, and
 // `bitvec`, whose types appear in `EthercatDevice` and in the derive output.
 pub use bitvec;
