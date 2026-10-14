@@ -104,6 +104,82 @@ pub trait ConfigurableDevice {
     fn get_config(&self) -> &Self::Config;
 }
 
+/// Full CoE configuration of a device: device specific parameters plus the PDO assignment.
+///
+/// The config only selects which PDO structs are used, the SM assignment is derived from them
+/// (see [`SmConfiguration`]), so the written assignment always matches the decoded process image.
+pub trait Configuration {
+    type TxPdo: TxPdo + SmConfiguration;
+    type RxPdo: RxPdo + SmConfiguration;
+
+    fn txpdo_assignment(&self) -> Self::TxPdo;
+    fn rxpdo_assignment(&self) -> Self::RxPdo;
+
+    /// Device specific CoE parameters, without the PDO assignment
+    fn get_config_coe_writes(&self, _device_address: u16) -> Result<Vec<SdoRequest>, Error> {
+        Ok(vec![])
+    }
+
+    /// PDO assignment writes for 0x1C13 and 0x1C12
+    fn get_sm_coe_writes(&self, device_address: u16) -> Result<Vec<SdoRequest>, Error> {
+        let mut writes = self.txpdo_assignment().get_sm_coe_writes(device_address)?;
+        writes.extend(self.rxpdo_assignment().get_sm_coe_writes(device_address)?);
+        Ok(writes)
+    }
+
+    /// All writes needed to configure the device, ready for a bulk sdo write
+    fn get_coe_writes(&self, device_address: u16) -> Result<Vec<SdoRequest>, Error> {
+        let mut writes = self.get_config_coe_writes(device_address)?;
+        writes.extend(self.get_sm_coe_writes(device_address)?);
+        Ok(writes)
+    }
+}
+
+/// Converts the PDO assignment of a PDO struct to a list of sdo writes.
+///
+/// Derived by the `RxPdo`/`TxPdo` macros from the `#[pdo_object_index]` attributes.
+pub trait SmConfiguration {
+    /// [`RX_PDO_ASSIGNMENT_REG`] or [`TX_PDO_ASSIGNMENT_REG`]
+    const ASSIGNMENT_REG: u16;
+
+    fn get_sm_assignments(&self) -> Vec<u16>;
+
+    fn get_sm_coe_writes(&self, device_address: u16) -> Result<Vec<SdoRequest>, Error> {
+        let reg = Self::ASSIGNMENT_REG;
+        let assignments = self.get_sm_assignments();
+        if assignments.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Clear the assignment, write the entries, then set the new length
+        let mut writes = vec![SdoRequest::new(device_address, reg, 0, 0u8)];
+        for (i, assignment) in assignments.iter().enumerate() {
+            writes.push(SdoRequest::new(
+                device_address,
+                reg,
+                i as u8 + 1,
+                *assignment,
+            ));
+        }
+        writes.push(SdoRequest::new(
+            device_address,
+            reg,
+            0,
+            assignments.len() as u8,
+        ));
+
+        Ok(writes)
+    }
+}
+
+pub trait ConfigurableDevice {
+    type Config: Configuration;
+
+    /// Store the config and switch the device's PDOs to the config's assignment
+    fn set_config(&mut self, config: Self::Config);
+    fn get_config(&self) -> &Self::Config;
+}
+
 /// A trait for all devices
 ///
 /// provides interface to read and write the PDO data

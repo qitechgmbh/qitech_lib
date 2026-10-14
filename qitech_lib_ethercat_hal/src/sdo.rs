@@ -1,107 +1,8 @@
-use std::any::TypeId;
-
-use crate::pdo::{RxPdo, TxPdo};
-
+use crate::ChannelError;
 pub const RX_PDO_ASSIGNMENT_REG: u16 = 0x1C12;
 pub const TX_PDO_ASSIGNMENT_REG: u16 = 0x1C13;
 
-/// Full CoE configuration of a device: device specific parameters plus the PDO assignment.
-///
-/// The config only selects which PDO structs are used, the SM assignment is derived from them
-/// (see [`SmConfiguration`]), so the written assignment always matches the decoded process image.
-pub trait Configuration {
-    type TxPdo: TxPdo + SmConfiguration;
-    type RxPdo: RxPdo + SmConfiguration;
-
-    fn txpdo_assignment(&self) -> Self::TxPdo;
-    fn rxpdo_assignment(&self) -> Self::RxPdo;
-
-    /// Device specific CoE parameters, without the PDO assignment
-    fn get_config_coe_writes(
-        &self,
-        _device_address: u16,
-    ) -> Result<Vec<SdoRequest>, String> {
-        Ok(vec![])
-    }
-
-    /// PDO assignment writes for 0x1C13 and 0x1C12
-    fn get_sm_coe_writes(&self, device_address: u16) -> Result<Vec<SdoRequest>, String> {
-        let mut writes = self.txpdo_assignment().get_sm_coe_writes(device_address)?;
-        writes.extend(self.rxpdo_assignment().get_sm_coe_writes(device_address)?);
-        Ok(writes)
-    }
-
-    /// All writes needed to configure the device, ready for a bulk sdo write
-    fn get_coe_writes(&self, device_address: u16) -> Result<Vec<SdoRequest>, String> {
-        let mut writes = self.get_config_coe_writes(device_address)?;
-        writes.extend(self.get_sm_coe_writes(device_address)?);
-        Ok(writes)
-    }
-}
-
-/// Converts the PDO assignment of a PDO struct to a list of sdo writes.
-///
-/// Derived by the `RxPdo`/`TxPdo` macros from the `#[pdo_object_index]` attributes.
-pub trait SmConfiguration {
-    /// [`RX_PDO_ASSIGNMENT_REG`] or [`TX_PDO_ASSIGNMENT_REG`]
-    const ASSIGNMENT_REG: u16;
-
-    fn get_sm_assignments(&self) -> Vec<u16>;
-
-    fn get_sm_coe_writes(&self, device_address: u16) -> Result<Vec<SdoRequest>, String> {
-        let pdo_assignment_reg = Self::ASSIGNMENT_REG;
-        let assignments = self.get_sm_assignments();
-        let mut sub_index = 0;
-        let mut writes = vec![];
-
-        if assignments.is_empty() {
-            return Ok(writes);
-        }
-
-        // Set len of Mappings to 0 (reset)
-        let reset_req = SdoRequest {
-            device_address,
-            sdo_index: SdoIndex {
-                index: pdo_assignment_reg as u32,
-                sub_index,
-            },
-            data: [0, 0, 0, 0],
-            type_flag: type_id_to_sdo_type::<u8>()?,
-        };
-        sub_index += 1;
-
-        writes.push(reset_req);
-        // go through all assignments and write them
-        for i in 0..assignments.len() {
-            let req = SdoRequest {
-                device_address,
-                sdo_index: SdoIndex {
-                    index: pdo_assignment_reg as u32,
-                    sub_index,
-                },
-                data: assignments[i].to_bytes(),
-                type_flag: type_id_to_sdo_type::<u16>()?,
-            };
-            writes.push(req);
-            sub_index += 1;
-        }
-
-        let len_req = SdoRequest {
-            device_address,
-            sdo_index: SdoIndex {
-                index: pdo_assignment_reg as u32,
-                sub_index: 0,
-            },
-            data: ((sub_index - 1) as u8).to_bytes(),
-            type_flag: type_id_to_sdo_type::<u8>()?,
-        };
-        writes.push(len_req);
-
-        Ok(writes)
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum SdoType {
     BOOL,
     U8,
@@ -111,30 +12,10 @@ pub enum SdoType {
     I32,
 }
 
-pub fn type_id_to_sdo_type<T: 'static>() -> Result<SdoType,String> {
-    Ok(sdo_type_of::<T>())
-}
-
-fn sdo_type_of<T: 'static>() -> SdoType {
-    let t_id = TypeId::of::<T>();
-    let sdo_type: SdoType = {
-        if t_id == TypeId::of::<bool>() {
-            SdoType::BOOL
-        } else if t_id == TypeId::of::<u8>() {
-            SdoType::U8
-        } else if t_id == TypeId::of::<u16>() {
-            SdoType::U16
-        } else if t_id == TypeId::of::<u32>() {
-            SdoType::U32
-        } else if t_id == TypeId::of::<i16>() {
-            SdoType::I16
-        } else if t_id == TypeId::of::<i32>() {
-            SdoType::I32
-        } else {
-            SdoType::U8
-        }
-    };
-    sdo_type
+#[derive(Debug, Hash, Eq, PartialEq, PartialOrd, Clone, Copy)]
+pub struct SdoIndex {
+    pub index: u32,
+    pub sub_index: u16,
 }
 
 #[derive(Debug)]
@@ -155,7 +36,7 @@ pub struct SdoRequest {
 
 impl SdoRequest {
     /// Typed sdo write of `value` to `index:sub_index`
-    pub fn new<T: EthercatSdoBytes + 'static>(
+    pub fn new<T: EthercatSdoBytes>(
         device_address: u16,
         index: u16,
         sub_index: u8,
@@ -168,42 +49,112 @@ impl SdoRequest {
                 sub_index: sub_index as u16,
             },
             data: value.to_bytes(),
-            type_flag: sdo_type_of::<T>(),
+            type_flag: T::SDO_TYPE,
         }
     }
 }
 
-#[derive(Hash, Eq, PartialEq, PartialOrd, Clone, Debug, Copy)]
-pub struct SdoIndex {
-    pub index: u32,
-    pub sub_index: u16,
+/// Values that can be sent as an SDO: their wire type and their little endian bytes.
+pub trait EthercatSdoBytes {
+    const SDO_TYPE: SdoType;
+
+    fn size(&self) -> usize;
+    fn to_bytes(&self) -> [u8; 4];
+    fn from_bytes(bytes: [u8; 4]) -> Self
+    where
+        Self: Sized;
 }
 
+macro_rules! impl_ethercat_sdo_bytes {
+    ($t:ty, $sdo_type:ident) => {
+        impl EthercatSdoBytes for $t {
+            const SDO_TYPE: SdoType = SdoType::$sdo_type;
+
+            fn size(&self) -> usize {
+                size_of::<$t>()
+            }
+
+            fn to_bytes(&self) -> [u8; 4] {
+                let mut bytes = [0; 4];
+                bytes[..size_of::<$t>()].copy_from_slice(&self.to_le_bytes());
+                bytes
+            }
+
+            fn from_bytes(bytes: [u8; 4]) -> Self {
+                let mut value = [0; size_of::<$t>()];
+                value.copy_from_slice(&bytes[..size_of::<$t>()]);
+                <$t>::from_le_bytes(value)
+            }
+        }
+    };
+}
+
+impl_ethercat_sdo_bytes!(u8, U8);
+impl_ethercat_sdo_bytes!(u16, U16);
+impl_ethercat_sdo_bytes!(i16, I16);
+impl_ethercat_sdo_bytes!(u32, U32);
+impl_ethercat_sdo_bytes!(i32, I32);
+
+impl EthercatSdoBytes for bool {
+    const SDO_TYPE: SdoType = SdoType::BOOL;
+
+    fn size(&self) -> usize {
+        1
+    }
+
+    fn to_bytes(&self) -> [u8; 4] {
+        [*self as u8, 0, 0, 0]
+    }
+
+    fn from_bytes(bytes: [u8; 4]) -> Self {
+        bytes[0] != 0
+    }
+}
+
+/// Turns the typed answer of an sdo read back into the requested type.
 pub trait EthercatResponseTypedResult: Sized {
-    fn from_bool(_v: bool) -> Result<Self,String> {
-        Err("Conversion from bool not supported".to_owned())
+    fn from_bool(_v: bool) -> Result<Self, ChannelError> {
+        Err(ChannelError::SdoTypeMismatch(
+            "bool",
+            std::any::type_name::<Self>(),
+        ))
     }
-    fn from_u8(_v: u8) -> Result<Self,String> {
-        Err("Conversion from u8 not supported".to_owned())
+    fn from_u8(_v: u8) -> Result<Self, ChannelError> {
+        Err(ChannelError::SdoTypeMismatch(
+            "u8",
+            std::any::type_name::<Self>(),
+        ))
     }
-    fn from_u16(_v: u16) -> Result<Self,String> {
-        Err("Conversion from u16 not supported".to_owned())
+    fn from_u16(_v: u16) -> Result<Self, ChannelError> {
+        Err(ChannelError::SdoTypeMismatch(
+            "u16",
+            std::any::type_name::<Self>(),
+        ))
     }
-    fn from_i16(_v: i16) -> Result<Self,String>{
-        Err("Conversion from i16 not supported".to_owned())
+    fn from_i16(_v: i16) -> Result<Self, ChannelError> {
+        Err(ChannelError::SdoTypeMismatch(
+            "i16",
+            std::any::type_name::<Self>(),
+        ))
     }
-    fn from_u32(_v: u32) -> Result<Self,String> {
-        Err("Conversion from u32 not supported".to_owned())
+    fn from_u32(_v: u32) -> Result<Self, ChannelError> {
+        Err(ChannelError::SdoTypeMismatch(
+            "u32",
+            std::any::type_name::<Self>(),
+        ))
     }
-    fn from_i32(_v: i32) -> Result<Self,String> {
-        Err("Conversion from i32 not supported".to_owned())
+    fn from_i32(_v: i32) -> Result<Self, ChannelError> {
+        Err(ChannelError::SdoTypeMismatch(
+            "i32",
+            std::any::type_name::<Self>(),
+        ))
     }
 }
 
 macro_rules! impl_ethercat_typed_result {
     ($t:ty, $func:ident) => {
         impl EthercatResponseTypedResult for $t {
-            fn $func(v: $t) -> Result<Self,String> {
+            fn $func(v: $t) -> Result<Self, ChannelError> {
                 Ok(v)
             }
         }
@@ -216,96 +167,47 @@ impl_ethercat_typed_result!(u16, from_u16);
 impl_ethercat_typed_result!(i16, from_i16);
 impl_ethercat_typed_result!(u32, from_u32);
 impl_ethercat_typed_result!(i32, from_i32);
-pub trait EthercatSdoBytes {
-    fn size(&self) -> usize;
-    fn to_bytes(&self) -> [u8; 4];
-    fn from_bytes(bytes: [u8; 4]) -> Self
-    where
-        Self: Sized;
-}
 
-impl EthercatSdoBytes for u8 {
-    fn size(&self) -> usize {
-        1
+#[cfg(test)]
+mod tests {
+    use crate::device::SmConfiguration;
+
+    use super::*;
+
+    struct TwoObjects;
+
+    impl SmConfiguration for TwoObjects {
+        const ASSIGNMENT_REG: u16 = TX_PDO_ASSIGNMENT_REG;
+
+        fn get_sm_assignments(&self) -> Vec<u16> {
+            vec![0x1A00, 0x1A01]
+        }
     }
 
-    fn to_bytes(&self) -> [u8; 4] {
-        [*self, 0, 0, 0]
+    #[test]
+    fn sm_coe_writes_clear_assign_then_set_length() {
+        let writes = TwoObjects.get_sm_coe_writes(0x1001).unwrap();
+        let summary: Vec<_> = writes
+            .iter()
+            .map(|w| (w.sdo_index.index, w.sdo_index.sub_index, w.data))
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                (0x1C13, 0, [0, 0, 0, 0]),
+                (0x1C13, 1, [0x00, 0x1A, 0, 0]),
+                (0x1C13, 2, [0x01, 0x1A, 0, 0]),
+                (0x1C13, 0, [2, 0, 0, 0]),
+            ]
+        );
+        assert!(matches!(writes[0].type_flag, SdoType::U8));
+        assert!(matches!(writes[1].type_flag, SdoType::U16));
     }
 
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        bytes[0]
-    }
-}
-
-impl EthercatSdoBytes for u16 {
-    fn size(&self) -> usize {
-        2
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        let bytes = u16::to_le_bytes(*self);
-        [bytes[0], bytes[1], 0, 0]
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        u16::from_le_bytes([bytes[0], bytes[1]])
-    }
-}
-
-impl EthercatSdoBytes for i16 {
-    fn size(&self) -> usize {
-        2
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        let bytes = i16::to_le_bytes(*self);
-        [bytes[0], bytes[1], 0, 0]
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        i16::from_le_bytes([bytes[0], bytes[1]])
-    }
-}
-
-impl EthercatSdoBytes for i32 {
-    fn size(&self) -> usize {
-        4
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        i32::to_le_bytes(*self)
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        i32::from_le_bytes(bytes)
-    }
-}
-
-impl EthercatSdoBytes for u32 {
-    fn size(&self) -> usize {
-        4
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        u32::to_le_bytes(*self)
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        u32::from_le_bytes(bytes)
-    }
-}
-
-impl EthercatSdoBytes for bool {
-    fn size(&self) -> usize {
-        1
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        [*self as u8, 0, 0, 0]
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        bytes[0] != 0
+    #[test]
+    fn sdo_bytes_round_trip() {
+        assert_eq!(i16::from_bytes((-2i16).to_bytes()), -2);
+        assert_eq!((-2i16).to_bytes(), [0xFE, 0xFF, 0, 0]);
+        assert_eq!(u32::from_bytes(0x12345678u32.to_bytes()), 0x12345678);
     }
 }
