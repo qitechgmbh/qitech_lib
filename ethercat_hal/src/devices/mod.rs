@@ -1,14 +1,15 @@
 pub mod beckhoff_modules;
 pub mod panasonic_modules;
+pub mod step_drives_common;
 pub mod wago_modules;
 use crate::MetaSubdevice;
 
-#[cfg(feature = "mock")]
-use crate::TypeErasedValue;
 use crate::devices::beckhoff_modules::el1124::{EL1124, EL1124_IDENTITY_A};
 use crate::devices::beckhoff_modules::el1259::{EL1259, EL1259_IDENTITY_A};
 use crate::devices::beckhoff_modules::el4008::{EL4008, EL4008_IDENTITY_A};
 use crate::devices::beckhoff_modules::el9505::{EL9505, EL9505_IDENTITY_A};
+#[cfg(feature = "mock")]
+use crate::TypeErasedValue;
 
 use crate::devices::beckhoff_modules::el1008::EL1008;
 use crate::devices::beckhoff_modules::ep2339_0021::EP2339_0021_IDENTITY_A;
@@ -41,17 +42,18 @@ use beckhoff_modules::el7031::{EL7031_IDENTITY_A, EL7031_IDENTITY_B};
 use beckhoff_modules::el7031_0030::EL7031_0030_IDENTITY_A;
 use beckhoff_modules::el7037::EL7037_IDENTITY_A;
 use beckhoff_modules::el7041_0052::EL7041_0052_IDENTITY_A;
+use beckhoff_modules::el7062::EL7062_IDENTITY_A;
 use beckhoff_modules::{
     el1124, el3001, el3021, el3024, el3062_0030, el3204, el4732, el6021, el7031, el7031_0030,
-    el7037, el7041_0052, el9505, ep2339_0021,
+    el7037, el7041_0052, el7062, el9505, ep2339_0021,
 };
 use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::{any::Any, fmt::Debug};
-use wago_modules::ip20_ec_di8_do8::{IP20_EC_DI8_DO8_IDENTITY, IP20EcDi8Do8};
-use wago_modules::wago_750_354::{WAGO_750_354_IDENTITY_A, Wago750_354};
+use wago_modules::ip20_ec_di8_do8::{IP20EcDi8Do8, IP20_EC_DI8_DO8_IDENTITY};
+use wago_modules::wago_750_354::{Wago750_354, WAGO_750_354_IDENTITY_A};
 
 #[derive(Debug, Clone)]
 pub struct Module {
@@ -190,6 +192,7 @@ pub fn device_from_subdevice_identity(
         EL7031_0030_IDENTITY_A => Ok(Box::new(el7031_0030::EL7031_0030::new())),
         EL7037_IDENTITY_A => Ok(Box::new(el7037::EL7037::new())),
         EL7041_0052_IDENTITY_A => Ok(Box::new(el7041_0052::EL7041_0052::new())),
+        EL7062_IDENTITY_A => Ok(Box::new(el7062::EL7062::new())),
         EL2521_IDENTITY_0000_A | EL2521_IDENTITY_0000_B | EL2521_IDENTITY_0024_A => {
             Ok(Box::new(EL2521::new()))
         }
@@ -237,6 +240,7 @@ pub fn device_from_subdevice_identity_rc(
         EL7031_0030_IDENTITY_A => Ok(Rc::new(RefCell::new(el7031_0030::EL7031_0030::new()))),
         EL7037_IDENTITY_A => Ok(Rc::new(RefCell::new(el7037::EL7037::new()))),
         EL7041_0052_IDENTITY_A => Ok(Rc::new(RefCell::new(el7041_0052::EL7041_0052::new()))),
+        EL7062_IDENTITY_A => Ok(Rc::new(RefCell::new(el7062::EL7062::new()))),
         EL9505_IDENTITY_A => Ok(Rc::new(RefCell::new(el9505::EL9505::new()))),
         EL1124_IDENTITY_A => Ok(Rc::new(RefCell::new(el1124::EL1124::new()))),
         EL2521_IDENTITY_0000_A | EL2521_IDENTITY_0000_B | EL2521_IDENTITY_0024_A => {
