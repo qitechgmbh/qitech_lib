@@ -1,10 +1,9 @@
 use bitvec::slice::BitSlice;
 use qitech_lib_ethercat_hal::{
-    EtherCATState,
-    coe::ConfigurableDevice,
-    init_ethercat,
+    EtherCATState, init_ethercat,
     io::multi_timestamp::{MultiTimestampEvent, MultiTimestampOutput},
 };
+use qitech_lib_ethercat_hal_devices::ConfigurableDevice;
 use qitech_lib_ethercat_hal_devices::{
     EthercatDevice, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
     beckhoff_modules::el1259::EL1259,
@@ -29,6 +28,7 @@ struct Channel {
 /// This example showcases a very bare bones example to toggle the leds on an EL1259
 fn main() {
     let mut channels: [Channel; N_CHANNELS] = Default::default();
+
     let mut el1259: EL1259 = EL1259::new();
     let interface = env::args().nth(1).expect("No Interface-name given");
     let mut eth_control = init_ethercat(&interface, None);

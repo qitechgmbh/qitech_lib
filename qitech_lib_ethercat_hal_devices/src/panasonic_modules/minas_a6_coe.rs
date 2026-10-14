@@ -1,13 +1,10 @@
 use crate::panasonic_modules::minas_a6::{
-    GET_DATA_MAPPING, MinasA6BMotor, MotorHomingConfig, Reg, SET_DATA_MAPPING,
+    GET_DATA_MAPPING, MotorHomingConfig, Reg, SET_DATA_MAPPING,
 };
 use qitech_lib_ethercat_hal::ChannelError;
 use qitech_lib_ethercat_hal::EncoderResolution;
+use qitech_lib_ethercat_hal::EtherCATThreadChannel;
 use qitech_lib_ethercat_hal::helpers::minas_a6_subdevice_wrapper::PdoMapping;
-use qitech_lib_ethercat_hal::{
-    EtherCATThreadChannel,
-    sdo::{Configuration},
-};
 
 #[derive(Debug, Clone)]
 pub struct MinasA6BConfiguration {

@@ -1,11 +1,11 @@
+use crate::device::Configuration;
+use crate::sdo::{
+    EthercatResponseTypedResult, EthercatSdoBytes, SdoIndex, SdoReadRequest, SdoRequest,
+};
 use crate::{ChannelError, DiagnosticRequest, DiagnosticResponse, Error};
 use crate::{ChannelRequest, ChannelResponse, EtherCATThreadResponseChannel};
-use crate::{
-    EtherCATState, EtherCATThreadChannel, SdoReadRequest, SdoRequest, SdoType,
-    al_diagnostics::SubDeviceAlStatus,
-};
+use crate::{EtherCATState, EtherCATThreadChannel, al_diagnostics::SubDeviceAlStatus};
 use ethercrab::EtherCrabWireWrite;
-use std::any::TypeId;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Duration;
 
@@ -21,154 +21,6 @@ fn recv<T>(rx: &Receiver<T>, timeout: Duration) -> Result<T, ChannelError> {
     })
 }
 
-pub trait EthercatResponseTypedResult: Sized {
-    fn from_bool(_v: bool) -> Result<Self, ChannelError> {
-        Err(ChannelError::SdoTypeMismatch(
-            "bool",
-            std::any::type_name::<Self>(),
-        ))
-    }
-    fn from_u8(_v: u8) -> Result<Self, ChannelError> {
-        Err(ChannelError::SdoTypeMismatch(
-            "u8",
-            std::any::type_name::<Self>(),
-        ))
-    }
-    fn from_u16(_v: u16) -> Result<Self, ChannelError> {
-        Err(ChannelError::SdoTypeMismatch(
-            "u16",
-            std::any::type_name::<Self>(),
-        ))
-    }
-    fn from_i16(_v: i16) -> Result<Self, ChannelError> {
-        Err(ChannelError::SdoTypeMismatch(
-            "i16",
-            std::any::type_name::<Self>(),
-        ))
-    }
-    fn from_u32(_v: u32) -> Result<Self, ChannelError> {
-        Err(ChannelError::SdoTypeMismatch(
-            "u32",
-            std::any::type_name::<Self>(),
-        ))
-    }
-    fn from_i32(_v: i32) -> Result<Self, ChannelError> {
-        Err(ChannelError::SdoTypeMismatch(
-            "i32",
-            std::any::type_name::<Self>(),
-        ))
-    }
-}
-
-macro_rules! impl_ethercat_typed_result {
-    ($t:ty, $func:ident) => {
-        impl EthercatResponseTypedResult for $t {
-            fn $func(v: $t) -> Result<Self, ChannelError> {
-                Ok(v)
-            }
-        }
-    };
-}
-impl_ethercat_typed_result!(bool, from_bool);
-impl_ethercat_typed_result!(u8, from_u8);
-impl_ethercat_typed_result!(u16, from_u16);
-impl_ethercat_typed_result!(i16, from_i16);
-impl_ethercat_typed_result!(u32, from_u32);
-impl_ethercat_typed_result!(i32, from_i32);
-pub trait EthercatSdoBytes {
-    fn size(&self) -> usize;
-    fn to_bytes(&self) -> [u8; 4];
-    fn from_bytes(bytes: [u8; 4]) -> Self
-    where
-        Self: Sized;
-}
-
-impl EthercatSdoBytes for u8 {
-    fn size(&self) -> usize {
-        1
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        [*self, 0, 0, 0]
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        bytes[0]
-    }
-}
-
-impl EthercatSdoBytes for u16 {
-    fn size(&self) -> usize {
-        2
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        let bytes = u16::to_le_bytes(*self);
-        [bytes[0], bytes[1], 0, 0]
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        u16::from_le_bytes([bytes[0], bytes[1]])
-    }
-}
-
-impl EthercatSdoBytes for i16 {
-    fn size(&self) -> usize {
-        2
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        let bytes = i16::to_le_bytes(*self);
-        [bytes[0], bytes[1], 0, 0]
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        i16::from_le_bytes([bytes[0], bytes[1]])
-    }
-}
-
-impl EthercatSdoBytes for i32 {
-    fn size(&self) -> usize {
-        4
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        i32::to_le_bytes(*self)
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        i32::from_le_bytes(bytes)
-    }
-}
-
-impl EthercatSdoBytes for u32 {
-    fn size(&self) -> usize {
-        4
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        u32::to_le_bytes(*self)
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        u32::from_le_bytes(bytes)
-    }
-}
-
-impl EthercatSdoBytes for bool {
-    fn size(&self) -> usize {
-        1
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        [*self as u8, 0, 0, 0]
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        bytes[0] != 0
-    }
-}
-
 impl EtherCATThreadChannel {
     pub fn sdo_read<T: 'static>(
         &self,
@@ -180,12 +32,11 @@ impl EtherCATThreadChannel {
         T: EthercatSdoBytes + EthercatResponseTypedResult,
     {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
-        let sdo_type = type_id_to_sdo_type::<T>()?;
         let sdo_request: SdoReadRequest = SdoReadRequest {
             device_address,
             index,
             sub_index: sub_index as u16,
-            type_flag: sdo_type,
+            type_flag: T::SDO_TYPE,
         };
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::SdoReadRequest(sdo_request),
@@ -271,6 +122,43 @@ impl EtherCATThreadChannel {
         }
     }
 
+    /// Execute all `writes` on the master thread in one request. Returns the writes that failed;
+    /// the others are still executed.
+    pub fn bulk_sdo_write(
+        &self,
+        writes: Vec<SdoRequest>,
+        timeout: Duration,
+    ) -> Result<Vec<(SdoIndex, ChannelError)>, ChannelError> {
+        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
+        let req: ChannelRequest = ChannelRequest {
+            channel_request: crate::ChannelRequests::BulkSdoWrite(writes),
+            response_channel: EtherCATThreadResponseChannel(tx),
+        };
+
+        self.0.send(req).map_err(|_| ChannelError::Disconnected)?;
+
+        match recv(&rx, timeout)? {
+            ChannelResponse::BulkSdoWriteResponse(failed) => Ok(failed),
+            _ => Err(ChannelError::UnexpectedResponse),
+        }
+    }
+
+    /// Write the CoE parameters and the PDO assignment of `config`. Returns the writes that
+    /// failed.
+    pub fn write_configuration<C: Configuration>(
+        &self,
+        device_address: u16,
+        config: &C,
+        timeout: Duration,
+    ) -> Result<Vec<(SdoIndex, ChannelError)>, Error> {
+        let writes = config.get_coe_writes(device_address)?;
+        // Devices without CoE (e.g. simple digital terminals) have nothing to write
+        if writes.is_empty() {
+            return Ok(vec![]);
+        }
+        Ok(self.bulk_sdo_write(writes, timeout)?)
+    }
+
     /// Write one 16-bit word to a subdevice's EEPROM (SII). `word_address` counts words, not
     /// bytes. Only serviced in PreOp.
     ///
@@ -312,16 +200,7 @@ impl EtherCATThreadChannel {
         T: EtherCrabWireWrite + EthercatSdoBytes,
     {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
-        let bytes: [u8; 4] = T::to_bytes(&value);
-        let sdo_type = type_id_to_sdo_type::<T>()?;
-
-        let sdo_request: SdoRequest = SdoRequest {
-            device_address,
-            index,
-            sub_index: sub_index as u16,
-            data: bytes,
-            type_flag: sdo_type,
-        };
+        let sdo_request = SdoRequest::new(device_address, index, sub_index, value);
 
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::SdoWriteRequest(sdo_request),
@@ -452,26 +331,4 @@ impl EtherCATThreadChannel {
         }
         Ok(())
     }
-}
-
-pub fn type_id_to_sdo_type<T: 'static>() -> Result<SdoType, ChannelError> {
-    let t_id = TypeId::of::<T>();
-    let sdo_type: SdoType = {
-        if t_id == TypeId::of::<bool>() {
-            SdoType::BOOL
-        } else if t_id == TypeId::of::<u8>() {
-            SdoType::U8
-        } else if t_id == TypeId::of::<u16>() {
-            SdoType::U16
-        } else if t_id == TypeId::of::<u32>() {
-            SdoType::U32
-        } else if t_id == TypeId::of::<i16>() {
-            SdoType::I16
-        } else if t_id == TypeId::of::<i32>() {
-            SdoType::I32
-        } else {
-            SdoType::U8
-        }
-    };
-    return Ok(sdo_type);
 }

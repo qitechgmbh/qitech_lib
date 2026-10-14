@@ -8,40 +8,40 @@ use qitech_lib_ethercat_hal::pdo::{RxPdoObject, TxPdoObject};
 const EXPECT_TEXT: &str = "All channels should be Some(_)";
 
 #[derive(Debug, RxPdo)]
-pub(super) struct EL1259RxPdo {
+pub struct EL1259RxPdo {
     #[pdo_object_index(0x1600)]
-    pub(super) mto_channel1: Option<EL1259MtoRxChannel>,
+    pub mto_channel1: Option<EL1259MtoRxChannel>,
     #[pdo_object_index(0x1604)]
-    pub(super) mto_channel2: Option<EL1259MtoRxChannel>,
+    pub mto_channel2: Option<EL1259MtoRxChannel>,
     #[pdo_object_index(0x1608)]
-    pub(super) mto_channel3: Option<EL1259MtoRxChannel>,
+    pub mto_channel3: Option<EL1259MtoRxChannel>,
     #[pdo_object_index(0x160C)]
-    pub(super) mto_channel4: Option<EL1259MtoRxChannel>,
+    pub mto_channel4: Option<EL1259MtoRxChannel>,
     #[pdo_object_index(0x1610)]
-    pub(super) mto_channel5: Option<EL1259MtoRxChannel>,
+    pub mto_channel5: Option<EL1259MtoRxChannel>,
     #[pdo_object_index(0x1614)]
-    pub(super) mto_channel6: Option<EL1259MtoRxChannel>,
+    pub mto_channel6: Option<EL1259MtoRxChannel>,
     #[pdo_object_index(0x1618)]
-    pub(super) mto_channel7: Option<EL1259MtoRxChannel>,
+    pub mto_channel7: Option<EL1259MtoRxChannel>,
     #[pdo_object_index(0x161C)]
-    pub(super) mto_channel8: Option<EL1259MtoRxChannel>,
+    pub mto_channel8: Option<EL1259MtoRxChannel>,
 
     #[pdo_object_index(0x1620)]
-    pub(super) mti_channel1: Option<EL1259MtiRxChannel>,
+    pub mti_channel1: Option<EL1259MtiRxChannel>,
     #[pdo_object_index(0x1621)]
-    pub(super) mti_channel2: Option<EL1259MtiRxChannel>,
+    pub mti_channel2: Option<EL1259MtiRxChannel>,
     #[pdo_object_index(0x1622)]
-    pub(super) mti_channel3: Option<EL1259MtiRxChannel>,
+    pub mti_channel3: Option<EL1259MtiRxChannel>,
     #[pdo_object_index(0x1623)]
-    pub(super) mti_channel4: Option<EL1259MtiRxChannel>,
+    pub mti_channel4: Option<EL1259MtiRxChannel>,
     #[pdo_object_index(0x1624)]
-    pub(super) mti_channel5: Option<EL1259MtiRxChannel>,
+    pub mti_channel5: Option<EL1259MtiRxChannel>,
     #[pdo_object_index(0x1625)]
-    pub(super) mti_channel6: Option<EL1259MtiRxChannel>,
+    pub mti_channel6: Option<EL1259MtiRxChannel>,
     #[pdo_object_index(0x1626)]
-    pub(super) mti_channel7: Option<EL1259MtiRxChannel>,
+    pub mti_channel7: Option<EL1259MtiRxChannel>,
     #[pdo_object_index(0x1627)]
-    pub(super) mti_channel8: Option<EL1259MtiRxChannel>,
+    pub mti_channel8: Option<EL1259MtiRxChannel>,
 }
 
 impl Default for EL1259RxPdo {
@@ -69,7 +69,7 @@ impl Default for EL1259RxPdo {
 }
 
 impl EL1259RxPdo {
-    // pub(super) fn get_mti(&self, channel: usize) -> &EL1259MtiRxChannel {
+    // pub fn get_mti(&self, channel: usize) -> &EL1259MtiRxChannel {
     //     match channel {
     //         0 => self.mti_channel1.as_ref().expect(EXPECT_TEXT),
     //         1 => self.mti_channel2.as_ref().expect(EXPECT_TEXT),
@@ -83,7 +83,7 @@ impl EL1259RxPdo {
     //     }
     // }
 
-    pub(super) fn get_mti_mut(&mut self, channel: usize) -> &mut EL1259MtiRxChannel {
+    pub fn get_mti_mut(&mut self, channel: usize) -> &mut EL1259MtiRxChannel {
         match channel {
             0 => self.mti_channel1.as_mut().expect(EXPECT_TEXT),
             1 => self.mti_channel2.as_mut().expect(EXPECT_TEXT),
@@ -97,7 +97,7 @@ impl EL1259RxPdo {
         }
     }
 
-    // pub(super) fn get_mto(&self, channel: usize) -> &EL1259MtoRxChannel {
+    // pub fn get_mto(&self, channel: usize) -> &EL1259MtoRxChannel {
     //     match channel {
     //         0 => self.mto_channel1.as_ref().expect(EXPECT_TEXT),
     //         1 => self.mto_channel2.as_ref().expect(EXPECT_TEXT),
@@ -111,7 +111,7 @@ impl EL1259RxPdo {
     //     }
     // }
 
-    pub(super) fn get_mto_mut(&mut self, channel: usize) -> &mut EL1259MtoRxChannel {
+    pub fn get_mto_mut(&mut self, channel: usize) -> &mut EL1259MtoRxChannel {
         match channel {
             0 => self.mto_channel1.as_mut().expect(EXPECT_TEXT),
             1 => self.mto_channel2.as_mut().expect(EXPECT_TEXT),
@@ -132,31 +132,31 @@ impl EL1259RxPdo {
 /// event is applied and a corresponding output value.
 #[derive(Debug, Default, PdoObject)]
 #[pdo_object(bits = 384)]
-pub(super) struct EL1259MtoRxChannel {
+pub struct EL1259MtoRxChannel {
     /// If set, clear the event buffer.
-    pub(super) output_buffer_reset: bool,
+    pub output_buffer_reset: bool,
     /// While the `enable_manual_operation` flag is set,
     /// this channel will output this value regardless of any events in the buffer.
-    pub(super) manual_output_state: bool,
+    pub manual_output_state: bool,
     /// If set, all buffered events will be applied in sequence.
     /// This also means, that the latest event will allways be applied,
     /// even if it is in the past.
-    pub(super) force_order: bool,
+    pub force_order: bool,
     /// If set, overwrite the current output with the value of `manual_output_state`
     /// regardless of any events in the buffer.
-    pub(super) enable_manual_operation: bool,
+    pub enable_manual_operation: bool,
     /// Incrementing this byte tells this channel that new events
     /// should be read and put into the buffer.
     /// Once all events have been read, this value of `EL1259MtoTxChannel::output_order_feedback`
     /// from this channel's MTO input will refect the new value.
-    pub(super) output_order_count: u8,
+    pub output_order_count: u8,
     /// Number of valid entries in `output_events`.
-    pub(super) number_of_output_events: u8,
+    pub number_of_output_events: u8,
     /// Output events to be send to this channel.
     /// A total of `number_of_output_events` will be added
     /// to this channel's internal buffer.
     /// Remaining entries will be ignored by this channel.
-    pub(super) output_events: [MultiTimestampEvent; 10],
+    pub output_events: [MultiTimestampEvent; 10],
 }
 
 impl RxPdoObject for EL1259MtoRxChannel {
@@ -185,7 +185,7 @@ impl RxPdoObject for EL1259MtoRxChannel {
 }
 
 impl EL1259MtoRxChannel {
-    pub(super) fn set_events(&mut self, events: &[MultiTimestampEvent]) {
+    pub fn set_events(&mut self, events: &[MultiTimestampEvent]) {
         let len = events.len();
         assert!(len <= 10);
         self.number_of_output_events = len as u8;
@@ -197,13 +197,13 @@ impl EL1259MtoRxChannel {
 /// Importantly, it is used to tell this channel when to send input events.
 #[derive(Debug, Default, PdoObject)]
 #[pdo_object(bits = 32)]
-pub(super) struct EL1259MtiRxChannel {
+pub struct EL1259MtiRxChannel {
     /// If set, clear the event buffer.
-    pub(super) input_buffer_reset: bool,
+    pub input_buffer_reset: bool,
     /// Incrementing this byte informs this channel that new input events can be sent via the `EL1259MtiTxChannel`.
     /// Once events have been sent, the value of this channel's `EL1259MtiTxChannel::input_order_feedback`
     /// will reflect the new value, and events can be read from that PDS.
-    pub(super) input_order_counter: u8,
+    pub input_order_counter: u8,
 }
 
 impl RxPdoObject for EL1259MtiRxChannel {
@@ -217,40 +217,40 @@ impl RxPdoObject for EL1259MtiRxChannel {
 }
 
 #[derive(Debug, TxPdo)]
-pub(super) struct EL1259TxPdo {
+pub struct EL1259TxPdo {
     #[pdo_object_index(0x1A00)]
-    pub(super) mto_channel1: Option<EL1259MtoTxChannel>,
+    pub mto_channel1: Option<EL1259MtoTxChannel>,
     #[pdo_object_index(0x1A01)]
-    pub(super) mto_channel2: Option<EL1259MtoTxChannel>,
+    pub mto_channel2: Option<EL1259MtoTxChannel>,
     #[pdo_object_index(0x1A02)]
-    pub(super) mto_channel3: Option<EL1259MtoTxChannel>,
+    pub mto_channel3: Option<EL1259MtoTxChannel>,
     #[pdo_object_index(0x1A03)]
-    pub(super) mto_channel4: Option<EL1259MtoTxChannel>,
+    pub mto_channel4: Option<EL1259MtoTxChannel>,
     #[pdo_object_index(0x1A04)]
-    pub(super) mto_channel5: Option<EL1259MtoTxChannel>,
+    pub mto_channel5: Option<EL1259MtoTxChannel>,
     #[pdo_object_index(0x1A05)]
-    pub(super) mto_channel6: Option<EL1259MtoTxChannel>,
+    pub mto_channel6: Option<EL1259MtoTxChannel>,
     #[pdo_object_index(0x1A06)]
-    pub(super) mto_channel7: Option<EL1259MtoTxChannel>,
+    pub mto_channel7: Option<EL1259MtoTxChannel>,
     #[pdo_object_index(0x1A07)]
-    pub(super) mto_channel8: Option<EL1259MtoTxChannel>,
+    pub mto_channel8: Option<EL1259MtoTxChannel>,
 
     #[pdo_object_index(0x1A08)]
-    pub(super) mti_channel1: Option<EL1259MtiTxChannel>,
+    pub mti_channel1: Option<EL1259MtiTxChannel>,
     #[pdo_object_index(0x1A0C)]
-    pub(super) mti_channel2: Option<EL1259MtiTxChannel>,
+    pub mti_channel2: Option<EL1259MtiTxChannel>,
     #[pdo_object_index(0x1A10)]
-    pub(super) mti_channel3: Option<EL1259MtiTxChannel>,
+    pub mti_channel3: Option<EL1259MtiTxChannel>,
     #[pdo_object_index(0x1A14)]
-    pub(super) mti_channel4: Option<EL1259MtiTxChannel>,
+    pub mti_channel4: Option<EL1259MtiTxChannel>,
     #[pdo_object_index(0x1A18)]
-    pub(super) mti_channel5: Option<EL1259MtiTxChannel>,
+    pub mti_channel5: Option<EL1259MtiTxChannel>,
     #[pdo_object_index(0x1A1C)]
-    pub(super) mti_channel6: Option<EL1259MtiTxChannel>,
+    pub mti_channel6: Option<EL1259MtiTxChannel>,
     #[pdo_object_index(0x1A20)]
-    pub(super) mti_channel7: Option<EL1259MtiTxChannel>,
+    pub mti_channel7: Option<EL1259MtiTxChannel>,
     #[pdo_object_index(0x1A24)]
-    pub(super) mti_channel8: Option<EL1259MtiTxChannel>,
+    pub mti_channel8: Option<EL1259MtiTxChannel>,
 }
 
 impl Default for EL1259TxPdo {
@@ -278,7 +278,7 @@ impl Default for EL1259TxPdo {
 }
 
 impl EL1259TxPdo {
-    pub(super) fn get_mti(&self, channel: usize) -> &EL1259MtiTxChannel {
+    pub fn get_mti(&self, channel: usize) -> &EL1259MtiTxChannel {
         match channel {
             0 => self.mti_channel1.as_ref().expect(EXPECT_TEXT),
             1 => self.mti_channel2.as_ref().expect(EXPECT_TEXT),
@@ -292,7 +292,7 @@ impl EL1259TxPdo {
         }
     }
 
-    pub(super) fn get_mti_mut(&mut self, channel: usize) -> &mut EL1259MtiTxChannel {
+    pub fn get_mti_mut(&mut self, channel: usize) -> &mut EL1259MtiTxChannel {
         match channel {
             0 => self.mti_channel1.as_mut().expect(EXPECT_TEXT),
             1 => self.mti_channel2.as_mut().expect(EXPECT_TEXT),
@@ -306,7 +306,7 @@ impl EL1259TxPdo {
         }
     }
 
-    pub(super) fn get_mto(&self, channel: usize) -> &EL1259MtoTxChannel {
+    pub fn get_mto(&self, channel: usize) -> &EL1259MtoTxChannel {
         match channel {
             0 => self.mto_channel1.as_ref().expect(EXPECT_TEXT),
             1 => self.mto_channel2.as_ref().expect(EXPECT_TEXT),
@@ -320,7 +320,7 @@ impl EL1259TxPdo {
         }
     }
 
-    // pub(super) fn get_mto_mut(&mut self, channel: usize) -> &mut EL1259MtoTxChannel {
+    // pub fn get_mto_mut(&mut self, channel: usize) -> &mut EL1259MtoTxChannel {
     //     match channel {
     //         0 => self.mto_channel1.as_mut().expect(EXPECT_TEXT),
     //         1 => self.mto_channel2.as_mut().expect(EXPECT_TEXT),
@@ -340,25 +340,25 @@ impl EL1259TxPdo {
 /// to receive new output events.
 #[derive(Debug, Default, PdoObject)]
 #[pdo_object(bits = 32)]
-pub(super) struct EL1259MtoTxChannel {
+pub struct EL1259MtoTxChannel {
     /// If set, this channel detected a short circuit.
-    pub(super) output_short_circuit: bool,
+    pub output_short_circuit: bool,
     /// If set, this channel's event buffer has overflown.
-    pub(super) output_buffer_overflow: bool,
+    pub output_buffer_overflow: bool,
     /// This channel's value in the current cycle.
-    pub(super) output_state: bool,
+    pub output_state: bool,
     /// 2-Bit counter counting the number of process cycles.
     /// Can be used to detect that this channel did not correctly
     /// process data in a cycle.
-    pub(super) input_cycle_counter: u8,
+    pub input_cycle_counter: u8,
     /// This number reflects the `EL1259MtoRxChannel::output_order_count` for this channel.
     /// If those two numbers are not sync, new output events can be send to this channel.
     /// Otherwise, this channel need additional cycles to store received input events
     /// into the internal buffer.
-    pub(super) output_order_feedback: u8,
+    pub output_order_feedback: u8,
     /// Number of output events currently stored in this channel's event buffer.
     /// A maximum of 32 events can be stored at a time.
-    pub(super) events_in_output_buffer: u8,
+    pub events_in_output_buffer: u8,
 }
 
 impl TxPdoObject for EL1259MtoTxChannel {
@@ -382,31 +382,31 @@ impl TxPdoObject for EL1259MtoTxChannel {
 /// This PDO object is used ...
 #[derive(Debug, Default, PdoObject)]
 #[pdo_object(bits = 384)]
-pub(super) struct EL1259MtiTxChannel {
+pub struct EL1259MtiTxChannel {
     /// Number of valid entries in `input_events`.
-    pub(super) number_of_input_events: u8,
+    pub number_of_input_events: u8,
     /// This channel's value in the current cycle.
-    pub(super) input_state: bool,
+    pub input_state: bool,
     /// If set, the internal event buffer has overflown.
-    pub(super) input_buffer_overflow: bool,
+    pub input_buffer_overflow: bool,
     /// 2-Bit counter counting the number of process cycles.
     /// Can be used to detect that this channel did not correctly
     /// process data in a cycle.
-    pub(super) input_cycle_counter: u8,
+    pub input_cycle_counter: u8,
     /// Number of output events currently stored in this channel's event buffer.
     /// A maximum of 32 events can be stored at a time.
-    pub(super) events_in_input_buffer: u8,
+    pub events_in_input_buffer: u8,
     /// Reflects the value of `EL1259MtiRxChannel::input_order_counter`.
     /// If these two numbers are in sync, input events can be read from this PDO.
     /// Otherwise, this channel requires additional cycles to send input events.
     /// The field `number_of_input_events` indicates the number of valid event entries.
     /// After events have beed read, the value `EL1259MtiRxChannel::input_order_counter`
     /// should be incremented, so new events will be send.
-    pub(super) input_order_feedback: u8,
+    pub input_order_feedback: u8,
     /// Input events received from by this channel.
     /// A total of `number_of_input_events` entries are valid.
     /// Remaining entries have undefied values.
-    pub(super) input_events: [MultiTimestampEvent; 10],
+    pub input_events: [MultiTimestampEvent; 10],
 }
 
 impl TxPdoObject for EL1259MtiTxChannel {
@@ -439,7 +439,7 @@ impl TxPdoObject for EL1259MtiTxChannel {
 }
 
 impl EL1259MtiTxChannel {
-    pub(super) fn get_events(&self) -> &[MultiTimestampEvent] {
+    pub fn get_events(&self) -> &[MultiTimestampEvent] {
         &self.input_events[0..self.number_of_input_events as usize]
     }
 }

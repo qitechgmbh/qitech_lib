@@ -12,8 +12,8 @@ use crate::ethercrab_impl::sdo_read;
 use crate::ethercrab_impl::sdo_write;
 use crate::{
     ChannelRequests, ChannelResponse, Consumer, ETHERCAT_TX_RX_SIZE, EtherCATState, MAX_SUBDEVICES,
-    PDI_LEN, PDU_STORAGE, Producer, SdoType, al_diagnostics::EtherCATTransition, get_async_runtime,
-    send_response,
+    PDI_LEN, PDU_STORAGE, Producer, al_diagnostics::EtherCATTransition, get_async_runtime,
+    sdo::SdoType, send_response,
 };
 use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority};
 use ethercrab::std::ethercat_now;
@@ -25,6 +25,8 @@ use libc::{MCL_CURRENT, MCL_FUTURE, mlockall};
 #[cfg(target_os = "linux")]
 use qitech_lib_common::set_irq_affinity;
 use spin_sleep::SpinSleeper;
+use std::any::Any;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
 use std::{
@@ -39,7 +41,6 @@ type PreopPdiNoDcGroup =
 type PreopPdiDcGroup =
     SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, PreOpPdi, HasDc>;
 type OpGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, Op, HasDc>;
-
 enum PreopResult {
     Preop(PreopGroup),
     PreopPdiDc(PreopPdiDcGroup),
@@ -222,6 +223,31 @@ fn handle_channel_requests(
             );
             None
         }
+        ChannelRequests::BulkSdoWrite(sdo_requests) => {
+            let mut failed_writes = vec![];
+            for write in sdo_requests {
+                let sdo_index = write.sdo_index;
+                if let Err(e) = sdo_write(maindev, preop_group, write) {
+                    failed_writes.push((sdo_index, e));
+                }
+            }
+            send_response(
+                msg.response_channel,
+                ChannelResponse::BulkSdoWriteResponse(failed_writes),
+            );
+            None
+        }
+    }
+}
+
+/// The message passed to `panic!`, if it was a string.
+fn panic_message(payload: &(dyn Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        message.to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "non-string panic payload".to_string()
     }
 }
 
@@ -541,7 +567,20 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
     }
 
     pub fn ethercat_state_machine(&mut self) -> Result<(), EthercatErr> {
-        let result = self.run_state_machine();
+        // Catch panics here instead of installing a global panic hook, which would replace the
+        // application's own. The controller is not touched again after a panic, so it is fine
+        // that its state may be inconsistent.
+        let result = match catch_unwind(AssertUnwindSafe(|| self.run_state_machine())) {
+            Ok(result) => result,
+            Err(payload) => {
+                let message = panic_message(payload.as_ref());
+                tracing::error!("EtherCAT state machine panicked: {message}");
+                self.all_subdevices_operational.store(false, Relaxed);
+                self.inputs_ready.store(false, Relaxed);
+                self.state.store(EtherCATState::NoInterface.into(), Relaxed);
+                Err(EthercatErr::Panicked(message))
+            }
+        };
         // The state machine only returns on failure, so tell a waiting state change why.
         if let (Err(err), Some(response_channel)) = (&result, self.pending_state_change.take()) {
             send_response(
@@ -677,5 +716,23 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
             }
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::panic_message;
+    use std::panic::catch_unwind;
+
+    #[test]
+    fn panic_message_reads_str_and_string_payloads() {
+        let payload = catch_unwind(|| panic!("static message")).unwrap_err();
+        assert_eq!(panic_message(payload.as_ref()), "static message");
+
+        let payload = catch_unwind(|| panic!("formatted {}", 42)).unwrap_err();
+        assert_eq!(panic_message(payload.as_ref()), "formatted 42");
+
+        let payload = catch_unwind(|| std::panic::panic_any(7u32)).unwrap_err();
+        assert_eq!(panic_message(payload.as_ref()), "non-string panic payload");
     }
 }

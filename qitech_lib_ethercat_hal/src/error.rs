@@ -184,6 +184,9 @@ pub enum EthercatErr {
     /// Locking the process memory for realtime operation failed.
     #[error("memory locking failed with result {0}")]
     MemoryLock(i32),
+    /// The state machine thread panicked and is no longer running.
+    #[error("EtherCAT state machine panicked: {0}")]
+    Panicked(String),
 }
 
 /// Any error of this crate.
