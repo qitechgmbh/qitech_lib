@@ -678,6 +678,10 @@ pub enum EL70x1OperationMode {
     VelocityController = 2,
     /// Position controller
     PositionController = 3,
+    /// Extended Velocity controller
+    ExtendedVelocityController = 4,
+    /// Extended Position controller
+    ExtendedPositionController = 5,
 }
 
 impl std::fmt::Debug for EL70x1OperationMode {
@@ -687,6 +691,8 @@ impl std::fmt::Debug for EL70x1OperationMode {
             Self::DirectVelocity => write!(f, "DirectVelocity (1)"),
             Self::VelocityController => write!(f, "VelocityController (2)"),
             Self::PositionController => write!(f, "PositionController (3)"),
+            Self::ExtendedVelocityController => write!(f, "ExtendedVelocityController (4)"),
+            Self::ExtendedPositionController => write!(f, "ExtendedPositionController (5)"),
         }
     }
 }
@@ -700,6 +706,8 @@ impl TryFrom<u8> for EL70x1OperationMode {
             1 => Ok(Self::DirectVelocity),
             2 => Ok(Self::VelocityController),
             3 => Ok(Self::PositionController),
+            4 => Ok(Self::ExtendedVelocityController),
+            5 => Ok(Self::ExtendedPositionController),
             _ => Err(anyhow::anyhow!(
                 "Invalid value for EL7031OperationMode: {}",
                 value
