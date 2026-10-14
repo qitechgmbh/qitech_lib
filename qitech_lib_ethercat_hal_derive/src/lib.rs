@@ -281,16 +281,6 @@ pub fn ethercat_device_derive(input: TokenStream) -> TokenStream {
             fn is_module(&self) -> bool {
                 false
             }
-
-            #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
-            fn get_module(&self) -> Option<::qitech_lib_ethercat_hal::device::Module> {
-                None
-            }
-
-            #[doc="Implemented by the qitech_lib_ethercat_hal_derive::EthercatDevice derive macro"]
-            fn set_module(&mut self,module : ::qitech_lib_ethercat_hal::device::Module){
-                ()
-            }
         }
     };
 
