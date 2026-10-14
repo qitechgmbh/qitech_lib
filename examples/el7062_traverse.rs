@@ -4,26 +4,19 @@
     The drive runs Cyclic Synchronous Position with commutation type 17
     ("stepper with encoder"): it closes its position loop around the encoder,
     so a skipped step is corrected by the drive itself and shows up in the
-    following error printed here. In CSP the master computes every position
-    setpoint, so the ramp, homing and limits all live in the traverse helper
+    following error printed here. In Cyclic Synchronous Position the master
+    computes every position setpoint, so the ramp, homing, speed limits and
+    endstop handling all live in the traverse helper
     (ethercat_hal::helpers::traverse); this file only moves process data
-    between it and the terminal.
+    between it and the terminal, including the raw endstop levels that the
+    helper applies its configured polarity to.
 
-    The endstops are the channel's own digital inputs (0x6020:01 / :02). Raw
-    levels are handed to the helper, which applies the configured polarity.
+    Type `help` once the drive is in Op; a typical first run is `status`,
+    `home`, `goto 100`, then `calibrate <measured travel>`.
 
-    Type `help` once the drive is in Op. A typical first run:
-        status          check both endstops react when pressed by hand
-        home            find the home switch, back off, park at 0 mm
-        goto 100        move, with progress printed every 500 ms
-        calibrate 98.7  after measuring the real travel with a ruler
-
-    Ctrl+C kills this process while the drive is in Op, so the next run reports
-    a latched fault (DC-Link undervoltage 0x4411 / PD-Watchdog 0x8105). That is
-    expected after an interrupt; the driver pulses controlword bit 7 until the
-    reset takes — a fault whose cause is still present at the first edge stays
-    latched otherwise — and this example prints the DC-link level and
-    amplifier temperature on the fault edge via SDO.
+    Killing the process while the drive is in Op latches a fault on the
+    drive; the next run's `reset` clears it. The EL7062 wiki page has the
+    details.
 */
 
 use bitvec::slice::BitSlice;
@@ -60,7 +53,7 @@ const CYCLE_TIME_US: u64 = 1000;
 
 // --- Mechanics: check every value against your own rig -------------------
 
-/// Full steps per motor revolution (0x8011:13).
+/// Full steps per motor revolution (0x8011:33).
 const MOTOR_FULL_STEPS_PER_REV: u32 = 200;
 
 /// Travel per motor revolution, e.g. the lead-screw pitch.
@@ -81,9 +74,9 @@ const ACCELERATION_MM_S2: f64 = 100.0;
 
 // --- Endstops ------------------------------------------------------------
 
-/// `Endstops::Single(HomeSide::Min)` searches towards one switch only, which
-/// is the safe default: with `Both { measure_length: true }` and no far
-/// switch fitted, homing would drive into the mechanical end looking for it.
+/// `Single` searches towards one switch only — the safe default, because
+/// homing with `Both { measure_length: true }` and no far switch fitted
+/// would drive into the mechanical end looking for it.
 const ENDSTOPS: Endstops = Endstops::Single(HomeSide::Min);
 const HOME_INPUT: DiInput = DiInput::Input1;
 const FAR_INPUT: DiInput = DiInput::Input2;
@@ -96,7 +89,7 @@ const HOMING_SEARCH_MM_S: f64 = 10.0;
 const HOMING_RELEASE_MM_S: f64 = 1.0;
 const HOMING_CLEARANCE_MM: f64 = 1.0;
 
-// --- Drive, as in el7062_minimal.rs --------------------------------------
+// --- Drive ---------------------------------------------------------------
 
 /// 1.8 A/phase motor, run well below rated current because it gets hot.
 const MOTOR_RATED_MA: u32 = 1800;
@@ -285,11 +278,9 @@ fn main() {
     });
     println!("EL7062 @0x{addr:04X} in Op. Type `help` for commands.");
 
-    // The process-data position is a wrapping 32-bit counter (the driver
-    // writes 0x8000:1B..1C to their documented full-UDINT default at
-    // configuration time, so a terminal with stored commissioning is covered
-    // too), so it is unwrapped into an i64 for the helper and the setpoint is
-    // wrapped back the same way.
+    // The process-data position is a wrapping 32-bit counter, so it is
+    // unwrapped into an i64 for the helper and the setpoint is wrapped back
+    // the same way.
     let mut last_raw_position: Option<i32> = None;
     let mut actual_position = 0i64;
     let mut last_cycle = eth_handle.get_current_cycle();
@@ -298,8 +289,8 @@ fn main() {
     let mut last_fault = false;
 
     loop {
-        // See el7062_minimal.rs: the master's I/O thread owns the timing, so
-        // this thread sleeps rather than spinning at RT priority.
+        // The master's I/O thread owns the EtherCAT timing, so this thread
+        // sleeps instead of spinning at RT priority.
         let sleep_us = eth_handle
             .get_cycle_time_us()
             .saturating_sub(SPIN_HEADROOM_US);
@@ -342,9 +333,8 @@ fn main() {
         axis.apply_controlword(&statusword).unwrap();
 
         if statusword.fault && !last_fault {
-            // One sync SDO read on the fault edge: the DC-link level answers
-            // the "why" for the most common fault here (0x4411 after an
-            // interrupted run), the amplifier temperature separates that
+            // One SDO read pair on the fault edge: the DC-link level answers
+            // the most common "why", the amplifier temperature separates it
             // from an overtemperature event.
             let dc_link = EL7062::read_dc_link_voltage(&eth_control.channel, addr)
                 .map(|mv| format!("{mv} mV"))
