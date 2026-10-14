@@ -133,8 +133,6 @@ where
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn is_module(&self) -> bool;
-    fn get_module(&self) -> Option<Module>;
-    fn set_module(&mut self, module: Module);
 }
 
 pub trait DynamicEthercatDevice: EthercatDevice + EthercatDynamicPDO {}

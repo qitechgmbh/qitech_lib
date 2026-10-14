@@ -1,13 +1,12 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use qitech_lib_ethercat_hal::{
-    EtherCATState, init_ethercat, io::analog_input::AnalogCurrentInputDevice,
+    EtherCATState, MetaSubdevice, init_ethercat, io::analog_input::AnalogCurrentInputDevice,
 };
 use qitech_lib_ethercat_hal_devices::{
-    EthercatDevice, IdentifiedDevice, NewEthercatDevice,
-    wago_modules::{wago_750_354::Wago750_354, wago_750_455::Wago750_455},
+    EthercatDevice, IdentifiedDevice, NewEthercatDevice, wago_modules::{ec_box::{get_modules, init_slot_modules}, wago_750_354::Wago750_354, wago_750_455::Wago750_455},
 };
 use qitech_lib_units::electric_current::milliampere;
-use std::{env, time::Duration};
+use std::{env, process::exit, time::Duration};
 
 const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -35,48 +34,32 @@ fn main() {
         .iter()
         .find(|s| Wago750_354::IDENTITY.matches(s))
         .expect("No Wago 750-354 coupler found on the bus");
-
-    // Initialize the coupler and discover its bus modules
-    let mut coupler = Wago750_354::new();
-    let modules =
-        Wago750_354::initialize_modules(eth_control.get_channel(), coupler_subdev.device_address)
-            .expect("Failed to initialize coupler modules");
+    let modules = get_modules(eth_control.get_channel(),coupler_subdev.device_address,coupler_subdev.vendor).unwrap();
     for module in &modules {
         println!(
             "  Found module: {} (product_id: 0x{:08x})",
             module.name, module.product_id
         );
     }
-    for module in modules {
-        coupler.set_module(module);
-    }
-    coupler.init_slot_modules(eth_control.get_channel(), coupler_subdev.device_address);
-
-    // Find the 750-455 slot
-    let ai_slot = coupler
-        .slot_devices
-        .iter()
-        .position(|s| {
-            s.as_ref().map_or(false, |d| {
-                d.as_any().downcast_ref::<Wago750_455>().is_some()
-            })
-        })
-        .expect("No Wago 750-455 found: is it registered in init_slot_modules?");
-
-    println!("750-455 in slot {ai_slot}, starting ramp...");
-
-    // Transition to Op
+    println!("{:?}",modules);
+    
     eth_control
         .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into OP");
-
     let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
+    
+    let mut module_devices : Vec<MetaSubdevice> = vec![];
+    
+    // Find the Wago 750-354 coupler subdevice
     let coupler_subdev = subdevices
         .iter()
         .find(|s| Wago750_354::IDENTITY.matches(s))
         .expect("No Wago 750-354 coupler found on the bus");
+    
 
-    // Main loop: ramp AO 1 up and AO 2 down over 16 steps, read back via the 455
+    exit(1);
+    
+    /*// Main loop: ramp AO 1 up and AO 2 down over 16 steps, read back via the 455
     loop {
         // Write outputs to the EtherCAT bus
         if let Some(outputs) = eth_control.write_outputs() {
@@ -99,18 +82,18 @@ fn main() {
         }
 
         // Read back the measured current from the 455
-        let slot_dev = coupler.slot_devices[ai_slot]
+        /*let slot_dev = coupler.slot_devices[ai_slot]
             .as_ref()
             .expect("No device in AI slot");
         let ai = slot_dev
             .as_any()
             .downcast_ref::<Wago750_455>()
             .expect("AI slot is not a Wago 750-455");
-
-        if let Some(current) = ai.get_current(0) {
+*/
+  /*      if let Some(current) = ai.get_current(0) {
             println!("AI {:.2} mA", current.get::<milliampere>());
         } else {
             println!("Wirering Error");
-        }
-    }
+        }*/
+    }*/
 }

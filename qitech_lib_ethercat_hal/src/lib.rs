@@ -1,6 +1,5 @@
 // Lets the derive macros' `::qitech_lib_ethercat_hal::...` paths resolve inside this crate too.
 extern crate self as qitech_lib_ethercat_hal;
-
 pub mod al_diagnostics;
 pub mod controller;
 pub mod debugging;

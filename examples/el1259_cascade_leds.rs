@@ -2,12 +2,13 @@ use bitvec::slice::BitSlice;
 use qitech_lib::ethercat_hal::{
     EtherCATState, init_ethercat, io::multi_timestamp::MultiTimestampEvent,
 };
-use qitech_lib_ethercat_hal::{io::multi_timestamp::MultiTimestampOutput, sdo::{RX_PDO_ASSIGNMENT_REG, TX_PDO_ASSIGNMENT_REG}};
+use qitech_lib_ethercat_hal::{io::multi_timestamp::MultiTimestampOutput};
 use qitech_lib_ethercat_hal_devices::{
     ConfigurableDevice, EthercatDevice, EthercatDeviceProcessing, IdentifiedDevice,
     NewEthercatDevice, beckhoff_modules::el1259::EL1259,
 };
-use std::{env, process::exit, time::Duration};
+use std::{env, time::Duration};
+
 const INIT_DELAY_NS: u64 = 20_000_000;
 /// How long each LED stays on before the next one lights up
 const STEP_NS: u64 = 250_000_000;
@@ -34,7 +35,6 @@ fn main() {
     println!("hello");
     for subdevice in eth_control.try_get_subdevices_vec_sync().unwrap() {
         let res = EL1259::IDENTITY.matches(&subdevice);
-        println!("{} {} {}",res,subdevice.product_id,subdevice.vendor);
         if res {
             let results = eth_control
                 .write_configuration(
@@ -43,65 +43,22 @@ fn main() {
                     Duration::from_secs(4),
                 )
                 .expect("Failed to write configuration");
-            println!("{:?}",results);
-            /*for (sdo_index, error) in results {
-                if let Some(error) = error {
-                    panic!("Failed to write {:?}: {:?}", sdo_index, error);
-                }
-            }*/
-
-            let len = eth_control.sdo_read::<u8>(subdevice.device_address,TX_PDO_ASSIGNMENT_REG,0).unwrap();
-            println!("tx len: {:?}",len);
-            for i in 1..len {
-                let result = eth_control.sdo_read::<u16>(subdevice.device_address,TX_PDO_ASSIGNMENT_REG,i).unwrap();                
-                print!(" {:?} ",result);
-            }
-            
-            let len = eth_control.sdo_read::<u8>(subdevice.device_address,RX_PDO_ASSIGNMENT_REG,0).unwrap();
-            println!("rx len: {:?}",len);
-            for i in 1..len {
-                let result = eth_control.sdo_read::<u16>(subdevice.device_address,RX_PDO_ASSIGNMENT_REG,i).unwrap();                
-                print!(" {:?} ",result);
-            }
-
+            println!("{:?}",results);        
             eth_control
                 .enable_dc_sync0(subdevice.device_address)
                 .expect("Failed to enable DC Sync!");
         }
     }
 
-    std::thread::sleep(Duration::from_millis(1000));
-
     eth_control
         .request_state_change(EtherCATState::Op)
         .expect("Channel was not ready");
-
-    'outer: loop {
-        std::thread::sleep(Duration::from_millis(10));
-        //let res = eth_control.register_read(0x1001, 0x0134 as u16);
-
-        if eth_control.join_handle.as_ref().unwrap().is_finished() {
-            let result = eth_control.join_handle.unwrap().join();
-            println!("{:?}",result);
-            exit(1);
-        }
-
-        for subdevice in eth_control.try_get_subdevices_vec_sync().unwrap() {
-            if !subdevice.initialized {
-                continue 'outer;
-            }
-        }
-
-        break;
-    }
-
     let dc_system_start_ns = eth_control.get_dc_sys_time_ns();
     println!("DC System Start Time {} ns", dc_system_start_ns);
     // Every channel uses the same timing, shifted by one step per channel
     for (i, channel) in channels.iter_mut().enumerate() {
         channel.pulse_start_ns = dc_system_start_ns + INIT_DELAY_NS + i as u64 * STEP_NS;
     }
-
     let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
     loop {
         while eth_control.check_inputs_ready() == false {}

@@ -163,16 +163,6 @@ impl EthercatDevice for Wago750_460 {
         Ok(())
     }
 
-    fn get_module(&self) -> Option<Module> {
-        self.module.clone()
-    }
-
-    fn set_module(&mut self, module: Module) {
-        self.tx_bit_offset = module.tx_offset;
-        self.rx_bit_offset = module.rx_offset;
-        self.module = Some(module);
-    }
-
     fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
