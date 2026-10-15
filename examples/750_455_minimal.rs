@@ -3,7 +3,7 @@ use qitech_lib_ethercat_hal::{
     EtherCATState, MetaSubdevice, init_ethercat, io::analog_input::AnalogCurrentInputDevice,
 };
 use qitech_lib_ethercat_hal_devices::{
-    EthercatDevice, IdentifiedDevice, NewEthercatDevice, wago_modules::{ec_box::{get_modules, init_slot_modules}, wago_750_354::Wago750_354, wago_750_455::Wago750_455},
+    EthercatDevice, IdentifiedDevice, NewEthercatDevice, wago_modules::{ec_box::{convert_module_to_meta_ethercat_device, get_modules, init_slot_modules}, wago_750_354::Wago750_354, wago_750_455::Wago750_455},
 };
 use qitech_lib_units::electric_current::milliampere;
 use std::{env, process::exit, time::Duration};
@@ -18,45 +18,33 @@ fn main() {
     eth_control
         .change_state(EtherCATState::PreOp, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into PreOp");
-
-    println!(
-        "Found {:?} EtherCAT terminals",
-        eth_control.get_subdevice_count()
-    );
-
     let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
-    for sdev in &subdevices {
-        println!(" - {:?}", sdev);
-    }
-
+    
     // Find the Wago 750-354 coupler subdevice
     let coupler_subdev = subdevices
         .iter()
         .find(|s| Wago750_354::IDENTITY.matches(s))
         .expect("No Wago 750-354 coupler found on the bus");
-    let modules = get_modules(eth_control.get_channel(),coupler_subdev.device_address,coupler_subdev.vendor).unwrap();
-    for module in &modules {
-        println!(
-            "  Found module: {} (product_id: 0x{:08x})",
-            module.name, module.product_id
-        );
-    }
-    println!("{:?}",modules);
-    
+    let modules = get_modules(eth_control.get_channel(),coupler_subdev.device_address,coupler_subdev.vendor).unwrap();            
     eth_control
         .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into OP");
+    
     let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
-    
-    let mut module_devices : Vec<MetaSubdevice> = vec![];
-    
     // Find the Wago 750-354 coupler subdevice
     let coupler_subdev = subdevices
         .iter()
         .find(|s| Wago750_354::IDENTITY.matches(s))
-        .expect("No Wago 750-354 coupler found on the bus");
+        .expect("No Wago 750-354 coupler found on the bus");        
     
-
+    let mut subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
+    for module in &modules {
+        let device = convert_module_to_meta_ethercat_device(module,coupler_subdev.start_tx,coupler_subdev.start_rx);
+        subdevices.push(device);
+    }    
+    for sdev in &subdevices {
+        println!(" - {:?}", sdev);
+    }
     exit(1);
     
     /*// Main loop: ramp AO 1 up and AO 2 down over 16 steps, read back via the 455
