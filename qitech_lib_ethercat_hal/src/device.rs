@@ -14,12 +14,18 @@ pub struct Module {
     pub name: String,
     pub slot: u16,
     pub belongs_to_addr: u16,
+    
     pub has_tx: bool,
     pub has_rx: bool,
+    
     pub vendor_id: u32,
     pub product_id: u32,
+    
     pub tx_offset: usize,
+    pub tx_size: usize,
+    
     pub rx_offset: usize,
+    pub rx_size: usize,
 }
 
 /// Full CoE configuration of a device: device specific parameters plus the PDO assignment.

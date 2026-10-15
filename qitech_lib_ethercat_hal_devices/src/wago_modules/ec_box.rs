@@ -18,7 +18,9 @@ pub const MODULE_COUNT_INDEX: (u16, u8) = (0xf050, 0x00);
 
 #[derive(Clone, Debug)]
 pub struct ModulePdoMapping {
-    pub offset: usize,
+    pub offset: usize,    
+    pub sub_index: usize,
+    pub size:  usize,
     pub module_i: u32,
 }
 
@@ -34,9 +36,9 @@ pub fn convert_module_to_meta_ethercat_device(module : &Module, coupler_start_tx
         revision: 0x00, 
         vendor: module.vendor_id, 
         start_tx: coupler_start_tx + module.tx_offset,
-        end_tx: 0x00,
+        end_tx: coupler_start_tx + module.tx_offset + module.tx_size,
         start_rx: coupler_start_rx + module.rx_offset,
-        end_rx: 0x00, 
+        end_rx: coupler_start_rx + module.rx_offset + module.rx_size, 
         device_address: module.slot, 
         initialized: true 
     }
@@ -50,11 +52,21 @@ pub fn init_slot_modules(
 ) -> Result<(), qitech_lib_ethercat_hal::Error> {
     let tx_pdo_mappings = get_module_pdo_offsets(device_address, ecat_channel.clone(), true)?;
     let rx_pdo_mappings = get_module_pdo_offsets(device_address, ecat_channel.clone(), false)?;
-
     for m in modules.iter_mut() {
+        m.tx_size = 0;
+        for pdo_map in tx_pdo_mappings.iter() {
+            m.tx_size += pdo_map.size;
+        }
+
+        m.rx_size = 0;
+        for pdo_map in rx_pdo_mappings.iter() {
+            m.rx_size += pdo_map.size;
+        }
+
         let tx_pdo_mapping = tx_pdo_mappings
             .iter()
-            .find(|map| map.module_i == m.slot.into());
+            .find(|map| map.module_i == m.slot.into() && map.sub_index == 0x1);
+
         if m.has_tx {
             m.tx_offset = match tx_pdo_mapping {
                 Some(map) => map.offset,
@@ -64,7 +76,7 @@ pub fn init_slot_modules(
 
         let rx_pdo_mapping = rx_pdo_mappings
             .iter()
-            .find(|map| map.module_i == m.slot.into());
+            .find(|map| map.module_i == m.slot.into() && map.sub_index == 0x1);
         if m.has_rx {
             m.rx_offset = match rx_pdo_mapping {
                 Some(map) => map.offset,
@@ -132,22 +144,25 @@ pub fn get_module_pdo_offsets(
         }
     }
     mappings_without_coupler.sort();
-
+    
+    
     for pdo_mapping in mappings_without_coupler {
         module_i = calculate_module_index(pdo_mapping, get_tx);
-        let bit_length = (pdo_mapping & 0xFF) as u8;
+        let bit_length = (pdo_mapping & 0xFF) as usize;
+        let sub_index =  ((pdo_mapping & 0x0000FF00 ) >> 8) as usize;
         if module_i < 64 {
             vec.push(ModulePdoMapping {
                 offset: bit_offset,
+                sub_index,
+                size: bit_length,
                 module_i,
             });
         }
-        bit_offset += bit_length as usize;
+        bit_offset += bit_length;
     }
-
     vec.sort_by_key(|e| (e.module_i, e.offset));
     // deduplicate by module_i, so we only have the offset to the start of inputs/outputs
-    vec.dedup_by(|a, b| a.module_i == b.module_i);
+    //vec.dedup_by(|a, b| a.module_i == b.module_i);
     Ok(vec)
 }
 
@@ -179,6 +194,8 @@ pub fn get_modules(
             tx_offset: 0,
             rx_offset: 0,
             name: "".to_string(),
+            tx_size: 0,
+            rx_size: 0,
         };
 
         match ident_iom {
