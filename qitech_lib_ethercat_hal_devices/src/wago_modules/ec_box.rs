@@ -26,19 +26,23 @@ pub struct ModulePdoMapping {
 
 pub fn convert_module_to_meta_ethercat_device(module : &Module, coupler_start_tx : usize, coupler_start_rx : usize) -> MetaSubdevice  {
     let mut name : [u8;128] = [0u8;128];
-    let b = module.name.clone().into_bytes();
-    for (dest, src) in name.iter_mut().zip(b.iter()) {
-        *dest = *src;
-    }
+    let b = module.name.clone().into_bytes();    
+    name[..b.len()].copy_from_slice(b.as_slice());
+    
+    let start_tx = coupler_start_tx + module.tx_offset; 
+    let end_tx = coupler_start_tx + module.tx_offset + module.tx_size;
+    let start_rx = coupler_start_rx + module.rx_offset;
+    let end_rx = coupler_start_rx + module.rx_offset + module.rx_size;
+
     MetaSubdevice { 
         name, 
         product_id: module.product_id,
         revision: 0x00, 
         vendor: module.vendor_id, 
-        start_tx: coupler_start_tx + module.tx_offset,
-        end_tx: coupler_start_tx + module.tx_offset + module.tx_size,
-        start_rx: coupler_start_rx + module.rx_offset,
-        end_rx: coupler_start_rx + module.rx_offset + module.rx_size, 
+        start_tx: start_tx / 8,
+        end_tx: end_tx / 8,
+        start_rx: start_rx / 8,
+        end_rx: end_rx / 8, 
         device_address: module.slot, 
         initialized: true 
     }
@@ -103,6 +107,7 @@ pub fn calculate_module_index(pdo_mapping: u32, is_tx: bool) -> u32 {
         true => 0x6000 as u32,
         false => 0x7000 as u32,
     };
+    println!("{}",pdo_mapping);
     let index_in_hex = ((pdo_mapping & 0xFFFF0000) >> 16) - start_index;
     if index_in_hex < 16 {
         return 0;
@@ -118,12 +123,22 @@ pub fn get_module_pdo_offsets(
 ) -> Result<Vec<ModulePdoMapping>, qitech_lib_ethercat_hal::Error> {
     let mut vec: Vec<ModulePdoMapping> = vec![];
     let mut bit_offset = 0;
-    let mut module_i;
     let start_subindex = 0x2;
     let index = match get_tx {
         true => (TX_PDO_ASSIGNMENT_REG, 0x00),
         false => (RX_PDO_ASSIGNMENT_REG, 0x00),
     };
+    
+    let start_pdo_index = match get_tx {
+        true => 0x1a00 as u16,
+        false => 0x1600 as u16,
+    };
+
+    let start_index = match get_tx {
+        true => 0x6000 as u16,
+        false => 0x7000 as u16,
+    };
+
     let count_mappings = ecat_channel.sdo_read::<u8>(device_address, index.0, index.1)?;
     let pdo_index = ecat_channel.sdo_read::<u16>(device_address, index.0, 1)?;
     let pdo_map_count = ecat_channel.sdo_read::<u8>(device_address, pdo_index, 0)?;
@@ -134,33 +149,48 @@ pub fn get_module_pdo_offsets(
         bit_offset += bit_length as usize;
     }
 
-    let mut mappings_without_coupler: Vec<u32> = vec![];
+    let mut mappings_without_coupler: Vec<(u16,u32)> = vec![];
+    
     for i in start_subindex..=count_mappings {
         let pdo_index = ecat_channel.sdo_read(device_address, index.0, i)?;
         let pdo_map_count = ecat_channel.sdo_read::<u8>(device_address, pdo_index, 0)?;
+        println!("count pdo_index {:X} {:X}", pdo_index,pdo_map_count);
         for j in 0..pdo_map_count {
             let pdo_mapping: u32 = ecat_channel.sdo_read(device_address, pdo_index, 1 + j)?;
-            mappings_without_coupler.push(pdo_mapping);
+            // when pdo_index - start >= 256 then we are handling a "Gap"
+            // Commonly added after digital inputs/ouputs to "align" to boundaries
+            if  (pdo_index - start_pdo_index) >= 256 {
+                let pdo_mapping =  (start_index+256) as u32;
+                println!("HELP adjusted pdomapping pdo_index sub_index {:X} {:X} {:X}", pdo_mapping,pdo_index, 1 + j);
+            }
+            println!("pdomapping pdo_index sub_index {:X} {:X} {:X}", pdo_mapping,pdo_index, 1 + j);
+            mappings_without_coupler.push( (pdo_index,pdo_mapping) );
         }
     }
-    mappings_without_coupler.sort();
+    println!("{:?}",&mappings_without_coupler);
+    //mappings_without_coupler.sort();
     
-    
-    for pdo_mapping in mappings_without_coupler {
-        module_i = calculate_module_index(pdo_mapping, get_tx);
-        let bit_length = (pdo_mapping & 0xFF) as usize;
-        let sub_index =  ((pdo_mapping & 0x0000FF00 ) >> 8) as usize;
-        if module_i < 64 {
-            vec.push(ModulePdoMapping {
-                offset: bit_offset,
-                sub_index,
-                size: bit_length,
-                module_i,
-            });
-        }
-        bit_offset += bit_length;
+    for (pdo_index, pdo_mapping) in mappings_without_coupler {
+        // if distance is < 256 then its a normal mapping
+        // Otherwise its a Gap
+        if (pdo_index - start_pdo_index) < 256 && pdo_mapping > start_index as u32 {
+            let module_i = calculate_module_index(pdo_mapping, get_tx);
+            let bit_length = (pdo_mapping & 0xFF) as usize;
+            let sub_index =  ((pdo_mapping & 0x0000FF00 ) >> 8) as usize;
+            if module_i < 64 {
+                vec.push(ModulePdoMapping {
+                    offset: bit_offset,
+                    sub_index,
+                    size: bit_length,
+                    module_i,
+                });
+            }
+            bit_offset += bit_length;
+        } else{            
+            bit_offset += pdo_mapping as usize;
+        };
     }
-    vec.sort_by_key(|e| (e.module_i, e.offset));
+    //vec.sort_by_key(|e| (e.module_i, e.offset));
     // deduplicate by module_i, so we only have the offset to the start of inputs/outputs
     //vec.dedup_by(|a, b| a.module_i == b.module_i);
     Ok(vec)
