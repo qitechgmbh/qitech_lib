@@ -140,7 +140,6 @@ pub struct Wago750_1506 {
     tx_bit_offset: usize,
     rx_bit_offset: usize,
     // Should always have on but not when calling constructor
-    module: Option<Module>,
     rx_pdo: Wago750_1506RxPdo,
     tx_pdo: Wago750_1506TxPdo,
 }
@@ -171,35 +170,25 @@ impl EthercatDevice for Wago750_1506 {
     fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
-    // input_len 48 offset: 40
     fn input(
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-        let base = self.tx_bit_offset;
-
-        let idx1 = base + Into::<usize>::into(Wago750_1506InputPort::DI1);
+        let idx1 = Into::<usize>::into(Wago750_1506InputPort::DI1);
         self.tx_pdo.port1 = *input.get(idx1).expect("Bit 1 out of bounds");
-
-        let idx2 = base + Into::<usize>::into(Wago750_1506InputPort::DI2);
+        let idx2 = Into::<usize>::into(Wago750_1506InputPort::DI2);
         self.tx_pdo.port2 = *input.get(idx2).expect("Bit 2 out of bounds");
-
-        let idx3 = base + Into::<usize>::into(Wago750_1506InputPort::DI3);
+        let idx3 = Into::<usize>::into(Wago750_1506InputPort::DI3);
         self.tx_pdo.port3 = *input.get(idx3).expect("Bit 3 out of bounds");
-
-        let idx4 = base + Into::<usize>::into(Wago750_1506InputPort::DI4);
+        let idx4 = Into::<usize>::into(Wago750_1506InputPort::DI4);
         self.tx_pdo.port4 = *input.get(idx4).expect("Bit 4 out of bounds");
-
-        let idx5 = base + Into::<usize>::into(Wago750_1506InputPort::DI5);
+        let idx5 = Into::<usize>::into(Wago750_1506InputPort::DI5);
         self.tx_pdo.port5 = *input.get(idx5).expect("Bit 5 out of bounds");
-
-        let idx6 = base + Into::<usize>::into(Wago750_1506InputPort::DI6);
+        let idx6 = Into::<usize>::into(Wago750_1506InputPort::DI6);
         self.tx_pdo.port6 = *input.get(idx6).expect("Bit 6 out of bounds");
-
-        let idx7 = base + Into::<usize>::into(Wago750_1506InputPort::DI7);
+        let idx7 = Into::<usize>::into(Wago750_1506InputPort::DI7);
         self.tx_pdo.port7 = *input.get(idx7).expect("Bit 7 out of bounds");
-
-        let idx8 = base + Into::<usize>::into(Wago750_1506InputPort::DI8);
+        let idx8 = Into::<usize>::into(Wago750_1506InputPort::DI8);
         self.tx_pdo.port8 = *input.get(idx8).expect("Bit 8 out of bounds");
         Ok(())
     }
@@ -213,35 +202,35 @@ impl EthercatDevice for Wago750_1506 {
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_1506OutputPort::DO1),
+            Into::<usize>::into(Wago750_1506OutputPort::DO1),
             self.rx_pdo.port1,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_1506OutputPort::DO2),
+            Into::<usize>::into(Wago750_1506OutputPort::DO2),
             self.rx_pdo.port2,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_1506OutputPort::DO3),
+            Into::<usize>::into(Wago750_1506OutputPort::DO3),
             self.rx_pdo.port3,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_1506OutputPort::DO4),
+            Into::<usize>::into(Wago750_1506OutputPort::DO4),
             self.rx_pdo.port4,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_1506OutputPort::DO5),
+            Into::<usize>::into(Wago750_1506OutputPort::DO5),
             self.rx_pdo.port5,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_1506OutputPort::DO6),
+            Into::<usize>::into(Wago750_1506OutputPort::DO6),
             self.rx_pdo.port6,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_1506OutputPort::DO7),
+            Into::<usize>::into(Wago750_1506OutputPort::DO7),
             self.rx_pdo.port7,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_1506OutputPort::DO8),
+            Into::<usize>::into(Wago750_1506OutputPort::DO8),
             self.rx_pdo.port8,
         );
         Ok(())
@@ -293,7 +282,6 @@ impl NewEthercatDevice for Wago750_1506 {
         Self {
             tx_bit_offset: 0,
             rx_bit_offset: 0,
-            module: None,
             rx_pdo: Wago750_1506RxPdo::default(),
             tx_pdo: Wago750_1506TxPdo::default(),
         }
