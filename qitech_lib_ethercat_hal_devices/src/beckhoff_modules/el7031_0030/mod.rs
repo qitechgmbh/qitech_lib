@@ -8,6 +8,7 @@ use qitech_lib_ethercat_hal_derive::EthercatDevice;
 use qitech_lib_units::{electric_potential::volt, f64::ElectricPotential};
 
 use qitech_lib_ethercat_hal::{
+    device::Configuration,
     helpers::{
         counter_wrapper_u16_i128::CounterWrapperU16U128, signing_converter_u16::U16SigningConverter,
     },
@@ -15,7 +16,7 @@ use qitech_lib_ethercat_hal::{
     io::stepper_velocity_el70x1::{
         StepperVelocityEL70x1Device, StepperVelocityEL70x1Input, StepperVelocityEL70x1Output,
     },
-    pdo::{PredefinedPdoAssignment, RxPdo, TxPdo},
+    pdo::{RxPdo, TxPdo},
     shared_config::el70x1::EL70x1OperationMode,
 };
 
@@ -100,8 +101,8 @@ impl NewEthercatDevice for EL7031_0030 {
     fn new() -> Self {
         let configuration: EL7031_0030Configuration = EL7031_0030Configuration::default();
         Self {
-            txpdo: configuration.pdo_assignment.txpdo_assignment(),
-            rxpdo: configuration.pdo_assignment.rxpdo_assignment(),
+            txpdo: configuration.txpdo_assignment(),
+            rxpdo: configuration.rxpdo_assignment(),
             configuration,
             counter_wrapper: CounterWrapperU16U128::new(),
         }

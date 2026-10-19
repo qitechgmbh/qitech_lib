@@ -1,14 +1,17 @@
 use qitech_lib_ethercat_hal::{
-    EtherCATThreadChannel,
-    coe::{ConfigurableDevice, Configuration},
+    device::{ConfigurableDevice, Configuration},
     pdo::PredefinedPdoAssignment,
+    sdo::SdoRequest,
     shared_config::el70x7::{
         EncConfiguration, PosConfiguration, PosFeatures, StmControllerConfiguration,
         StmControllerSettings3Configuration, StmFeatures, StmMotorConfiguration,
     },
 };
 
-use super::{EL7037, pdo::EL7037PredefinedPdoAssignment};
+use super::{
+    EL7037,
+    pdo::{EL7037PredefinedPdoAssignment, EL7037RxPdo, EL7037TxPdo},
+};
 
 /// Configuration for EL7037 Stepper Motor Terminal
 #[derive(Debug, Clone)]
@@ -60,54 +63,43 @@ impl Default for EL7037Configuration {
 }
 
 impl Configuration for EL7037Configuration {
-    fn write_config(
+    type TxPdo = EL7037TxPdo;
+    type RxPdo = EL7037RxPdo;
+
+    fn txpdo_assignment(&self) -> EL7037TxPdo {
+        self.pdo_assignment.txpdo_assignment()
+    }
+
+    fn rxpdo_assignment(&self) -> EL7037RxPdo {
+        self.pdo_assignment.rxpdo_assignment()
+    }
+
+    fn get_config_coe_writes(
         &self,
-        ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
-        self.encoder
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.stm_motor
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.stm_controller_1
-            .write_config(ecat_channel.clone(), device_address, 0x8011)?;
-        self.stm_controller_3
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.stm_features
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.pos_configuration
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.pos_features
-            .write_config(ecat_channel.clone(), device_address)?;
-
-        // PDO assignments
-        self.pdo_assignment
-            .txpdo_assignment()
-            .write_config(ecat_channel.clone(), device_address)?;
-
-        self.pdo_assignment
-            .rxpdo_assignment()
-            .write_config(ecat_channel.clone(), device_address)?;
-
-        Ok(())
+    ) -> Result<Vec<SdoRequest>, qitech_lib_ethercat_hal::Error> {
+        let mut writes = Vec::new();
+        writes.extend(self.encoder.get_coe_writes(device_address));
+        writes.extend(self.stm_motor.get_coe_writes(device_address));
+        writes.extend(self.stm_controller_1.get_coe_writes(device_address, 0x8011));
+        writes.extend(self.stm_controller_3.get_coe_writes(device_address));
+        writes.extend(self.stm_features.get_coe_writes(device_address));
+        writes.extend(self.pos_configuration.get_coe_writes(device_address));
+        writes.extend(self.pos_features.get_coe_writes(device_address));
+        Ok(writes)
     }
 }
 
-impl ConfigurableDevice<EL7037Configuration> for EL7037 {
-    fn write_config(
-        &mut self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-        config: &EL7037Configuration,
-    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
-        config.write_config(ecat_channel, device_address)?;
-        self.configuration = config.clone();
-        self.txpdo = config.pdo_assignment.txpdo_assignment();
-        self.rxpdo = config.pdo_assignment.rxpdo_assignment();
-        Ok(())
+impl ConfigurableDevice for EL7037 {
+    type Config = EL7037Configuration;
+
+    fn set_config(&mut self, config: EL7037Configuration) {
+        self.txpdo = config.txpdo_assignment();
+        self.rxpdo = config.rxpdo_assignment();
+        self.configuration = config;
     }
 
-    fn get_config(&self) -> EL7037Configuration {
-        self.configuration.clone()
+    fn get_config(&self) -> &EL7037Configuration {
+        &self.configuration
     }
 }

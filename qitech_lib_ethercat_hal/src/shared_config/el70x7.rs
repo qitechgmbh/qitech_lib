@@ -1,5 +1,5 @@
 use crate::DeviceError;
-use crate::EtherCATThreadChannel;
+use crate::sdo::SdoRequest;
 
 pub use super::el70x1::{
     EL70x1InputFunction, EL70x1OperationMode, EL70x1SpeedRange, EncConfiguration, PosConfiguration,
@@ -99,32 +99,78 @@ impl Default for StmMotorConfiguration {
 }
 
 impl StmMotorConfiguration {
-    pub fn write_config(
-        &self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-    ) -> Result<(), crate::Error> {
-        ecat_channel.sdo_write(device_address, 0x8010, 0x01, self.max_current)?;
-        ecat_channel.sdo_write(device_address, 0x8010, 0x02, self.reduced_current)?;
+    pub fn get_coe_writes(&self, device_address: u16) -> Vec<SdoRequest> {
+        let mut writes = vec![];
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8010,
+            0x01,
+            self.max_current,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8010,
+            0x02,
+            self.reduced_current,
+        ));
         // EL7037 uses 10 mV units for 0x8010:03; nominal_voltage is stored as 1 mV.
-        // Terminal may reject values exceeding the actual supply voltage; fall back to default.
-        if let Err(e) =
-            ecat_channel.sdo_write(device_address, 0x8010, 0x03, self.nominal_voltage / 10)
-        {
-            tracing::debug!(
-                "EL7037 0x8010:03 nominal_voltage write rejected ({e}); \
-                 keeping terminal default."
-            );
-        }
-        ecat_channel.sdo_write(device_address, 0x8010, 0x04, self.motor_coil_resistance)?;
-        ecat_channel.sdo_write(device_address, 0x8010, 0x05, self.motor_emf)?;
-        ecat_channel.sdo_write(device_address, 0x8010, 0x06, self.motor_full_steps)?;
-        ecat_channel.sdo_write(device_address, 0x8010, 0x07, self.encoder_increments)?;
-        ecat_channel.sdo_write(device_address, 0x8010, 0x09, self.start_velocity)?;
-        ecat_channel.sdo_write(device_address, 0x8010, 0x0A, self.motor_coil_inductance)?;
-        ecat_channel.sdo_write(device_address, 0x8010, 0x10, self.drive_on_delay_time)?;
-        ecat_channel.sdo_write(device_address, 0x8010, 0x11, self.drive_off_delay_time)?;
-        Ok(())
+        // Terminal may reject values exceeding the actual supply voltage, the bulk write then
+        // reports the failure and the terminal keeps its default.
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8010,
+            0x03,
+            self.nominal_voltage / 10,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8010,
+            0x04,
+            self.motor_coil_resistance,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8010,
+            0x05,
+            self.motor_emf,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8010,
+            0x06,
+            self.motor_full_steps,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8010,
+            0x07,
+            self.encoder_increments,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8010,
+            0x09,
+            self.start_velocity,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8010,
+            0x0A,
+            self.motor_coil_inductance,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8010,
+            0x10,
+            self.drive_on_delay_time,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8010,
+            0x11,
+            self.drive_off_delay_time,
+        ));
+        writes
     }
 }
 
@@ -161,15 +207,21 @@ impl Default for StmControllerConfiguration {
 }
 
 impl StmControllerConfiguration {
-    pub fn write_config(
-        &self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-        base_index: u16,
-    ) -> Result<(), crate::Error> {
-        ecat_channel.sdo_write(device_address, base_index, 0x01, self.kp_factor)?;
-        ecat_channel.sdo_write(device_address, base_index, 0x02, self.ki_factor)?;
-        Ok(())
+    pub fn get_coe_writes(&self, device_address: u16, base_index: u16) -> Vec<SdoRequest> {
+        let mut writes = vec![];
+        writes.push(SdoRequest::new(
+            device_address,
+            base_index,
+            0x01,
+            self.kp_factor,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            base_index,
+            0x02,
+            self.ki_factor,
+        ));
+        writes
     }
 }
 
@@ -228,16 +280,28 @@ impl Default for StmControllerSettings3Configuration {
 }
 
 impl StmControllerSettings3Configuration {
-    pub fn write_config(
-        &self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-    ) -> Result<(), crate::Error> {
-        ecat_channel.sdo_write(device_address, 0x8014, 0x01, self.feed_forward_pos)?;
-        ecat_channel.sdo_write(device_address, 0x8014, 0x02, self.kp_factor_pos)?;
-        ecat_channel.sdo_write(device_address, 0x8014, 0x03, self.kp_factor_velo)?;
-        ecat_channel.sdo_write(device_address, 0x8014, 0x04, self.tn_velo)?;
-        Ok(())
+    pub fn get_coe_writes(&self, device_address: u16) -> Vec<SdoRequest> {
+        let mut writes = vec![];
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8014,
+            0x01,
+            self.feed_forward_pos,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8014,
+            0x02,
+            self.kp_factor_pos,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8014,
+            0x03,
+            self.kp_factor_velo,
+        ));
+        writes.push(SdoRequest::new(device_address, 0x8014, 0x04, self.tn_velo));
+        writes
     }
 }
 
@@ -446,43 +510,65 @@ impl Default for StmFeatures {
 }
 
 impl StmFeatures {
-    pub fn write_config(
-        &self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-    ) -> Result<(), crate::Error> {
-        ecat_channel.sdo_write(device_address, 0x8012, 0x01, u8::from(self.operation_mode))?;
-        ecat_channel.sdo_write(device_address, 0x8012, 0x05, u8::from(self.speed_range))?;
+    pub fn get_coe_writes(&self, device_address: u16) -> Vec<SdoRequest> {
+        let mut writes = vec![];
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8012,
+            0x01,
+            u8::from(self.operation_mode),
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8012,
+            0x05,
+            u8::from(self.speed_range),
+        ));
         if matches!(self.feedback_type, EL7037FeedbackType::Encoder) {
-            ecat_channel.sdo_write(device_address, 0x8012, 0x08, false)?;
+            writes.push(SdoRequest::new(device_address, 0x8012, 0x08, false));
         }
-        ecat_channel.sdo_write(device_address, 0x8012, 0x09, self.invert_motor_polarity)?;
-        ecat_channel.sdo_write(
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8012,
+            0x09,
+            self.invert_motor_polarity,
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             0x8012,
             0x11,
             u8::from(self.select_info_data_1),
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             0x8012,
             0x19,
             u8::from(self.select_info_data_2),
-        )?;
-        ecat_channel.sdo_write(device_address, 0x8012, 0x30, self.invert_digital_input_1)?;
-        ecat_channel.sdo_write(device_address, 0x8012, 0x31, self.invert_digital_input_2)?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8012,
+            0x30,
+            self.invert_digital_input_1,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8012,
+            0x31,
+            self.invert_digital_input_2,
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             0x8012,
             0x32,
             u8::from(self.function_for_input_1),
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             0x8012,
             0x36,
             u8::from(self.function_for_input_2),
-        )?;
-        Ok(())
+        ));
+        writes
     }
 }

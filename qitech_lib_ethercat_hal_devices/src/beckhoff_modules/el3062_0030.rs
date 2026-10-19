@@ -2,11 +2,11 @@ use super::{
     EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
 };
 use qitech_lib_ethercat_hal::DeviceError;
-use qitech_lib_ethercat_hal::EtherCATThreadChannel;
+use qitech_lib_ethercat_hal::device::{ConfigurableDevice, Configuration};
 use qitech_lib_ethercat_hal::io::analog_input::{AnalogInputDevice, AnalogInputInput};
 use qitech_lib_ethercat_hal::pdo::RxPdo;
+use qitech_lib_ethercat_hal::sdo::SdoRequest;
 use qitech_lib_ethercat_hal::{
-    coe::{ConfigurableDevice, Configuration},
     helpers::signing_converter_u16::U16SigningConverter,
     io::analog_input::physical::AnalogInputRange,
     pdo::{
@@ -15,7 +15,7 @@ use qitech_lib_ethercat_hal::{
     },
     shared_config::el30xx::{EL30XXChannelConfiguration, EL30XXPresentation},
 };
-use qitech_lib_ethercat_hal_derive::EthercatDevice;
+use qitech_lib_ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
 use qitech_lib_units::{electric_potential::volt, f64::ElectricPotential};
 
 #[derive(Debug, Clone)]
@@ -53,9 +53,9 @@ impl NewEthercatDevice for EL3062_0030 {
     fn new() -> Self {
         let configuration: EL3062_0030Configuration = EL3062_0030Configuration::default();
         Self {
-            configuration: configuration.clone(),
-            txpdo: configuration.pdo_assignment.txpdo_assignment(),
-            rxpdo: configuration.pdo_assignment.rxpdo_assignment(),
+            txpdo: configuration.txpdo_assignment(),
+            rxpdo: configuration.rxpdo_assignment(),
+            configuration,
         }
     }
 }
@@ -132,21 +132,17 @@ impl AnalogInputDevice for EL3062_0030 {
     }
 }
 
-impl ConfigurableDevice<EL3062_0030Configuration> for EL3062_0030 {
-    fn write_config(
-        &mut self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-        config: &EL3062_0030Configuration,
-    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
-        config.write_config(ecat_channel, device_address)?;
-        self.configuration = config.clone();
-        self.txpdo = config.pdo_assignment.txpdo_assignment();
-        Ok(())
+impl ConfigurableDevice for EL3062_0030 {
+    type Config = EL3062_0030Configuration;
+
+    fn set_config(&mut self, config: EL3062_0030Configuration) {
+        self.txpdo = config.txpdo_assignment();
+        self.rxpdo = config.rxpdo_assignment();
+        self.configuration = config;
     }
 
-    fn get_config(&self) -> EL3062_0030Configuration {
-        self.configuration.clone()
+    fn get_config(&self) -> &EL3062_0030Configuration {
+        &self.configuration
     }
 }
 
@@ -156,124 +152,48 @@ pub enum EL3062_0030Port {
     AI2,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TxPdo)]
 pub struct EL3062_0030TxPdo {
+    #[pdo_object_index(0x1A00)]
     pub ai_standard_channel1: Option<AiStandard>,
+    #[pdo_object_index(0x1A01)]
     pub ai_compact_channel1: Option<AiCompact>,
 
+    #[pdo_object_index(0x1A02)]
     pub ai_standard_channel2: Option<AiStandard>,
+    #[pdo_object_index(0x1A03)]
     pub ai_compact_channel2: Option<AiCompact>,
 }
 
-impl qitech_lib_ethercat_hal::coe::Configuration for EL3062_0030TxPdo {
-    /// Implemented by the qitech_lib_ethercat_hal_derive::TxPdo derive macro
-    fn write_config(
-        &self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
-        // Clear sync manager manager PDO assignment
-        ecat_channel.sdo_write(device_address, 0x1C13, 0, 0u8)?;
-
-        let mut len = 0;
-
-        if self.ai_standard_channel1.is_some() {
-            len += 1;
-            ecat_channel.sdo_write(device_address, 0x1C13, len, 0x1A00u16)?;
-        }
-        if self.ai_compact_channel1.is_some() {
-            len += 1;
-            ecat_channel.sdo_write(device_address, 0x1C13, len, 0x1A01u16)?;
-        }
-        if self.ai_standard_channel2.is_some() {
-            len += 1;
-            ecat_channel.sdo_write(device_address, 0x1C13, len, 0x1A02u16)?;
-        }
-        if self.ai_compact_channel2.is_some() {
-            len += 1;
-            ecat_channel.sdo_write(device_address, 0x1C13, len, 0x1A03u16)?;
-        }
-
-        // Set the number of assigned PDOs
-        ecat_channel.sdo_write(device_address, 0x1C13, 0, len)?;
-
-        Ok(())
-    }
-}
-impl qitech_lib_ethercat_hal::pdo::TxPdo for EL3062_0030TxPdo {
-    ///Implemented by the qitech_lib_ethercat_hal_derive::TxPdo derive macro
-    fn get_objects(&self) -> Box<[Option<&dyn qitech_lib_ethercat_hal::pdo::TxPdoObject>]> {
-        Box::new([
-            self.ai_standard_channel1
-                .as_ref()
-                .map(|o| o as &dyn qitech_lib_ethercat_hal::pdo::TxPdoObject),
-            self.ai_compact_channel1
-                .as_ref()
-                .map(|o| o as &dyn qitech_lib_ethercat_hal::pdo::TxPdoObject),
-            self.ai_standard_channel2
-                .as_ref()
-                .map(|o| o as &dyn qitech_lib_ethercat_hal::pdo::TxPdoObject),
-            self.ai_compact_channel2
-                .as_ref()
-                .map(|o| o as &dyn qitech_lib_ethercat_hal::pdo::TxPdoObject),
-        ])
-    }
-    ///Implemented by the qitech_lib_ethercat_hal_derive::TxPdo derive macro
-    fn get_objects_mut(
-        &mut self,
-    ) -> Box<[Option<&mut dyn qitech_lib_ethercat_hal::pdo::TxPdoObject>]> {
-        Box::new([
-            self.ai_standard_channel1
-                .as_mut()
-                .map(|o| o as &mut dyn qitech_lib_ethercat_hal::pdo::TxPdoObject),
-            self.ai_compact_channel1
-                .as_mut()
-                .map(|o| o as &mut dyn qitech_lib_ethercat_hal::pdo::TxPdoObject),
-            self.ai_standard_channel2
-                .as_mut()
-                .map(|o| o as &mut dyn qitech_lib_ethercat_hal::pdo::TxPdoObject),
-            self.ai_compact_channel2
-                .as_mut()
-                .map(|o| o as &mut dyn qitech_lib_ethercat_hal::pdo::TxPdoObject),
-        ])
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, RxPdo)]
 pub struct EL3062_0030RxPdo {}
-impl qitech_lib_ethercat_hal::coe::Configuration for EL3062_0030RxPdo {
-    ///Implemented by the qitech_lib_ethercat_hal_derive::RxPdo derive macro
-    fn write_config(
-        &self,
-        _ecat_channel: EtherCATThreadChannel,
-        _addr: u16,
-    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
-        Ok(())
-    }
-}
-impl qitech_lib_ethercat_hal::pdo::RxPdo for EL3062_0030RxPdo {
-    ///Implemented by the qitech_lib_ethercat_hal_derive::RxPdo derive macro
-    fn get_objects(&self) -> Box<[Option<&dyn qitech_lib_ethercat_hal::pdo::RxPdoObject>]> {
-        Box::new([])
-    }
-}
+
 impl Configuration for EL3062_0030Configuration {
-    fn write_config(
+    type TxPdo = EL3062_0030TxPdo;
+    type RxPdo = EL3062_0030RxPdo;
+
+    fn txpdo_assignment(&self) -> EL3062_0030TxPdo {
+        self.pdo_assignment.txpdo_assignment()
+    }
+
+    fn rxpdo_assignment(&self) -> EL3062_0030RxPdo {
+        self.pdo_assignment.rxpdo_assignment()
+    }
+
+    fn get_config_coe_writes(
         &self,
-        ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
-        self.channel_1
-            .write_channel_config(ecat_channel.clone(), device_address, 0x8000)?;
-        self.channel_2
-            .write_channel_config(ecat_channel.clone(), device_address, 0x8010)?;
-        self.pdo_assignment
-            .txpdo_assignment()
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.pdo_assignment
-            .rxpdo_assignment()
-            .write_config(ecat_channel, device_address)?;
-        Ok(())
+    ) -> Result<Vec<SdoRequest>, qitech_lib_ethercat_hal::Error> {
+        let mut writes = Vec::new();
+        writes.extend(
+            self.channel_1
+                .get_channel_coe_writes(device_address, 0x8000),
+        );
+        writes.extend(
+            self.channel_2
+                .get_channel_coe_writes(device_address, 0x8010),
+        );
+        Ok(writes)
     }
 }
 

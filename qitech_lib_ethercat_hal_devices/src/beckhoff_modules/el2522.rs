@@ -1,9 +1,9 @@
 use super::{
     EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
 };
-use qitech_lib_ethercat_hal::EtherCATThreadChannel;
+use qitech_lib_ethercat_hal::device::{ConfigurableDevice, Configuration};
+use qitech_lib_ethercat_hal::sdo::SdoRequest;
 use qitech_lib_ethercat_hal::{
-    coe::{ConfigurableDevice, Configuration},
     io::pulse_train_output::{
         PulseTrainOutputDevice, PulseTrainOutputInput, PulseTrainOutputOutput,
     },
@@ -34,8 +34,8 @@ impl NewEthercatDevice for EL2522 {
     /// Create a new EL2522 device with default configuration
     fn new() -> Self {
         let configuration = EL2522Configuration::default();
-        let txpdo = configuration.pdo_assignment.txpdo_assignment();
-        let rxpdo = configuration.pdo_assignment.rxpdo_assignment();
+        let txpdo = configuration.txpdo_assignment();
+        let rxpdo = configuration.rxpdo_assignment();
         Self {
             configuration,
             txpdo,
@@ -44,22 +44,17 @@ impl NewEthercatDevice for EL2522 {
     }
 }
 
-impl ConfigurableDevice<EL2522Configuration> for EL2522 {
-    fn write_config<'maindevice>(
-        &mut self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-        config: &EL2522Configuration,
-    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
-        config.write_config(ecat_channel, device_address)?;
-        self.configuration = config.clone();
-        self.txpdo = config.pdo_assignment.txpdo_assignment();
-        self.rxpdo = config.pdo_assignment.rxpdo_assignment();
-        Ok(())
+impl ConfigurableDevice for EL2522 {
+    type Config = EL2522Configuration;
+
+    fn set_config(&mut self, config: EL2522Configuration) {
+        self.txpdo = config.txpdo_assignment();
+        self.rxpdo = config.rxpdo_assignment();
+        self.configuration = config;
     }
 
-    fn get_config(&self) -> EL2522Configuration {
-        self.configuration.clone()
+    fn get_config(&self) -> &EL2522Configuration {
+        &self.configuration
     }
 }
 
@@ -335,184 +330,195 @@ impl Default for EL2522Configuration {
 }
 
 impl Configuration for EL2522Configuration {
-    fn write_config<'a>(
+    type TxPdo = EL2522TxPdo;
+    type RxPdo = EL2522RxPdo;
+
+    fn txpdo_assignment(&self) -> EL2522TxPdo {
+        self.pdo_assignment.txpdo_assignment()
+    }
+
+    fn rxpdo_assignment(&self) -> EL2522RxPdo {
+        self.pdo_assignment.rxpdo_assignment()
+    }
+
+    fn get_config_coe_writes(
         &self,
-        ecat_channel: EtherCATThreadChannel,
         device_address: u16,
-    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
+    ) -> Result<Vec<SdoRequest>, qitech_lib_ethercat_hal::Error> {
+        let mut writes = vec![];
         // Write configuration for Channel 1
-        self.write_channel_config(
-            ecat_channel.clone(),
+        writes.extend(self.get_channel_coe_writes(
             device_address,
             0x8000,
             0x8020,
             &self.channel1_configuration,
-        )?;
+        ));
         // Write configuration for Channel 2
-        self.write_channel_config(
-            ecat_channel.clone(),
+        writes.extend(self.get_channel_coe_writes(
             device_address,
             0x8010,
             0x8030,
             &self.channel2_configuration,
-        )?;
-
-        // Write PDO assignments
-        self.pdo_assignment
-            .txpdo_assignment()
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.pdo_assignment
-            .rxpdo_assignment()
-            .write_config(ecat_channel.clone(), device_address)?;
-        Ok(())
+        ));
+        Ok(writes)
     }
 }
 
 impl EL2522Configuration {
-    fn write_channel_config<'a>(
+    fn get_channel_coe_writes(
         &self,
-        ecat_channel: EtherCATThreadChannel,
         device_address: u16,
         pto_base_index: u16,
         enc_base_index: u16,
         config: &EL2522ChannelConfiguration,
-    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
-        ecat_channel.sdo_write(
+    ) -> Vec<SdoRequest> {
+        let mut writes = vec![];
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x01,
             config.adapt_a_b_on_position_set,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x02,
             config.emergency_ramp_active,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x03,
             config.watchdog_timer_deactive,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x04,
             config.sign_amount_representation,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x06,
             config.ramp_function_active,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x07,
             config.ramp_base_frequency,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x08,
             config.direct_input_mode,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x09,
             config.user_switch_on_value_on_watchdog,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x0A,
             config.travel_distance_control,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x0E,
             u8::from(config.operating_mode),
-        )?;
-        ecat_channel.sdo_write(device_address, pto_base_index, 0x10, config.negative_logic)?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            pto_base_index,
+            0x10,
+            config.negative_logic,
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x11,
             config.user_switch_on_value,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x12,
             config.base_frequency_1,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x13,
             config.base_frequency_2,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x14,
             config.ramp_time_constant_rising,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x15,
             config.ramp_time_constant_falling,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x16,
             config.frequency_factor,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x17,
             config.slowing_down_frequency,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             pto_base_index,
             0x18,
             config.ramp_time_constant_emergency,
-        )?;
+        ));
         // Write ENC settings
-        ecat_channel.sdo_write(device_address, enc_base_index, 0x01, config.enable_c_reset)?;
-        ecat_channel.sdo_write(
+        writes.push(SdoRequest::new(
+            device_address,
+            enc_base_index,
+            0x01,
+            config.enable_c_reset,
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             enc_base_index,
             0x0A,
             config.enable_micro_increments,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             enc_base_index,
             0x18,
             config.micro_increment_bits,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             enc_base_index,
             0x19,
             config.pulses_per_revolution,
-        )?;
-        ecat_channel.sdo_write(
+        ));
+        writes.push(SdoRequest::new(
             device_address,
             enc_base_index,
             0x1A,
             config.autoset_threshold,
-        )?;
-        Ok(())
+        ));
+        writes
     }
 }
 

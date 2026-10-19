@@ -1,4 +1,4 @@
-use crate::EtherCATThreadChannel;
+use crate::sdo::SdoRequest;
 #[derive(Debug, Clone)]
 pub struct EL40XXChannelConfiguration {
     /// Enable user scale (0x80n0:01) - Default: false (0x00)
@@ -107,12 +107,11 @@ impl Default for EL40XXChannelConfiguration {
 }
 
 impl EL40XXChannelConfiguration {
-    pub fn write_channel_config<'a>(
+    pub fn get_channel_coe_writes(
         &self,
-        _channel: EtherCATThreadChannel,
         _device_address: u16,
         _base_index: u16,
-    ) -> Result<(), crate::Error> {
-        Ok(())
+    ) -> Vec<SdoRequest> {
+        vec![]
     }
 }

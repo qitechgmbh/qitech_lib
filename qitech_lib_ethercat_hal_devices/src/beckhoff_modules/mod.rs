@@ -1,9 +1,8 @@
 pub mod ek1100;
 pub mod el1002;
 pub mod el1259;
-/*pub mod el1008;
+pub mod el1008;
 pub mod el1124;
-pub mod el1259;
 pub mod el2002;
 pub mod el2004;
 pub mod el2008;
@@ -31,7 +30,7 @@ pub mod el7041_0052;
 #[allow(dead_code)]
 pub(crate) mod el9505;
 pub mod ep2339_0021;
-*/
+
 // Re-export types that Beckhoff subdirectory devices access via `super::`
 pub(crate) use crate::{
     EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,

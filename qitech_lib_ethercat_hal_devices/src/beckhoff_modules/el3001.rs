@@ -2,16 +2,16 @@ use super::{
     EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
 };
 use qitech_lib_ethercat_hal::DeviceError;
-use qitech_lib_ethercat_hal::EtherCATThreadChannel;
 use qitech_lib_ethercat_hal::io::analog_input::{AnalogInputDevice, AnalogInputInput};
 use qitech_lib_ethercat_hal::{
-    coe::{ConfigurableDevice, Configuration},
+    device::{ConfigurableDevice, Configuration},
     helpers::signing_converter_u16::U16SigningConverter,
     io::analog_input::physical::AnalogInputRange,
     pdo::{
         PredefinedPdoAssignment, TxPdo,
         analog_input::{AiCompact, AiStandard},
     },
+    sdo::SdoRequest,
     shared_config::el30xx::{EL30XXChannelConfiguration, EL30XXPresentation},
 };
 use qitech_lib_ethercat_hal_derive::{EthercatDevice, RxPdo, TxPdo};
@@ -41,7 +41,7 @@ impl NewEthercatDevice for EL3001 {
     fn new() -> Self {
         let configuration: EL3001Configuration = EL3001Configuration::default();
         Self {
-            txpdo: configuration.pdo_assignment.txpdo_assignment(),
+            txpdo: configuration.txpdo_assignment(),
             configuration,
         }
     }
@@ -96,21 +96,16 @@ impl AnalogInputDevice for EL3001 {
     }
 }
 
-impl ConfigurableDevice<EL3001Configuration> for EL3001 {
-    fn write_config(
-        &mut self,
-        channel: EtherCATThreadChannel,
-        device_address: u16,
-        config: &EL3001Configuration,
-    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
-        config.write_config(channel, device_address)?;
-        self.configuration = config.clone();
-        self.txpdo = config.pdo_assignment.txpdo_assignment();
-        Ok(())
+impl ConfigurableDevice for EL3001 {
+    type Config = EL3001Configuration;
+
+    fn set_config(&mut self, config: EL3001Configuration) {
+        self.txpdo = config.txpdo_assignment();
+        self.configuration = config;
     }
 
-    fn get_config(&self) -> EL3001Configuration {
-        self.configuration.clone()
+    fn get_config(&self) -> &EL3001Configuration {
+        &self.configuration
     }
 }
 
@@ -137,21 +132,24 @@ pub struct EL3001Configuration {
 }
 
 impl Configuration for EL3001Configuration {
-    fn write_config(
-        &self,
-        channel: EtherCATThreadChannel,
-        device_address: u16,
-    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
-        self.channel_1
-            .write_channel_config(channel.clone(), 0, 0x8000)?;
-        self.pdo_assignment
-            .txpdo_assignment()
-            .write_config(channel.clone(), device_address)?;
+    type TxPdo = EL3001TxPdo;
+    type RxPdo = EL3001RxPdo;
 
-        self.pdo_assignment
-            .rxpdo_assignment()
-            .write_config(channel, device_address)?;
-        Ok(())
+    fn txpdo_assignment(&self) -> EL3001TxPdo {
+        self.pdo_assignment.txpdo_assignment()
+    }
+
+    fn rxpdo_assignment(&self) -> EL3001RxPdo {
+        self.pdo_assignment.rxpdo_assignment()
+    }
+
+    fn get_config_coe_writes(
+        &self,
+        device_address: u16,
+    ) -> Result<Vec<SdoRequest>, qitech_lib_ethercat_hal::Error> {
+        Ok(self
+            .channel_1
+            .get_channel_coe_writes(device_address, 0x8000))
     }
 }
 
