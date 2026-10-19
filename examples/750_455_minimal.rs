@@ -3,7 +3,7 @@ use qitech_lib_ethercat_hal::{
     EtherCATState, init_ethercat, io::analog_input::AnalogCurrentInputDevice,
 };
 use qitech_lib_ethercat_hal_devices::{
-    EthercatDevice, IdentifiedDevice, NewEthercatDevice, wago_modules::{ec_box::{convert_module_to_meta_ethercat_device, get_modules}, wago_750_354::Wago750_354, wago_750_455::{WAGO_750_455_PRODUCT_ID, Wago750_455}},
+    EthercatDevice, IdentifiedDevice, NewEthercatDevice, wago_modules::{ec_box::{convert_module_to_meta_ethercat_device}, wago_750_354::Wago750_354, wago_750_455::{WAGO_750_455_PRODUCT_ID, Wago750_455}},
 };
 use qitech_lib_units::electric_current::milliampere;
 use std::{env, time::Duration};

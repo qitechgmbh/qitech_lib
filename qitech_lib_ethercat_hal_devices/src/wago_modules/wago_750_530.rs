@@ -1,5 +1,6 @@
-use crate::{DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, SubDeviceProductTuple};
-use crate::{EthercatDeviceIdentity, IdentifiedDevice};
+use crate::{
+    DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, SubDeviceProductTuple,
+};
 use crate::{EthercatDeviceProcessing, NewEthercatDevice};
 use qitech_lib_ethercat_hal::PdoError;
 use qitech_lib_ethercat_hal::io::digital_output::DigitalOutputDevice;
@@ -137,35 +138,35 @@ impl EthercatDevice for Wago750_530 {
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
         output.set(
-            Into::<usize>::into(Wago750_530Port::Port1),
+            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port1),
             self.rxpdo.port1,
         );
         output.set(
-            Into::<usize>::into(Wago750_530Port::Port2),
+            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port2),
             self.rxpdo.port2,
         );
         output.set(
-            Into::<usize>::into(Wago750_530Port::Port3),
+            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port3),
             self.rxpdo.port3,
         );
         output.set(
-            Into::<usize>::into(Wago750_530Port::Port4),
+            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port4),
             self.rxpdo.port4,
         );
         output.set(
-            Into::<usize>::into(Wago750_530Port::Port5),
+            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port5),
             self.rxpdo.port5,
         );
         output.set(
-            Into::<usize>::into(Wago750_530Port::Port6),
+            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port6),
             self.rxpdo.port6,
         );
         output.set(
-            Into::<usize>::into(Wago750_530Port::Port7),
+            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port7),
             self.rxpdo.port7,
         );
         output.set(
-            Into::<usize>::into(Wago750_530Port::Port8),
+            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port8),
             self.rxpdo.port8,
         );
         Ok(())
@@ -224,12 +225,3 @@ pub const WAGO_750_530_VENDOR_ID: u32 = 0x00000021;
 pub const WAGO_750_530_PRODUCT_ID: u32 = 2147483778;
 pub const WAGO_750_530_MODULE_IDENT: SubDeviceProductTuple =
     (WAGO_750_530_VENDOR_ID, WAGO_750_530_PRODUCT_ID);
-
-impl IdentifiedDevice for Wago750_530 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
-        // Modules have no vendor id of their own, it is the vendor of the 750-354 coupler
-        vendor: WAGO_750_530_VENDOR_ID,
-        product: WAGO_750_530_PRODUCT_ID,
-        revisions: &[],
-    };
-}
