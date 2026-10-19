@@ -138,35 +138,35 @@ impl EthercatDevice for Wago750_530 {
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port1),
+            Into::<usize>::into(Wago750_530Port::Port1),
             self.rxpdo.port1,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port2),
+            Into::<usize>::into(Wago750_530Port::Port2),
             self.rxpdo.port2,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port3),
+            Into::<usize>::into(Wago750_530Port::Port3),
             self.rxpdo.port3,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port4),
+            Into::<usize>::into(Wago750_530Port::Port4),
             self.rxpdo.port4,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port5),
+            Into::<usize>::into(Wago750_530Port::Port5),
             self.rxpdo.port5,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port6),
+            Into::<usize>::into(Wago750_530Port::Port6),
             self.rxpdo.port6,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port7),
+            Into::<usize>::into(Wago750_530Port::Port7),
             self.rxpdo.port7,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port8),
+            Into::<usize>::into(Wago750_530Port::Port8),
             self.rxpdo.port8,
         );
         Ok(())
