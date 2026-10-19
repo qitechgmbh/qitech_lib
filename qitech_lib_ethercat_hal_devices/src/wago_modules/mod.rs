@@ -12,4 +12,3 @@ pub mod wago_750_554;
 pub mod wago_750_652;
 pub mod wago_750_671;
 pub mod wago_750_672;
-pub mod ec_box;

@@ -96,9 +96,8 @@ impl EthercatDevice for Wago750_554 {
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-        let base = self.rx_bit_offset;
-        output[base..(base + 16)].store_le::<u16>(self.rx_pdo.channel1);
-        output[(base + 16)..(base + 32)].store_le::<u16>(self.rx_pdo.channel2);
+        output[0..16].store_le::<u16>(self.rx_pdo.channel1);
+        output[16..32].store_le::<u16>(self.rx_pdo.channel2);
         Ok(())
     }
 

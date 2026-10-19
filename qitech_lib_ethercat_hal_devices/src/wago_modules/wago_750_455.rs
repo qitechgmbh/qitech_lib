@@ -96,12 +96,11 @@ impl EthercatDevice for Wago750_455 {
         self
     }
     fn input(&mut self, input: &BitSlice<u8, Lsb0>) -> Result<(), PdoError> {
-        let base = self.tx_bit_offset;
 
-        self.tx_pdo.ai1.read(&input[base..(base + 16)]);
-        self.tx_pdo.ai2.read(&input[base + 16..base + 32]);
-        self.tx_pdo.ai3.read(&input[base + 32..base + 48]);
-        self.tx_pdo.ai4.read(&input[base + 48..base + 64]);
+        self.tx_pdo.ai1.read(&input[0..16]);
+        self.tx_pdo.ai2.read(&input[16..32]);
+        self.tx_pdo.ai3.read(&input[32..48]);
+        self.tx_pdo.ai4.read(&input[48..64]);
 
         Ok(())
     }

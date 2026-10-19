@@ -197,11 +197,10 @@ impl EthercatDevice for Wago750_671 {
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-        let base = self.tx_bit_offset;
 
         let mut b = [0u8; 12];
         for i in 0..12 {
-            b[i] = input[base + i * 8..base + (i + 1) * 8].load_le();
+            b[i] = input[i * 8..(i + 1) * 8].load_le();
         }
 
         self.txpdo = Wago750_671TxPdo {
@@ -437,7 +436,6 @@ impl EthercatDevice for Wago750_671 {
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-        let base = self.rx_bit_offset;
 
         let b = [
             self.rxpdo.control_byte0,
@@ -455,7 +453,7 @@ impl EthercatDevice for Wago750_671 {
         ];
 
         for i in 0..12 {
-            output[base + i * 8..base + (i + 1) * 8].store_le(b[i]);
+            output[i * 8..(i + 1) * 8].store_le(b[i]);
         }
 
         Ok(())

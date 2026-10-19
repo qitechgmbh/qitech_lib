@@ -113,11 +113,10 @@ impl EthercatDevice for Wago750_460 {
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-        let base = self.tx_bit_offset;
-        self.tx_pdo.t1 = input[base..(base + 16)].load_le::<u16>();
-        self.tx_pdo.t2 = input[(base + 16)..(base + 32)].load_le::<u16>();
-        self.tx_pdo.t3 = input[(base + 32)..(base + 48)].load_le::<u16>();
-        self.tx_pdo.t4 = input[(base + 48)..(base + 64)].load_le::<u16>();
+        self.tx_pdo.t1 = input[0..16].load_le::<u16>();
+        self.tx_pdo.t2 = input[16..32].load_le::<u16>();
+        self.tx_pdo.t3 = input[32..48].load_le::<u16>();
+        self.tx_pdo.t4 = input[48..64].load_le::<u16>();
         Ok(())
     }
 

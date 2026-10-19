@@ -1,11 +1,10 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use qitech_lib_ethercat_hal::{
-    EtherCATState, init_ethercat, io::digital_output::DigitalOutputDevice,
+    EtherCATState, convert_module_to_meta_ethercat_device, init_ethercat, io::digital_output::DigitalOutputDevice,
 };
 use qitech_lib_ethercat_hal_devices::{
     EthercatDevice, IdentifiedDevice, NewEthercatDevice,
     wago_modules::{
-        ec_box::convert_module_to_meta_ethercat_device,
         wago_750_354::Wago750_354,
         wago_750_1506::{WAGO_750_1506_PRODUCT_ID, Wago750_1506},
     },

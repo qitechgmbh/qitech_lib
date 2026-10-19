@@ -96,11 +96,11 @@ impl EthercatDevice for Wago750_501 {
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_501Port::Port1),
+            Into::<usize>::into(Wago750_501Port::Port1),
             self.rxpdo.port1,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_501Port::Port2),
+            Into::<usize>::into(Wago750_501Port::Port2),
             self.rxpdo.port2,
         );
         Ok(())

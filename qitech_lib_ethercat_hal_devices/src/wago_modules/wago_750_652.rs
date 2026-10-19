@@ -99,30 +99,29 @@ impl EthercatDevice for Wago750_652 {
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
         self.tx_pdo.in_buffer.fill(0u8);
-        let base = self.tx_bit_offset;
 
-        self.tx_pdo.status.transmit_ack = *input.get(base + 0).expect("Missing buf_empty bit");
-        self.tx_pdo.status.receive_request = *input.get(base + 1).expect("Missing buf_empty bit");
-        self.tx_pdo.status.init_ack = *input.get(base + 2).expect("Missing buf_empty bit");
-        self.tx_pdo.status.buf_full = *input.get(base + 6).expect("Missing buf_empty bit");
-        self.tx_pdo.status.buf_empty = *input.get(base + 11).expect("Missing buf_empty bit");
-        self.tx_pdo.status.error_parity = *input.get(base + 13).expect("Missing buf_empty bit");
-        self.tx_pdo.status.error_framing = *input.get(base + 14).expect("Missing buf_empty bit");
-        self.tx_pdo.status.error_overrun = *input.get(base + 15).expect("Missing buf_empty bit");
+        self.tx_pdo.status.transmit_ack = *input.get(0).expect("Missing buf_empty bit");
+        self.tx_pdo.status.receive_request = *input.get(1).expect("Missing buf_empty bit");
+        self.tx_pdo.status.init_ack = *input.get(2).expect("Missing buf_empty bit");
+        self.tx_pdo.status.buf_full = *input.get(6).expect("Missing buf_empty bit");
+        self.tx_pdo.status.buf_empty = *input.get(11).expect("Missing buf_empty bit");
+        self.tx_pdo.status.error_parity = *input.get(13).expect("Missing buf_empty bit");
+        self.tx_pdo.status.error_framing = *input.get(14).expect("Missing buf_empty bit");
+        self.tx_pdo.status.error_overrun = *input.get(15).expect("Missing buf_empty bit");
         // Im sorry but this is what you get by splitting the len across different bytes ...
-        self.tx_pdo.status.input_length = ((*input.get(base + 3).expect("Missing buf_empty bit")
+        self.tx_pdo.status.input_length = ((*input.get(3).expect("Missing buf_empty bit")
             as u8)
-            ^ ((*input.get(base + 4).expect("Missing buf_empty bit") as u8) << 1)
-            ^ ((*input.get(base + 5).expect("Missing buf_empty bit") as u8) << 2)
-            ^ ((*input.get(base + 8).expect("Missing buf_empty bit") as u8) << 3)
-            ^ ((*input.get(base + 9).expect("Missing buf_empty bit") as u8) << 4)
-            ^ ((*input.get(base + 10).expect("Missing buf_empty bit") as u8) << 5))
+            ^ ((*input.get(4).expect("Missing buf_empty bit") as u8) << 1)
+            ^ ((*input.get(5).expect("Missing buf_empty bit") as u8) << 2)
+            ^ ((*input.get(8).expect("Missing buf_empty bit") as u8) << 3)
+            ^ ((*input.get(9).expect("Missing buf_empty bit") as u8) << 4)
+            ^ ((*input.get(10).expect("Missing buf_empty bit") as u8) << 5))
             as usize;
 
         // the serial bytes start at bit 16,
         // then we calculate the offset of when the serial bytes buffer is over, which for the 24byte pdo is 22bytes
         // to get the size in bits we do 22 * 8 -> 176bits
-        let serial_bytes = input[(base + 16)..((base + 16) + 22 * 8_usize)].chunks_exact(8);
+        let serial_bytes = input[16..(16 + 22 * 8_usize)].chunks_exact(8);
         for (i, val) in serial_bytes.enumerate() {
             self.tx_pdo.in_buffer[i] = val.load_le();
         }
@@ -137,19 +136,18 @@ impl EthercatDevice for Wago750_652 {
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-        let base = self.rx_bit_offset;
         let mut ol0_i = 5; // Ol0 starts at bit 5 and goes to bit 7 (inclusive) 
         let mut ol1_i = 8;
 
-        output.set(base + 0, self.rx_pdo.control.transmit_request);
-        output.set(base + 1, self.rx_pdo.control.receive_ack);
-        output.set(base + 2, self.rx_pdo.control.init_request);
-        output.set(base + 3, self.rx_pdo.control.send_continuous);
+        output.set(0, self.rx_pdo.control.transmit_request);
+        output.set(1, self.rx_pdo.control.receive_ack);
+        output.set(2, self.rx_pdo.control.init_request);
+        output.set(3, self.rx_pdo.control.send_continuous);
 
         for i in 0..3 {
             // Rust type system proceeds to annoy once again, we need to add a != at the end, because a cast to bool is just too dangeerous obviously
             output.set(
-                base + ol0_i,
+                ol0_i,
                 ((self.rx_pdo.control.output_length >> i) & 1) != 0,
             );
             ol0_i += 1;
@@ -157,12 +155,12 @@ impl EthercatDevice for Wago750_652 {
 
         for i in 3..6 {
             output.set(
-                base + ol1_i,
+                ol1_i,
                 ((self.rx_pdo.control.output_length >> i) & 1) != 0,
             );
             ol1_i += 1;
         }
-        let data_start = base + 16;
+        let data_start = 16;
         for (i, &byte) in self.rx_pdo.out_buffer.iter().take(22).enumerate() {
             output[(data_start + i * 8)..(data_start + (i + 1) * 8)].store_le(byte);
         }
