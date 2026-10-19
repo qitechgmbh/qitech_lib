@@ -3,7 +3,7 @@ use qitech_lib_ethercat_hal::DeviceError;
 use qitech_lib_ethercat_hal::PdoError;
 
 use crate::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, Module, SubDeviceProductTuple,
+    DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, SubDeviceProductTuple,
 };
 use crate::{EthercatDeviceProcessing, NewEthercatDevice};
 use qitech_lib_ethercat_hal::io::serial_interface::SerialInterfaceDevice;
@@ -13,7 +13,6 @@ const WAGO750_652_MAX_BUF_LENGTH: usize = 48;
 pub struct Wago750_652 {
     tx_bit_offset: usize,
     rx_bit_offset: usize,
-    module: Option<Module>,
     started_init: bool,
     pub rx_pdo: Wago750_652RxPdo,
     pub tx_pdo: Wago750_652TxPdo,
@@ -209,7 +208,6 @@ impl NewEthercatDevice for Wago750_652 {
         Self {
             tx_bit_offset: 0,
             rx_bit_offset: 0,
-            module: None,
             rx_pdo: Wago750_652RxPdo::default(),
             tx_pdo: Wago750_652TxPdo::default(),
             started_init: false,

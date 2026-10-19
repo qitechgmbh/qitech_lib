@@ -5,7 +5,7 @@ use qitech_lib_ethercat_hal::PdoError;
 use qitech_lib_ethercat_hal_derive::PdoObject;
 
 use crate::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, Module,
+    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
     NewEthercatDevice, SubDeviceProductTuple,
 };
 use qitech_lib_ethercat_hal::io::analog_input::AnalogCurrentInputDevice;
@@ -42,7 +42,6 @@ pub struct Wago750_455TxPdo {
 pub struct Wago750_455 {
     tx_bit_offset: usize,
     rx_bit_offset: usize,
-    module: Option<Module>,
     tx_pdo: Wago750_455TxPdo,
 }
 
@@ -155,8 +154,7 @@ impl NewEthercatDevice for Wago750_455 {
     fn new() -> Self {
         Self {
             tx_bit_offset: 0,
-            rx_bit_offset: 0,
-            module: None,
+            rx_bit_offset: 0,            
             tx_pdo: Wago750_455TxPdo::default(),
         }
     }

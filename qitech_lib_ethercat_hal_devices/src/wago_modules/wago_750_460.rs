@@ -3,7 +3,7 @@ use qitech_lib_ethercat_hal::DeviceError;
 use qitech_lib_ethercat_hal::PdoError;
 
 use crate::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, Module,
+    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
     NewEthercatDevice, SubDeviceProductTuple,
 };
 use qitech_lib_ethercat_hal::io::temperature_input::{
@@ -85,7 +85,6 @@ impl TemperatureInputDevice for Wago750_460 {
 pub struct Wago750_460 {
     tx_bit_offset: usize,
     rx_bit_offset: usize,
-    module: Option<Module>,
     tx_pdo: Wago750_460TxPdo,
 }
 
@@ -175,7 +174,6 @@ impl NewEthercatDevice for Wago750_460 {
         Self {
             tx_bit_offset: 0,
             rx_bit_offset: 0,
-            module: None,
             tx_pdo: Wago750_460TxPdo::default(),
         }
     }

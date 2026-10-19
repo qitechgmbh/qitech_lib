@@ -1,5 +1,5 @@
 use crate::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, Module,
+    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
     NewEthercatDevice, SubDeviceProductTuple,
 };
 use qitech_lib_ethercat_hal::DeviceError;
@@ -59,7 +59,6 @@ impl DigitalInputDevice for Wago750_402 {
 pub struct Wago750_402 {
     tx_bit_offset: usize,
     // Should always be on but not when calling a constructor
-    module: Option<Module>,
     tx_pdo: Wago750_402TxPdo,
 }
 
@@ -166,7 +165,6 @@ impl NewEthercatDevice for Wago750_402 {
     fn new() -> Self {
         Self {
             tx_bit_offset: 0,
-            module: None,
             tx_pdo: Wago750_402TxPdo::default(),
         }
     }

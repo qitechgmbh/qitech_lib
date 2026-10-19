@@ -13,8 +13,7 @@ use crate::{
         StatusByteS3,
     },
     {
-        DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
-        Module, NewEthercatDevice, SubDeviceProductTuple,
+        DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, NewEthercatDevice, SubDeviceProductTuple,
     },
 };
 use qitech_lib_ethercat_hal::io::digital_input::DigitalInputDevice;
@@ -25,7 +24,6 @@ pub struct Wago750_672 {
     rx_bit_offset: usize,
     pub rxpdo: Wago750_672RxPdo,
     pub txpdo: Wago750_672TxPdo,
-    module: Option<Module>,
     pub state: InitState,
     pub initialized: bool,
 }
@@ -348,7 +346,6 @@ impl NewEthercatDevice for Wago750_672 {
         Self {
             tx_bit_offset: 0,
             rx_bit_offset: 0,
-            module: None,
             rxpdo: Wago750_672RxPdo::default(),
             txpdo: Wago750_672TxPdo::default(),
             state: InitState::Off,

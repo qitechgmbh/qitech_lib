@@ -2,7 +2,7 @@ use bitvec::field::BitField;
 use qitech_lib_ethercat_hal::PdoError;
 
 use crate::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, Module,
+    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
     NewEthercatDevice, SubDeviceProductTuple,
 };
 use qitech_lib_ethercat_hal::io::analog_output::AnalogCurrentOutputDevice;
@@ -16,7 +16,6 @@ use qitech_lib_units::f64::ElectricCurrent;
 pub struct Wago750_554 {
     tx_bit_offset: usize,
     rx_bit_offset: usize,
-    module: Option<Module>,
     rx_pdo: Wago750_554RxPdo,
 }
 
@@ -141,7 +140,6 @@ impl NewEthercatDevice for Wago750_554 {
         Self {
             tx_bit_offset: 0,
             rx_bit_offset: 0,
-            module: None,
             rx_pdo: Wago750_554RxPdo::default(),
         }
     }
