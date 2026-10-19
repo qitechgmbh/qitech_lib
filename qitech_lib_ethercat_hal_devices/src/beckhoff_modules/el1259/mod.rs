@@ -2,10 +2,10 @@ use super::{
     EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
 };
 use qitech_lib_ethercat_hal::DeviceError;
-use qitech_lib_ethercat_hal::EtherCATThreadChannel;
-use qitech_lib_ethercat_hal::coe::{ConfigurableDevice, Configuration};
+use qitech_lib_ethercat_hal::device::ConfigurableDevice;
+use qitech_lib_ethercat_hal::device::Configuration;
 use qitech_lib_ethercat_hal::io::multi_timestamp::{MultiTimestampInput, MultiTimestampOutput};
-use qitech_lib_ethercat_hal::pdo::{PredefinedPdoAssignment, RxPdo, TxPdo};
+use qitech_lib_ethercat_hal::pdo::{RxPdo, TxPdo};
 use qitech_lib_ethercat_hal::{
     BECKHOFF_VENDOR_ID, io::digital_input::DigitalInputDevice,
     io::multi_timestamp::MultiTimestampEvent,
@@ -26,6 +26,7 @@ enum State {
 /// 24V DC, 0.5A per channel
 #[derive(EthercatDevice)]
 pub struct EL1259 {
+    config: EL1259Configuration,
     rxpdo: EL1259RxPdo,
     txpdo: EL1259TxPdo,
     input_queues: [VecDeque<MultiTimestampEvent>; 8],
@@ -184,23 +185,22 @@ impl NewEthercatDevice for EL1259 {
             input_queues: Default::default(),
             output_queues: Default::default(),
             state: State::ResetOn,
+            config: EL1259Configuration::default(),
         }
     }
 }
 
-impl ConfigurableDevice<EL1259Configuration> for EL1259 {
-    fn write_config(
-        &mut self,
-        channel: EtherCATThreadChannel,
-        device_address: u16,
-        config: &EL1259Configuration,
-    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
-        config.write_config(channel, device_address)?;
-        Ok(())
+impl ConfigurableDevice for EL1259 {
+    type Config = EL1259Configuration;
+
+    fn set_config(&mut self, config: EL1259Configuration) {
+        self.txpdo = config.txpdo_assignment();
+        self.rxpdo = config.rxpdo_assignment();
+        self.config = config;
     }
 
-    fn get_config(&self) -> EL1259Configuration {
-        EL1259Configuration::default()
+    fn get_config(&self) -> &EL1259Configuration {
+        &self.config
     }
 }
 
@@ -208,20 +208,9 @@ impl ConfigurableDevice<EL1259Configuration> for EL1259 {
 pub struct EL1259Configuration {}
 
 impl Configuration for EL1259Configuration {
-    fn write_config(
-        &self,
-        channel: EtherCATThreadChannel,
-        device_address: u16,
-    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
-        self.txpdo_assignment()
-            .write_config(channel.clone(), device_address)?;
-        self.rxpdo_assignment()
-            .write_config(channel, device_address)?;
-        Ok(())
-    }
-}
+    type TxPdo = EL1259TxPdo;
+    type RxPdo = EL1259RxPdo;
 
-impl PredefinedPdoAssignment<EL1259TxPdo, EL1259RxPdo> for EL1259Configuration {
     fn txpdo_assignment(&self) -> EL1259TxPdo {
         EL1259TxPdo::default()
     }

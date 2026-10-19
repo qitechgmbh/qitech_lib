@@ -3,7 +3,7 @@ use qitech_lib_ethercat_hal::DeviceError;
 use qitech_lib_ethercat_hal::PdoError;
 
 use crate::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, Module,
+    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
     NewEthercatDevice, SubDeviceProductTuple,
 };
 use qitech_lib_ethercat_hal::io::temperature_input::{
@@ -85,7 +85,6 @@ impl TemperatureInputDevice for Wago750_460 {
 pub struct Wago750_460 {
     tx_bit_offset: usize,
     rx_bit_offset: usize,
-    module: Option<Module>,
     tx_pdo: Wago750_460TxPdo,
 }
 
@@ -114,11 +113,10 @@ impl EthercatDevice for Wago750_460 {
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-        let base = self.tx_bit_offset;
-        self.tx_pdo.t1 = input[base..(base + 16)].load_le::<u16>();
-        self.tx_pdo.t2 = input[(base + 16)..(base + 32)].load_le::<u16>();
-        self.tx_pdo.t3 = input[(base + 32)..(base + 48)].load_le::<u16>();
-        self.tx_pdo.t4 = input[(base + 48)..(base + 64)].load_le::<u16>();
+        self.tx_pdo.t1 = input[0..16].load_le::<u16>();
+        self.tx_pdo.t2 = input[16..32].load_le::<u16>();
+        self.tx_pdo.t3 = input[32..48].load_le::<u16>();
+        self.tx_pdo.t4 = input[48..64].load_le::<u16>();
         Ok(())
     }
 
@@ -163,16 +161,6 @@ impl EthercatDevice for Wago750_460 {
         Ok(())
     }
 
-    fn get_module(&self) -> Option<Module> {
-        self.module.clone()
-    }
-
-    fn set_module(&mut self, module: Module) {
-        self.tx_bit_offset = module.tx_offset;
-        self.rx_bit_offset = module.rx_offset;
-        self.module = Some(module);
-    }
-
     fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
@@ -185,7 +173,6 @@ impl NewEthercatDevice for Wago750_460 {
         Self {
             tx_bit_offset: 0,
             rx_bit_offset: 0,
-            module: None,
             tx_pdo: Wago750_460TxPdo::default(),
         }
     }

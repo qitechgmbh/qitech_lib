@@ -13,8 +13,7 @@ use crate::{
         StatusByteS3,
     },
     {
-        DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
-        Module, NewEthercatDevice, SubDeviceProductTuple,
+        DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, NewEthercatDevice, SubDeviceProductTuple,
     },
 };
 use qitech_lib_ethercat_hal::io::digital_input::DigitalInputDevice;
@@ -25,7 +24,6 @@ pub struct Wago750_672 {
     rx_bit_offset: usize,
     pub rxpdo: Wago750_672RxPdo,
     pub txpdo: Wago750_672TxPdo,
-    module: Option<Module>,
     pub state: InitState,
     pub initialized: bool,
 }
@@ -146,11 +144,10 @@ impl EthercatDevice for Wago750_672 {
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-        let base = self.tx_bit_offset;
 
         let mut b = [0u8; 12];
         for i in 0..12 {
-            b[i] = input[base + i * 8..base + (i + 1) * 8].load_le();
+            b[i] = input[i * 8..(i + 1) * 8].load_le();
         }
 
         self.txpdo = Wago750_672TxPdo {
@@ -266,7 +263,6 @@ impl EthercatDevice for Wago750_672 {
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-        let base = self.rx_bit_offset;
 
         let output_bytes = [
             self.rxpdo.control_byte,
@@ -284,7 +280,7 @@ impl EthercatDevice for Wago750_672 {
         ];
 
         for i in 0..12 {
-            output[base + i * 8..base + (i + 1) * 8].store_le(output_bytes[i]);
+            output[i * 8..(i + 1) * 8].store_le(output_bytes[i]);
         }
 
         Ok(())
@@ -338,16 +334,6 @@ impl EthercatDevice for Wago750_672 {
         Ok(())
     }
 
-    fn get_module(&self) -> Option<crate::Module> {
-        self.module.clone()
-    }
-
-    fn set_module(&mut self, module: crate::Module) {
-        self.tx_bit_offset = module.tx_offset;
-        self.rx_bit_offset = module.rx_offset;
-        self.module = Some(module)
-    }
-
     fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
@@ -358,7 +344,6 @@ impl NewEthercatDevice for Wago750_672 {
         Self {
             tx_bit_offset: 0,
             rx_bit_offset: 0,
-            module: None,
             rxpdo: Wago750_672RxPdo::default(),
             txpdo: Wago750_672TxPdo::default(),
             state: InitState::Off,

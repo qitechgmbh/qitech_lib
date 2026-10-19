@@ -1,5 +1,6 @@
 use crate::{
-    ChannelError, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest, SdoType, get_async_runtime,
+    ChannelError, MAX_SUBDEVICES, PDI_LEN, get_async_runtime,
+    sdo::{SdoReadRequest, SdoRequest, SdoType},
 };
 use ethercrab::{DcSync, EtherCrabWireRead, EtherCrabWireSized, MainDevice, SubDeviceGroup};
 use std::time::Duration;
@@ -18,33 +19,37 @@ pub fn sdo_write(
 
             let res = match request.type_flag {
                 SdoType::U8 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
+                    request.sdo_index.index as u16,
+                    request.sdo_index.sub_index as u8,
                     request.data[0],
                 )),
                 SdoType::U16 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
+                    request.sdo_index.index as u16,
+                    request.sdo_index.sub_index as u8,
                     u16::from_le_bytes([request.data[0], request.data[1]]),
                 )),
                 SdoType::U32 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
+                    request.sdo_index.index as u16,
+                    request.sdo_index.sub_index as u8,
                     u32::from_le_bytes(request.data),
                 )),
                 SdoType::I16 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
+                    request.sdo_index.index as u16,
+                    request.sdo_index.sub_index as u8,
                     i16::from_le_bytes([request.data[0], request.data[1]]),
                 )),
                 SdoType::I32 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
+                    request.sdo_index.index as u16,
+                    request.sdo_index.sub_index as u8,
                     i32::from_le_bytes(request.data),
                 )),
                 SdoType::BOOL => {
                     let b: bool = request.data[0] == 1;
-                    runtime.block_on(device.sdo_write(request.index, request.sub_index as u8, b))
+                    runtime.block_on(device.sdo_write(
+                        request.sdo_index.index as u16,
+                        request.sdo_index.sub_index as u8,
+                        b,
+                    ))
                 }
             };
             return Ok(res?);

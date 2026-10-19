@@ -1,8 +1,6 @@
 // Lets the derive macros' `::qitech_lib_ethercat_hal::...` paths resolve inside this crate too.
 extern crate self as qitech_lib_ethercat_hal;
-
 pub mod al_diagnostics;
-pub mod coe;
 pub mod controller;
 pub mod debugging;
 pub mod device;
@@ -13,10 +11,13 @@ pub mod helpers;
 pub mod interface_discovery;
 pub mod io;
 pub mod pdo;
+pub mod sdo;
 pub mod shared_config;
 
 use al_diagnostics::{TransitionLog, TransitionReport};
+pub use error::{ChannelError, DeviceError, Error, EthercatErr, InterfaceError, PdoError};
 use ethercrab::PduStorage;
+use sdo::{SdoIndex, SdoReadRequest, SdoRequest};
 use std::cell::UnsafeCell;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
@@ -27,13 +28,12 @@ use std::time::{Duration, Instant};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Mutex;
 use triple_buffer::{Input, Output};
-
-pub use error::{ChannelError, DeviceError, Error, EthercatErr, InterfaceError, PdoError};
-
 // Re-exported so crates defining their own devices only need this crate: the derive macros, and
 // `bitvec`, whose types appear in `EthercatDevice` and in the derive output.
 pub use bitvec;
 pub use qitech_lib_ethercat_hal_derive::{EthercatDevice, PdoObject, RxPdo, TxPdo};
+
+use crate::device::Module;
 
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -327,12 +327,6 @@ where
     }
 }
 
-#[derive(Hash, Eq, PartialEq, PartialOrd, Clone)]
-pub struct SdoIndex {
-    index: u32,
-    sub_index: u16,
-}
-
 // Wrapper to easily refactor later on
 // `.0` is drained per-state, `.1` in every state.
 #[derive(Clone)]
@@ -432,7 +426,7 @@ where
         sub_index: u8,
     ) -> Result<T, ChannelError>
     where
-        T: ecat_channel_impl::EthercatSdoBytes + ecat_channel_impl::EthercatResponseTypedResult,
+        T: sdo::EthercatSdoBytes + sdo::EthercatResponseTypedResult,
     {
         self.channel.sdo_read(device_address, index, sub_index)
     }
@@ -445,7 +439,7 @@ where
         value: T,
     ) -> Result<(), ChannelError>
     where
-        T: ethercrab::EtherCrabWireWrite + ecat_channel_impl::EthercatSdoBytes,
+        T: ethercrab::EtherCrabWireWrite + sdo::EthercatSdoBytes,
     {
         self.channel
             .sdo_write(device_address, index, sub_index, value)
@@ -478,6 +472,24 @@ where
     ) -> Result<(), ChannelError> {
         self.channel
             .set_mut_beckhoff_eeprom_lock_active(device_address)
+    }
+
+    pub fn bulk_sdo_write(
+        &self,
+        writes: Vec<SdoRequest>,
+        timeout: Duration,
+    ) -> Result<Vec<(SdoIndex, ChannelError)>, ChannelError> {
+        self.channel.bulk_sdo_write(writes, timeout)
+    }
+
+    pub fn write_configuration<Conf: device::Configuration>(
+        &self,
+        device_address: u16,
+        config: &Conf,
+        timeout: Duration,
+    ) -> Result<Vec<(SdoIndex, ChannelError)>, Error> {
+        self.channel
+            .write_configuration(device_address, config, timeout)
     }
 
     pub fn eeprom_read(&self, device_address: u16, word_address: u16) -> Result<u16, ChannelError> {
@@ -625,33 +637,6 @@ impl From<EtherCATState> for u8 {
     }
 }
 
-#[derive(Debug)]
-pub enum SdoType {
-    BOOL,
-    U8,
-    U16,
-    U32,
-    I16,
-    I32,
-}
-
-#[derive(Debug)]
-pub struct SdoRequest {
-    pub device_address: u16,
-    pub index: u16,
-    pub sub_index: u16,
-    pub data: [u8; 4],
-    pub type_flag: SdoType,
-}
-
-#[derive(Debug)]
-pub struct SdoReadRequest {
-    pub device_address: u16,
-    pub index: u16,
-    pub sub_index: u16,
-    pub type_flag: SdoType,
-}
-
 /// A diagnostic read, serviced from any master state.
 ///
 /// Answered with raw `FPRD` reads needing only the `MainDevice`, so unlike [`ChannelRequests`]
@@ -686,6 +671,7 @@ pub enum ChannelResponse {
     ChangeState(Result<(), EthercatErr>),
     EepromReadResponse(Result<u16, ChannelError>),
     EepromWriteResponse(Result<(), ChannelError>),
+    BulkSdoWriteResponse(Vec<(SdoIndex, ChannelError)>),
     EnableDCSync0Response(Result<(), ChannelError>),
     EnableDCSync01Response(Result<(), ChannelError>),
     ConfigureOversamplingResponse(Result<(), ChannelError>),
@@ -693,6 +679,7 @@ pub enum ChannelResponse {
 
 #[derive(Debug)]
 pub enum ChannelRequests {
+    BulkSdoWrite(Vec<SdoRequest>),
     SdoWriteRequest(SdoRequest),
     SdoReadRequest(SdoReadRequest),
     ChangeState(EtherCATState),
@@ -953,5 +940,30 @@ pub fn init_ethercat(
         channel,
         app_handle,
         join_handle: Some(join_handle),
+    }
+}
+
+/// Expects coupler_start_tx and rx in bits!
+pub fn convert_module_to_meta_ethercat_device(module : &Module, coupler_start_tx : usize, coupler_start_rx : usize) -> MetaSubdevice  {
+    let mut name : [u8;128] = [0u8;128];
+    let b = module.name.clone().into_bytes();    
+    name[..b.len()].copy_from_slice(b.as_slice());
+    
+    let start_tx = coupler_start_tx + module.tx_offset; 
+    let end_tx = coupler_start_tx + module.tx_offset + module.tx_size;
+    let start_rx = coupler_start_rx + module.rx_offset;
+    let end_rx = coupler_start_rx + module.rx_offset + module.rx_size;
+
+    MetaSubdevice { 
+        name, 
+        product_id: module.product_id,
+        revision: 0x00, 
+        vendor: module.vendor_id, 
+        start_tx: start_tx / 8,
+        end_tx: end_tx / 8,
+        start_rx: start_rx / 8,
+        end_rx: end_rx / 8, 
+        device_address: module.slot, 
+        initialized: true 
     }
 }

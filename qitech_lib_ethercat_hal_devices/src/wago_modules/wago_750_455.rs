@@ -5,7 +5,7 @@ use qitech_lib_ethercat_hal::PdoError;
 use qitech_lib_ethercat_hal_derive::PdoObject;
 
 use crate::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, Module,
+    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
     NewEthercatDevice, SubDeviceProductTuple,
 };
 use qitech_lib_ethercat_hal::io::analog_input::AnalogCurrentInputDevice;
@@ -42,7 +42,6 @@ pub struct Wago750_455TxPdo {
 pub struct Wago750_455 {
     tx_bit_offset: usize,
     rx_bit_offset: usize,
-    module: Option<Module>,
     tx_pdo: Wago750_455TxPdo,
 }
 
@@ -97,12 +96,11 @@ impl EthercatDevice for Wago750_455 {
         self
     }
     fn input(&mut self, input: &BitSlice<u8, Lsb0>) -> Result<(), PdoError> {
-        let base = self.tx_bit_offset;
 
-        self.tx_pdo.ai1.read(&input[base..(base + 16)]);
-        self.tx_pdo.ai2.read(&input[base + 16..base + 32]);
-        self.tx_pdo.ai3.read(&input[base + 32..base + 48]);
-        self.tx_pdo.ai4.read(&input[base + 48..base + 64]);
+        self.tx_pdo.ai1.read(&input[0..16]);
+        self.tx_pdo.ai2.read(&input[16..32]);
+        self.tx_pdo.ai3.read(&input[32..48]);
+        self.tx_pdo.ai4.read(&input[48..64]);
 
         Ok(())
     }
@@ -147,16 +145,6 @@ impl EthercatDevice for Wago750_455 {
     ) -> Result<(), PdoError> {
         Ok(())
     }
-
-    fn get_module(&self) -> Option<Module> {
-        self.module.clone()
-    }
-
-    fn set_module(&mut self, module: Module) {
-        self.tx_bit_offset = module.tx_offset;
-        self.rx_bit_offset = module.rx_offset;
-        self.module = Some(module)
-    }
 }
 
 impl EthercatDeviceProcessing for Wago750_455 {}
@@ -165,8 +153,7 @@ impl NewEthercatDevice for Wago750_455 {
     fn new() -> Self {
         Self {
             tx_bit_offset: 0,
-            rx_bit_offset: 0,
-            module: None,
+            rx_bit_offset: 0,            
             tx_pdo: Wago750_455TxPdo::default(),
         }
     }

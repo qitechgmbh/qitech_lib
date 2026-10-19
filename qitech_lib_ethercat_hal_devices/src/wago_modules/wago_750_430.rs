@@ -1,5 +1,5 @@
 use crate::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, Module, SubDeviceProductTuple,
+    DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, SubDeviceProductTuple,
 };
 use crate::{EthercatDeviceProcessing, NewEthercatDevice};
 use qitech_lib_ethercat_hal::DeviceError;
@@ -11,7 +11,6 @@ pub struct Wago750_430 {
     tx_bit_offset: usize,
     rx_bit_offset: usize,
     pub txpdo: Wago750_430TxPdo,
-    module: Option<Module>,
 }
 
 #[derive(Debug, Clone)]
@@ -158,16 +157,6 @@ impl EthercatDevice for Wago750_430 {
     ) -> Result<(), PdoError> {
         Ok(())
     }
-
-    fn get_module(&self) -> Option<crate::Module> {
-        self.module.clone()
-    }
-
-    fn set_module(&mut self, module: crate::Module) {
-        self.tx_bit_offset = module.tx_offset;
-        self.rx_bit_offset = module.rx_offset;
-        self.module = Some(module)
-    }
 }
 
 impl EthercatDeviceProcessing for Wago750_430 {}
@@ -177,7 +166,6 @@ impl NewEthercatDevice for Wago750_430 {
         Self {
             tx_bit_offset: 0,
             rx_bit_offset: 0,
-            module: None,
             txpdo: Wago750_430TxPdo::default(),
         }
     }

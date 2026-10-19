@@ -1,5 +1,5 @@
 use crate::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, Module,
+    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
     NewEthercatDevice, SubDeviceProductTuple,
 };
 use qitech_lib_ethercat_hal::DeviceError;
@@ -59,7 +59,6 @@ impl DigitalInputDevice for Wago750_402 {
 pub struct Wago750_402 {
     tx_bit_offset: usize,
     // Should always be on but not when calling a constructor
-    module: Option<Module>,
     tx_pdo: Wago750_402TxPdo,
 }
 
@@ -94,18 +93,17 @@ impl EthercatDevice for Wago750_402 {
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-        let base = self.tx_bit_offset;
 
-        let idx1 = base + Into::<usize>::into(Wago750_402InputPort::DI1);
+        let idx1 = Into::<usize>::into(Wago750_402InputPort::DI1);
         self.tx_pdo.port1 = *input.get(idx1).expect("Bit 1 out of bounds");
 
-        let idx2 = base + Into::<usize>::into(Wago750_402InputPort::DI2);
+        let idx2 = Into::<usize>::into(Wago750_402InputPort::DI2);
         self.tx_pdo.port2 = *input.get(idx2).expect("Bit 2 out of bounds");
 
-        let idx3 = base + Into::<usize>::into(Wago750_402InputPort::DI3);
+        let idx3 = Into::<usize>::into(Wago750_402InputPort::DI3);
         self.tx_pdo.port3 = *input.get(idx3).expect("Bit 3 out of bounds");
 
-        let idx4 = base + Into::<usize>::into(Wago750_402InputPort::DI4);
+        let idx4 = Into::<usize>::into(Wago750_402InputPort::DI4);
         self.tx_pdo.port4 = *input.get(idx4).expect("Bit 4 out of bounds");
         Ok(())
     }
@@ -150,15 +148,6 @@ impl EthercatDevice for Wago750_402 {
     ) -> Result<(), PdoError> {
         Ok(())
     }
-
-    fn get_module(&self) -> Option<Module> {
-        self.module.clone()
-    }
-
-    fn set_module(&mut self, module: Module) {
-        self.tx_bit_offset = module.tx_offset;
-        self.module = Some(module);
-    }
 }
 
 impl EthercatDeviceProcessing for Wago750_402 {
@@ -175,7 +164,6 @@ impl NewEthercatDevice for Wago750_402 {
     fn new() -> Self {
         Self {
             tx_bit_offset: 0,
-            module: None,
             tx_pdo: Wago750_402TxPdo::default(),
         }
     }

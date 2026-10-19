@@ -1,5 +1,5 @@
 use crate::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, Module,
+    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
     NewEthercatDevice, SubDeviceProductTuple,
 };
 use qitech_lib_ethercat_hal::PdoError;
@@ -10,7 +10,6 @@ pub struct Wago750_531 {
     tx_bit_offset: usize,
     rx_bit_offset: usize,
     pub rx_pdo: Wago750_531RxPdo,
-    module: Option<Module>,
 }
 
 #[derive(Debug, Clone)]
@@ -94,19 +93,19 @@ impl EthercatDevice for Wago750_531 {
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_531OutputPort::DO1),
+            Into::<usize>::into(Wago750_531OutputPort::DO1),
             self.rx_pdo.port1,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_531OutputPort::DO2),
+            Into::<usize>::into(Wago750_531OutputPort::DO2),
             self.rx_pdo.port2,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_531OutputPort::DO3),
+            Into::<usize>::into(Wago750_531OutputPort::DO3),
             self.rx_pdo.port3,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_531OutputPort::DO4),
+            Into::<usize>::into(Wago750_531OutputPort::DO4),
             self.rx_pdo.port4,
         );
         Ok(())
@@ -142,16 +141,6 @@ impl EthercatDevice for Wago750_531 {
         Ok(())
     }
 
-    fn get_module(&self) -> Option<Module> {
-        self.module.clone()
-    }
-
-    fn set_module(&mut self, module: Module) {
-        self.tx_bit_offset = module.tx_offset;
-        self.rx_bit_offset = module.rx_offset;
-        self.module = Some(module);
-    }
-
     fn into_any_boxed(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
@@ -164,7 +153,6 @@ impl NewEthercatDevice for Wago750_531 {
         Self {
             tx_bit_offset: 0,
             rx_bit_offset: 0,
-            module: None,
             rx_pdo: Wago750_531RxPdo::default(),
         }
     }

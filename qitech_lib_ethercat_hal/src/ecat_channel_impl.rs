@@ -1,172 +1,34 @@
+use crate::device::{Configuration, Module};
+use crate::sdo::{
+    EthercatResponseTypedResult, EthercatSdoBytes, RX_PDO_ASSIGNMENT_REG, SdoIndex, SdoReadRequest,
+    SdoRequest, TX_PDO_ASSIGNMENT_REG,
+};
 use crate::{ChannelError, DiagnosticRequest, DiagnosticResponse, Error};
 use crate::{ChannelRequest, ChannelResponse, EtherCATThreadResponseChannel};
-use crate::{
-    EtherCATState, EtherCATThreadChannel, SdoReadRequest, SdoRequest, SdoType,
-    al_diagnostics::SubDeviceAlStatus,
-};
+use crate::{EtherCATState, EtherCATThreadChannel, al_diagnostics::SubDeviceAlStatus};
 use ethercrab::EtherCrabWireWrite;
-use std::any::TypeId;
+use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Duration;
 
 /// Above the state machine's own snapshot deadline, so a slow bus reports results rather than
 /// timing out here.
 const DIAGNOSTIC_TIMEOUT: Duration = Duration::from_millis(1500);
+pub const MODULE_COUNT_INDEX: (u16, u8) = (0xf050, 0x00);
 
+#[derive(Clone, Debug)]
+pub struct ModulePdoMapping {
+    pub offset: usize,
+    pub sub_index: usize,
+    pub size: usize,
+    pub module_i: u32,
+}
 /// Wait for the master thread's answer to a request.
 fn recv<T>(rx: &Receiver<T>, timeout: Duration) -> Result<T, ChannelError> {
     rx.recv_timeout(timeout).map_err(|e| match e {
         RecvTimeoutError::Timeout => ChannelError::Timeout(timeout),
         RecvTimeoutError::Disconnected => ChannelError::Disconnected,
     })
-}
-
-pub trait EthercatResponseTypedResult: Sized {
-    fn from_bool(_v: bool) -> Result<Self, ChannelError> {
-        Err(ChannelError::SdoTypeMismatch(
-            "bool",
-            std::any::type_name::<Self>(),
-        ))
-    }
-    fn from_u8(_v: u8) -> Result<Self, ChannelError> {
-        Err(ChannelError::SdoTypeMismatch(
-            "u8",
-            std::any::type_name::<Self>(),
-        ))
-    }
-    fn from_u16(_v: u16) -> Result<Self, ChannelError> {
-        Err(ChannelError::SdoTypeMismatch(
-            "u16",
-            std::any::type_name::<Self>(),
-        ))
-    }
-    fn from_i16(_v: i16) -> Result<Self, ChannelError> {
-        Err(ChannelError::SdoTypeMismatch(
-            "i16",
-            std::any::type_name::<Self>(),
-        ))
-    }
-    fn from_u32(_v: u32) -> Result<Self, ChannelError> {
-        Err(ChannelError::SdoTypeMismatch(
-            "u32",
-            std::any::type_name::<Self>(),
-        ))
-    }
-    fn from_i32(_v: i32) -> Result<Self, ChannelError> {
-        Err(ChannelError::SdoTypeMismatch(
-            "i32",
-            std::any::type_name::<Self>(),
-        ))
-    }
-}
-
-macro_rules! impl_ethercat_typed_result {
-    ($t:ty, $func:ident) => {
-        impl EthercatResponseTypedResult for $t {
-            fn $func(v: $t) -> Result<Self, ChannelError> {
-                Ok(v)
-            }
-        }
-    };
-}
-impl_ethercat_typed_result!(bool, from_bool);
-impl_ethercat_typed_result!(u8, from_u8);
-impl_ethercat_typed_result!(u16, from_u16);
-impl_ethercat_typed_result!(i16, from_i16);
-impl_ethercat_typed_result!(u32, from_u32);
-impl_ethercat_typed_result!(i32, from_i32);
-pub trait EthercatSdoBytes {
-    fn size(&self) -> usize;
-    fn to_bytes(&self) -> [u8; 4];
-    fn from_bytes(bytes: [u8; 4]) -> Self
-    where
-        Self: Sized;
-}
-
-impl EthercatSdoBytes for u8 {
-    fn size(&self) -> usize {
-        1
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        [*self, 0, 0, 0]
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        bytes[0]
-    }
-}
-
-impl EthercatSdoBytes for u16 {
-    fn size(&self) -> usize {
-        2
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        let bytes = u16::to_le_bytes(*self);
-        [bytes[0], bytes[1], 0, 0]
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        u16::from_le_bytes([bytes[0], bytes[1]])
-    }
-}
-
-impl EthercatSdoBytes for i16 {
-    fn size(&self) -> usize {
-        2
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        let bytes = i16::to_le_bytes(*self);
-        [bytes[0], bytes[1], 0, 0]
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        i16::from_le_bytes([bytes[0], bytes[1]])
-    }
-}
-
-impl EthercatSdoBytes for i32 {
-    fn size(&self) -> usize {
-        4
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        i32::to_le_bytes(*self)
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        i32::from_le_bytes(bytes)
-    }
-}
-
-impl EthercatSdoBytes for u32 {
-    fn size(&self) -> usize {
-        4
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        u32::to_le_bytes(*self)
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        u32::from_le_bytes(bytes)
-    }
-}
-
-impl EthercatSdoBytes for bool {
-    fn size(&self) -> usize {
-        1
-    }
-
-    fn to_bytes(&self) -> [u8; 4] {
-        [*self as u8, 0, 0, 0]
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        bytes[0] != 0
-    }
 }
 
 impl EtherCATThreadChannel {
@@ -180,12 +42,11 @@ impl EtherCATThreadChannel {
         T: EthercatSdoBytes + EthercatResponseTypedResult,
     {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
-        let sdo_type = type_id_to_sdo_type::<T>()?;
         let sdo_request: SdoReadRequest = SdoReadRequest {
             device_address,
             index,
             sub_index: sub_index as u16,
-            type_flag: sdo_type,
+            type_flag: T::SDO_TYPE,
         };
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::SdoReadRequest(sdo_request),
@@ -271,6 +132,43 @@ impl EtherCATThreadChannel {
         }
     }
 
+    /// Execute all `writes` on the master thread in one request. Returns the writes that failed;
+    /// the others are still executed.
+    pub fn bulk_sdo_write(
+        &self,
+        writes: Vec<SdoRequest>,
+        timeout: Duration,
+    ) -> Result<Vec<(SdoIndex, ChannelError)>, ChannelError> {
+        let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
+        let req: ChannelRequest = ChannelRequest {
+            channel_request: crate::ChannelRequests::BulkSdoWrite(writes),
+            response_channel: EtherCATThreadResponseChannel(tx),
+        };
+
+        self.0.send(req).map_err(|_| ChannelError::Disconnected)?;
+
+        match recv(&rx, timeout)? {
+            ChannelResponse::BulkSdoWriteResponse(failed) => Ok(failed),
+            _ => Err(ChannelError::UnexpectedResponse),
+        }
+    }
+
+    /// Write the CoE parameters and the PDO assignment of `config`. Returns the writes that
+    /// failed.
+    pub fn write_configuration<C: Configuration>(
+        &self,
+        device_address: u16,
+        config: &C,
+        timeout: Duration,
+    ) -> Result<Vec<(SdoIndex, ChannelError)>, Error> {
+        let writes = config.get_coe_writes(device_address)?;
+        // Devices without CoE (e.g. simple digital terminals) have nothing to write
+        if writes.is_empty() {
+            return Ok(vec![]);
+        }
+        Ok(self.bulk_sdo_write(writes, timeout)?)
+    }
+
     /// Write one 16-bit word to a subdevice's EEPROM (SII). `word_address` counts words, not
     /// bytes. Only serviced in PreOp.
     ///
@@ -312,16 +210,7 @@ impl EtherCATThreadChannel {
         T: EtherCrabWireWrite + EthercatSdoBytes,
     {
         let (tx, rx) = std::sync::mpsc::channel::<ChannelResponse>();
-        let bytes: [u8; 4] = T::to_bytes(&value);
-        let sdo_type = type_id_to_sdo_type::<T>()?;
-
-        let sdo_request: SdoRequest = SdoRequest {
-            device_address,
-            index,
-            sub_index: sub_index as u16,
-            data: bytes,
-            type_flag: sdo_type,
-        };
+        let sdo_request = SdoRequest::new(device_address, index, sub_index, value);
 
         let req: ChannelRequest = ChannelRequest {
             channel_request: crate::ChannelRequests::SdoWriteRequest(sdo_request),
@@ -452,26 +341,254 @@ impl EtherCATThreadChannel {
         }
         Ok(())
     }
+
+    /// Call after all modules have been added
+    pub fn init_slot_modules(
+        &self,
+        modules: &mut Vec<Module>,
+        device_address: u16,
+    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
+        let tx_pdo_mappings = self.get_module_pdo_offsets(device_address, true)?;
+        let rx_pdo_mappings = self.get_module_pdo_offsets(device_address, false)?;
+        for m in modules.iter_mut() {
+            m.tx_size = 0;
+            for pdo_map in tx_pdo_mappings.iter() {
+                m.tx_size += pdo_map.size;
+            }
+
+            m.rx_size = 0;
+            for pdo_map in rx_pdo_mappings.iter() {
+                m.rx_size += pdo_map.size;
+            }
+
+            let tx_pdo_mapping = tx_pdo_mappings
+                .iter()
+                .find(|map| map.module_i == m.slot.into() && map.sub_index == 0x1);
+
+            
+            m.tx_offset = match tx_pdo_mapping {
+                Some(map) => map.offset,
+                None => 0,
+            };
+            
+
+            let rx_pdo_mapping = rx_pdo_mappings
+                .iter()
+                .find(|map| map.module_i == m.slot.into() && map.sub_index == 0x1);            
+            
+            m.rx_offset = match rx_pdo_mapping {
+                Some(map) => map.offset,
+                None => 0,
+            }            
+
+        }
+        Ok(())
+    }
+
+    pub fn get_module_count(
+        &self,
+        device_address: u16,
+    ) -> Result<usize, qitech_lib_ethercat_hal::Error> {
+        match self.sdo_read::<u8>(device_address, MODULE_COUNT_INDEX.0, MODULE_COUNT_INDEX.1) {
+            Ok(value) => Ok(value as usize),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn calculate_module_index(pdo_mapping: u32, is_tx: bool) -> u32 {
+        let start_index = match is_tx {
+            true => 0x6000 as u32,
+            false => 0x7000 as u32,
+        };
+        let index_in_hex = ((pdo_mapping & 0xFFFF0000) >> 16) - start_index;
+        if index_in_hex < 16 {
+            return 0;
+        } else {
+            return index_in_hex / 16;
+        }
+    }
+
+    pub fn get_module_pdo_offsets(
+        &self,
+        device_address: u16,
+        get_tx: bool,
+    ) -> Result<Vec<ModulePdoMapping>, qitech_lib_ethercat_hal::Error> {
+        let mut vec: Vec<ModulePdoMapping> = vec![];
+        let mut bit_offset = 0;
+        let start_subindex = 0x2;
+        let index = match get_tx {
+            true => (TX_PDO_ASSIGNMENT_REG, 0x00),
+            false => (RX_PDO_ASSIGNMENT_REG, 0x00),
+        };
+
+        let start_pdo_index = match get_tx {
+            true => 0x1a00 as u16,
+            false => 0x1600 as u16,
+        };
+
+        let start_index = match get_tx {
+            true => 0x6000 as u16,
+            false => 0x7000 as u16,
+        };
+
+        let count_mappings = self.sdo_read::<u8>(device_address, index.0, index.1)?;
+        let pdo_index = self.sdo_read::<u16>(device_address, index.0, 1)?;
+        let pdo_map_count = self.sdo_read::<u8>(device_address, pdo_index, 0)?;
+
+        for i in 0..pdo_map_count {
+            let pdo_mapping: u32 = self.sdo_read(device_address, pdo_index, 1 + i)?;
+            let bit_length = (pdo_mapping & 0xFF) as u8;
+            bit_offset += bit_length as usize;
+        }
+
+        let mut mappings_without_coupler: Vec<(u16, u32)> = vec![];
+
+        for i in start_subindex..=count_mappings {
+            let pdo_index = self.sdo_read(device_address, index.0, i)?;
+            let pdo_map_count = self.sdo_read::<u8>(device_address, pdo_index, 0)?;
+
+            for j in 0..pdo_map_count {
+                let pdo_mapping: u32 = self.sdo_read(device_address, pdo_index, 1 + j)?;
+                mappings_without_coupler.push((pdo_index, pdo_mapping));
+            }
+        }
+
+        for (pdo_index, pdo_mapping) in mappings_without_coupler {
+            // if distance is < 256 then its a normal mapping
+            // Otherwise its a Gap
+            if (pdo_index - start_pdo_index) < 256 && pdo_mapping > start_index as u32 {
+                let module_i = Self::calculate_module_index(pdo_mapping, get_tx);
+                let bit_length = (pdo_mapping & 0xFF) as usize;
+                let sub_index = ((pdo_mapping & 0x0000FF00) >> 8) as usize;
+                if module_i < 64 {
+                    vec.push(ModulePdoMapping {
+                        offset: bit_offset,
+                        sub_index,
+                        size: bit_length,
+                        module_i,
+                    });
+                }
+                bit_offset += bit_length;
+            } else {
+                bit_offset += pdo_mapping as usize;
+            };
+        }
+        Ok(vec)
+    }
+
+    /// vendor_id is set on all modules
+    /// device_address should be used to address the coupler that has the modules in its pdu
+    /// Not sure if this generically applies to all ethercat couplers that treats their terminals as modules
+    /// If you supply a ProductIdModuleMap then the call will fail if any module is found that is not mapped!
+    /// If you dont supply one then the name will stay empty
+    pub fn get_modules(
+        &self,
+        device_address: u16,
+        vendor_id: u32,
+        product_map: Option<&ProductIdModuleNameMap>,
+    ) -> Result<Vec<Module>, qitech_lib_ethercat_hal::Error> {
+        const MODULES_START_ADDR: u16 = 0x9000;
+        const MODULE_IDENT_SUBINDEX: u8 = 0x0a;
+        let mut modules: Vec<Module> = vec![];
+        let module_count = self.get_module_count(device_address)?;
+
+        for i in 0..module_count {
+            let module_addr = MODULES_START_ADDR + (i * 0x10) as u16;
+            let ident_iom =
+                self.sdo_read::<u32>(device_address, module_addr, MODULE_IDENT_SUBINDEX)?;
+            // For Wago the IOM well be the product ID
+            let mut module = Module {
+                slot: i as u16,
+                belongs_to_addr: device_address,
+                vendor_id,
+                product_id: ident_iom,
+                has_tx: false,
+                has_rx: false,
+                tx_offset: 0,
+                rx_offset: 0,
+                name: "".to_string(),
+                tx_size: 0,
+                rx_size: 0,
+            };
+
+            match product_map {
+                Some(map) => {
+                    let name = map.map.get(&ident_iom).unwrap().clone();
+                    module.name = name;
+                },
+                None => (),
+            };
+
+
+            /* match ident_iom {
+                // Add Module idents here:
+                WAGO_750_1506_PRODUCT_ID => {
+                    module.has_tx = true;
+                    module.has_rx = true;
+                    module.name = "750-1506".to_string();
+                }
+                WAGO_750_455_PRODUCT_ID => {
+                    module.has_tx = true;
+                    module.has_rx = false;
+                    module.name = "750-455".to_string();
+                }
+                WAGO_750_501_PRODUCT_ID => {
+                    module.has_tx = false;
+                    module.has_rx = true;
+                    module.name = "750-501".to_string();
+                }
+                WAGO_750_530_PRODUCT_ID => {
+                    module.has_tx = false;
+                    module.has_rx = true;
+                    module.name = "750-530".to_string();
+                }
+                WAGO_750_531_PRODUCT_ID => {
+                    module.has_tx = false;
+                    module.has_rx = true;
+                    module.name = "750-531".to_string();
+                }
+                WAGO_750_652_PRODUCT_ID => {
+                    module.has_tx = true;
+                    module.has_rx = true;
+                    module.name = "750-652".to_string();
+                }
+                WAGO_750_554_PRODUCT_ID => {
+                    module.has_tx = false;
+                    module.has_rx = true;
+                    module.name = "750-554".to_string();
+                }
+                WAGO_750_402_PRODUCT_ID => {
+                    module.has_tx = true;
+                    module.has_rx = false;
+                    module.name = "750-402".to_string();
+                }
+                WAGO_750_430_PRODUCT_ID => {
+                    module.has_tx = true;
+                    module.has_rx = false;
+                    module.name = "750-430".to_string();
+                }
+                WAGO_750_671_PRODUCT_ID => {
+                    module.has_tx = true;
+                    module.has_rx = true;
+                    module.name = "750-671".to_string();
+                }
+                WAGO_750_672_PRODUCT_ID => {
+                    module.has_tx = true;
+                    module.has_rx = true;
+                    module.name = "750-672".to_string();
+                }
+                _ => tracing::warn!("found unknown/unimplemented module: {ident_iom}"),
+            }*/
+
+            modules.push(module);
+        }
+        self.init_slot_modules(&mut modules, device_address)?;
+        Ok(modules)
+    }
 }
 
-pub fn type_id_to_sdo_type<T: 'static>() -> Result<SdoType, ChannelError> {
-    let t_id = TypeId::of::<T>();
-    let sdo_type: SdoType = {
-        if t_id == TypeId::of::<bool>() {
-            SdoType::BOOL
-        } else if t_id == TypeId::of::<u8>() {
-            SdoType::U8
-        } else if t_id == TypeId::of::<u16>() {
-            SdoType::U16
-        } else if t_id == TypeId::of::<u32>() {
-            SdoType::U32
-        } else if t_id == TypeId::of::<i16>() {
-            SdoType::I16
-        } else if t_id == TypeId::of::<i32>() {
-            SdoType::I32
-        } else {
-            SdoType::U8
-        }
-    };
-    return Ok(sdo_type);
+
+pub struct ProductIdModuleNameMap {
+    pub map : HashMap<u32, String>
 }
+

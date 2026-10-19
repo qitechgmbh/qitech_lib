@@ -2,7 +2,7 @@ use bitvec::field::BitField;
 use qitech_lib_ethercat_hal::PdoError;
 
 use crate::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, Module,
+    DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
     NewEthercatDevice, SubDeviceProductTuple,
 };
 use qitech_lib_ethercat_hal::io::analog_output::AnalogCurrentOutputDevice;
@@ -16,7 +16,6 @@ use qitech_lib_units::f64::ElectricCurrent;
 pub struct Wago750_554 {
     tx_bit_offset: usize,
     rx_bit_offset: usize,
-    module: Option<Module>,
     rx_pdo: Wago750_554RxPdo,
 }
 
@@ -97,9 +96,8 @@ impl EthercatDevice for Wago750_554 {
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-        let base = self.rx_bit_offset;
-        output[base..(base + 16)].store_le::<u16>(self.rx_pdo.channel1);
-        output[(base + 16)..(base + 32)].store_le::<u16>(self.rx_pdo.channel2);
+        output[0..16].store_le::<u16>(self.rx_pdo.channel1);
+        output[16..32].store_le::<u16>(self.rx_pdo.channel2);
         Ok(())
     }
 
@@ -132,16 +130,6 @@ impl EthercatDevice for Wago750_554 {
     ) -> Result<(), PdoError> {
         self.output(output)
     }
-
-    fn get_module(&self) -> Option<Module> {
-        self.module.clone()
-    }
-
-    fn set_module(&mut self, module: Module) {
-        self.tx_bit_offset = module.tx_offset;
-        self.rx_bit_offset = module.rx_offset;
-        self.module = Some(module)
-    }
 }
 
 impl EthercatDeviceProcessing for Wago750_554 {}
@@ -151,7 +139,6 @@ impl NewEthercatDevice for Wago750_554 {
         Self {
             tx_bit_offset: 0,
             rx_bit_offset: 0,
-            module: None,
             rx_pdo: Wago750_554RxPdo::default(),
         }
     }

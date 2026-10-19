@@ -1,5 +1,5 @@
 use crate::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, Module, SubDeviceProductTuple,
+    DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, SubDeviceProductTuple,
 };
 use crate::{EthercatDeviceProcessing, NewEthercatDevice};
 use qitech_lib_ethercat_hal::PdoError;
@@ -10,7 +10,6 @@ pub struct Wago750_530 {
     tx_bit_offset: usize,
     rx_bit_offset: usize,
     pub rxpdo: Wago750_530RxPdo,
-    module: Option<Module>,
 }
 
 #[derive(Debug, Clone)]
@@ -139,35 +138,35 @@ impl EthercatDevice for Wago750_530 {
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port1),
+            Into::<usize>::into(Wago750_530Port::Port1),
             self.rxpdo.port1,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port2),
+            Into::<usize>::into(Wago750_530Port::Port2),
             self.rxpdo.port2,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port3),
+            Into::<usize>::into(Wago750_530Port::Port3),
             self.rxpdo.port3,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port4),
+            Into::<usize>::into(Wago750_530Port::Port4),
             self.rxpdo.port4,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port5),
+            Into::<usize>::into(Wago750_530Port::Port5),
             self.rxpdo.port5,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port6),
+            Into::<usize>::into(Wago750_530Port::Port6),
             self.rxpdo.port6,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port7),
+            Into::<usize>::into(Wago750_530Port::Port7),
             self.rxpdo.port7,
         );
         output.set(
-            self.rx_bit_offset + Into::<usize>::into(Wago750_530Port::Port8),
+            Into::<usize>::into(Wago750_530Port::Port8),
             self.rxpdo.port8,
         );
         Ok(())
@@ -202,16 +201,6 @@ impl EthercatDevice for Wago750_530 {
     ) -> Result<(), PdoError> {
         Ok(())
     }
-
-    fn get_module(&self) -> Option<crate::Module> {
-        self.module.clone()
-    }
-
-    fn set_module(&mut self, module: crate::Module) {
-        self.tx_bit_offset = module.tx_offset;
-        self.rx_bit_offset = module.rx_offset;
-        self.module = Some(module)
-    }
 }
 
 impl EthercatDeviceProcessing for Wago750_530 {}
@@ -221,7 +210,6 @@ impl NewEthercatDevice for Wago750_530 {
         Self {
             tx_bit_offset: 0,
             rx_bit_offset: 0,
-            module: None,
             rxpdo: Wago750_530RxPdo::default(),
         }
     }
