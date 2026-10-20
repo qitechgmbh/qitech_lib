@@ -1,6 +1,5 @@
-use crate::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, SubDeviceProductTuple,
-};
+use crate::{DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, SubDeviceProductTuple};
+use crate::{EthercatDeviceIdentity, IdentifiedDevice};
 use crate::{EthercatDeviceProcessing, NewEthercatDevice};
 use qitech_lib_ethercat_hal::PdoError;
 use qitech_lib_ethercat_hal::io::digital_output::DigitalOutputDevice;
@@ -225,3 +224,12 @@ pub const WAGO_750_530_VENDOR_ID: u32 = 0x00000021;
 pub const WAGO_750_530_PRODUCT_ID: u32 = 2147483778;
 pub const WAGO_750_530_MODULE_IDENT: SubDeviceProductTuple =
     (WAGO_750_530_VENDOR_ID, WAGO_750_530_PRODUCT_ID);
+
+impl IdentifiedDevice for Wago750_530 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        // Modules have no vendor id of their own, it is the vendor of the 750-354 coupler
+        vendor: WAGO_750_530_VENDOR_ID,
+        product: WAGO_750_530_PRODUCT_ID,
+        revisions: &[],
+    };
+}

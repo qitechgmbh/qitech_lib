@@ -1,3 +1,4 @@
+use crate::{EthercatDeviceIdentity, IdentifiedDevice};
 use bitvec::field::BitField;
 use qitech_lib_ethercat_hal::PdoError;
 
@@ -154,3 +155,12 @@ pub const WAGO_750_554_VENDOR_ID: u32 = 0x00000021;
 pub const WAGO_750_554_PRODUCT_ID: u32 = 0x055442cd;
 pub const WAGO_750_554_MODULE_IDENT: SubDeviceProductTuple =
     (WAGO_750_554_VENDOR_ID, WAGO_750_554_PRODUCT_ID);
+
+impl IdentifiedDevice for Wago750_554 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        // Modules have no vendor id of their own, it is the vendor of the 750-354 coupler
+        vendor: WAGO_750_554_VENDOR_ID,
+        product: WAGO_750_554_PRODUCT_ID,
+        revisions: &[],
+    };
+}

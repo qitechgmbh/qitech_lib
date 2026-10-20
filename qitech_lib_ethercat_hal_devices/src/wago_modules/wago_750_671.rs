@@ -1,3 +1,4 @@
+use crate::{EthercatDeviceIdentity, IdentifiedDevice};
 use qitech_lib_ethercat_hal::{DeviceError, PdoError};
 /*
  * Wago Stepper Controller 750-671
@@ -12,7 +13,8 @@ use crate::{
         StatusByteS2, StatusByteS3,
     },
     {
-        DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO, NewEthercatDevice, SubDeviceProductTuple,
+        DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
+        NewEthercatDevice, SubDeviceProductTuple,
     },
 };
 use qitech_lib_ethercat_hal::io::digital_input::DigitalInputDevice;
@@ -197,7 +199,6 @@ impl EthercatDevice for Wago750_671 {
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-
         let mut b = [0u8; 12];
         for i in 0..12 {
             b[i] = input[i * 8..(i + 1) * 8].load_le();
@@ -436,7 +437,6 @@ impl EthercatDevice for Wago750_671 {
         &self,
         output: &mut bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-
         let b = [
             self.rxpdo.control_byte0,
             0,
@@ -544,3 +544,12 @@ pub const WAGO_750_671_VENDOR_ID: u32 = 0x00000021;
 pub const WAGO_750_671_PRODUCT_ID: u32 = 108074216;
 pub const WAGO_750_671_MODULE_IDENT: SubDeviceProductTuple =
     (WAGO_750_671_VENDOR_ID, WAGO_750_671_PRODUCT_ID);
+
+impl IdentifiedDevice for Wago750_671 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        // Modules have no vendor id of their own, it is the vendor of the 750-354 coupler
+        vendor: WAGO_750_671_VENDOR_ID,
+        product: WAGO_750_671_PRODUCT_ID,
+        revisions: &[],
+    };
+}

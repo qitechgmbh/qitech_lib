@@ -2,6 +2,7 @@ use crate::{
     DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
     NewEthercatDevice, SubDeviceProductTuple,
 };
+use crate::{EthercatDeviceIdentity, IdentifiedDevice};
 use qitech_lib_ethercat_hal::DeviceError;
 use qitech_lib_ethercat_hal::PdoError;
 use qitech_lib_ethercat_hal::io::digital_input::DigitalInputDevice;
@@ -93,7 +94,6 @@ impl EthercatDevice for Wago750_402 {
         &mut self,
         input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
     ) -> Result<(), PdoError> {
-
         let idx1 = Into::<usize>::into(Wago750_402InputPort::DI1);
         self.tx_pdo.port1 = *input.get(idx1).expect("Bit 1 out of bounds");
 
@@ -179,3 +179,12 @@ pub const WAGO_750_402_VENDOR_ID: u32 = 0x00000021;
 pub const WAGO_750_402_PRODUCT_ID: u32 = 2147483713;
 pub const WAGO_750_402_MODULE_IDENT: SubDeviceProductTuple =
     (WAGO_750_402_VENDOR_ID, WAGO_750_402_PRODUCT_ID);
+
+impl IdentifiedDevice for Wago750_402 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        // Modules have no vendor id of their own, it is the vendor of the 750-354 coupler
+        vendor: WAGO_750_402_VENDOR_ID,
+        product: WAGO_750_402_PRODUCT_ID,
+        revisions: &[],
+    };
+}
