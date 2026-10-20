@@ -222,8 +222,18 @@ impl StmFeatures {
     pub fn get_coe_writes(&self, device_address: u16) -> Vec<SdoRequest> {
         let mut writes = Vec::new();
         writes.push(SdoRequest::new(device_address, 0x8012, 0x01, 0u8));
-        writes.push(SdoRequest::new(device_address, 0x8012, 0x05, u8::from(self.speed_range)));
-        writes.push(SdoRequest::new(device_address, 0x8012, 0x09, self.invert_motor_polarity));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8012,
+            0x05,
+            u8::from(self.speed_range),
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8012,
+            0x09,
+            self.invert_motor_polarity,
+        ));
         writes.push(SdoRequest::new(
             device_address,
             0x8012,
@@ -236,8 +246,18 @@ impl StmFeatures {
             0x19,
             u8::from(self.select_info_data_2),
         ));
-        writes.push(SdoRequest::new(device_address, 0x8012, 0x30, self.invert_digital_input_1));
-        writes.push(SdoRequest::new(device_address, 0x8012, 0x31, self.invert_digital_input_2));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8012,
+            0x30,
+            self.invert_digital_input_1,
+        ));
+        writes.push(SdoRequest::new(
+            device_address,
+            0x8012,
+            0x31,
+            self.invert_digital_input_2,
+        ));
         writes.push(SdoRequest::new(
             device_address,
             0x8012,

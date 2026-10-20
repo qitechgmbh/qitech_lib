@@ -1,11 +1,11 @@
 use crate::{
-    EthercatDevice, EthercatDeviceIdentity, EthercatDeviceProcessing,
-    IdentifiedDevice, NewEthercatDevice
+    EthercatDevice, EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice,
+    NewEthercatDevice,
 };
 use qitech_lib_ethercat_hal::PdoError;
 
 // For both the rx and tx The Wago Coupler has 4 bytes, which we dont care about and skip
-pub struct Wago750_354 {    
+pub struct Wago750_354 {
     pub dev_count: usize,
     pub module_count: usize,
     tx_size: usize,
@@ -20,7 +20,7 @@ impl EthercatDevice for Wago750_354 {
     fn input(
         &mut self,
         _input: &bitvec::prelude::BitSlice<u8, bitvec::prelude::Lsb0>,
-    ) -> Result<(), PdoError> {        
+    ) -> Result<(), PdoError> {
         Ok(())
     }
 
@@ -56,7 +56,7 @@ impl EthercatDeviceProcessing for Wago750_354 {}
 
 impl NewEthercatDevice for Wago750_354 {
     fn new() -> Self {
-        Self {            
+        Self {
             module_count: 0,
             dev_count: 0,
             tx_size: 0,

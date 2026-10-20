@@ -1,11 +1,9 @@
+use crate::{DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, SubDeviceProductTuple};
+use crate::{EthercatDeviceIdentity, IdentifiedDevice};
+use crate::{EthercatDeviceProcessing, NewEthercatDevice};
 use bitvec::field::BitField;
 use qitech_lib_ethercat_hal::DeviceError;
 use qitech_lib_ethercat_hal::PdoError;
-
-use crate::{
-    DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, SubDeviceProductTuple,
-};
-use crate::{EthercatDeviceProcessing, NewEthercatDevice};
 use qitech_lib_ethercat_hal::io::serial_interface::SerialInterfaceDevice;
 const WAGO750_652_MAX_BUF_LENGTH: usize = 48;
 
@@ -109,8 +107,7 @@ impl EthercatDevice for Wago750_652 {
         self.tx_pdo.status.error_framing = *input.get(14).expect("Missing buf_empty bit");
         self.tx_pdo.status.error_overrun = *input.get(15).expect("Missing buf_empty bit");
         // Im sorry but this is what you get by splitting the len across different bytes ...
-        self.tx_pdo.status.input_length = ((*input.get(3).expect("Missing buf_empty bit")
-            as u8)
+        self.tx_pdo.status.input_length = ((*input.get(3).expect("Missing buf_empty bit") as u8)
             ^ ((*input.get(4).expect("Missing buf_empty bit") as u8) << 1)
             ^ ((*input.get(5).expect("Missing buf_empty bit") as u8) << 2)
             ^ ((*input.get(8).expect("Missing buf_empty bit") as u8) << 3)
@@ -146,18 +143,12 @@ impl EthercatDevice for Wago750_652 {
 
         for i in 0..3 {
             // Rust type system proceeds to annoy once again, we need to add a != at the end, because a cast to bool is just too dangeerous obviously
-            output.set(
-                ol0_i,
-                ((self.rx_pdo.control.output_length >> i) & 1) != 0,
-            );
+            output.set(ol0_i, ((self.rx_pdo.control.output_length >> i) & 1) != 0);
             ol0_i += 1;
         }
 
         for i in 3..6 {
-            output.set(
-                ol1_i,
-                ((self.rx_pdo.control.output_length >> i) & 1) != 0,
-            );
+            output.set(ol1_i, ((self.rx_pdo.control.output_length >> i) & 1) != 0);
             ol1_i += 1;
         }
         let data_start = 16;
@@ -318,3 +309,12 @@ pub const WAGO_750_652_VENDOR_ID: u32 = 0x00000021;
 pub const WAGO_750_652_PRODUCT_ID: u32 = 106043250;
 pub const WAGO_750_652_MODULE_IDENT: SubDeviceProductTuple =
     (WAGO_750_652_VENDOR_ID, WAGO_750_652_PRODUCT_ID);
+
+impl IdentifiedDevice for Wago750_652 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        // Modules have no vendor id of their own, it is the vendor of the 750-354 coupler
+        vendor: WAGO_750_652_VENDOR_ID,
+        product: WAGO_750_652_PRODUCT_ID,
+        revisions: &[],
+    };
+}

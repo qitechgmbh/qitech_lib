@@ -1,3 +1,4 @@
+use crate::{EthercatDeviceIdentity, IdentifiedDevice};
 use bitvec::field::BitField;
 use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;
@@ -96,7 +97,6 @@ impl EthercatDevice for Wago750_455 {
         self
     }
     fn input(&mut self, input: &BitSlice<u8, Lsb0>) -> Result<(), PdoError> {
-
         self.tx_pdo.ai1.read(&input[0..16]);
         self.tx_pdo.ai2.read(&input[16..32]);
         self.tx_pdo.ai3.read(&input[32..48]);
@@ -153,7 +153,7 @@ impl NewEthercatDevice for Wago750_455 {
     fn new() -> Self {
         Self {
             tx_bit_offset: 0,
-            rx_bit_offset: 0,            
+            rx_bit_offset: 0,
             tx_pdo: Wago750_455TxPdo::default(),
         }
     }
@@ -169,3 +169,12 @@ pub const WAGO_750_455_VENDOR_ID: u32 = 0x00000021;
 pub const WAGO_750_455_PRODUCT_ID: u32 = 0x045541b3;
 pub const WAGO_750_455_MODULE_IDENT: SubDeviceProductTuple =
     (WAGO_750_455_VENDOR_ID, WAGO_750_455_PRODUCT_ID);
+
+impl IdentifiedDevice for Wago750_455 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        // Modules have no vendor id of their own, it is the vendor of the 750-354 coupler
+        vendor: WAGO_750_455_VENDOR_ID,
+        product: WAGO_750_455_PRODUCT_ID,
+        revisions: &[],
+    };
+}

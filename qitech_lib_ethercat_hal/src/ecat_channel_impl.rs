@@ -365,22 +365,19 @@ impl EtherCATThreadChannel {
                 .iter()
                 .find(|map| map.module_i == m.slot.into() && map.sub_index == 0x1);
 
-            
             m.tx_offset = match tx_pdo_mapping {
                 Some(map) => map.offset,
                 None => 0,
             };
-            
 
             let rx_pdo_mapping = rx_pdo_mappings
                 .iter()
-                .find(|map| map.module_i == m.slot.into() && map.sub_index == 0x1);            
-            
+                .find(|map| map.module_i == m.slot.into() && map.sub_index == 0x1);
+
             m.rx_offset = match rx_pdo_mapping {
                 Some(map) => map.offset,
                 None => 0,
-            }            
-
+            }
         }
         Ok(())
     }
@@ -515,10 +512,9 @@ impl EtherCATThreadChannel {
                 Some(map) => {
                     let name = map.map.get(&ident_iom).unwrap().clone();
                     module.name = name;
-                },
+                }
                 None => (),
             };
-
 
             /* match ident_iom {
                 // Add Module idents here:
@@ -587,8 +583,6 @@ impl EtherCATThreadChannel {
     }
 }
 
-
 pub struct ProductIdModuleNameMap {
-    pub map : HashMap<u32, String>
+    pub map: HashMap<u32, String>,
 }
-
