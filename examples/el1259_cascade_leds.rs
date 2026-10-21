@@ -36,7 +36,7 @@ fn main() {
     for subdevice in eth_control.try_get_subdevices_vec_sync().unwrap() {
         let res = EL1259::IDENTITY.matches(&subdevice);
         if res {
-            let results = eth_control
+            eth_control
                 .write_configuration(
                     subdevice.device_address,
                     el1259.get_config(),
