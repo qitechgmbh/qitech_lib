@@ -109,7 +109,8 @@ pub trait ConfigurableDevice {
 /// provides interface to read and write the PDO data
 pub trait EthercatDevice
 where
-    Self: NewEthercatDevice + EthercatDeviceProcessing + Any + Send + Sync + Debug,
+    Self:
+        NewEthercatDevice + EthercatDeviceProcessing + IdentifiedDevice + Any + Send + Sync + Debug,
 {
     /// Input data from the last cycle
     /// `ts` is the timestamp when the input data was sent by the device

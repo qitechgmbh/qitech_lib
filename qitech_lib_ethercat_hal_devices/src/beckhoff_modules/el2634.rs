@@ -1,4 +1,5 @@
 use super::{EthercatDeviceProcessing, NewEthercatDevice};
+use qitech_lib_ethercat_hal::device::{EthercatDeviceIdentity, IdentifiedDevice};
 use qitech_lib_ethercat_hal::io::digital_output::DigitalOutputDevice;
 use qitech_lib_ethercat_hal::pdo::{RxPdo, basic::BoolPdoObject};
 use qitech_lib_ethercat_hal_derive::{EthercatDevice, RxPdo};
@@ -73,4 +74,12 @@ impl Default for EL2634RxPdo {
             channel4: Some(BoolPdoObject::default()),
         }
     }
+}
+
+impl IdentifiedDevice for EL2634 {
+    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+        vendor: 0x2,
+        product: 0x0A4A3052,
+        revisions: &[],
+    };
 }
