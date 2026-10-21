@@ -2,7 +2,7 @@ use bitvec::slice::BitSlice;
 use qitech_lib::ethercat_hal::{
     EtherCATState, init_ethercat, io::multi_timestamp::MultiTimestampEvent,
 };
-use qitech_lib_ethercat_hal::{io::multi_timestamp::MultiTimestampOutput};
+use qitech_lib_ethercat_hal::io::multi_timestamp::MultiTimestampOutput;
 use qitech_lib_ethercat_hal_devices::{
     ConfigurableDevice, EthercatDevice, EthercatDeviceProcessing, IdentifiedDevice,
     NewEthercatDevice, beckhoff_modules::el1259::EL1259,
@@ -36,14 +36,14 @@ fn main() {
     for subdevice in eth_control.try_get_subdevices_vec_sync().unwrap() {
         let res = EL1259::IDENTITY.matches(&subdevice);
         if res {
-            let results = eth_control
+            eth_control
                 .write_configuration(
                     subdevice.device_address,
                     el1259.get_config(),
                     Duration::from_secs(4),
                 )
                 .expect("Failed to write configuration");
-            println!("{:?}",results);        
+
             eth_control
                 .enable_dc_sync0(subdevice.device_address)
                 .expect("Failed to enable DC Sync!");

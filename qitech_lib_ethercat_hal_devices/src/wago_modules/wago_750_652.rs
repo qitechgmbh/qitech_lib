@@ -1,10 +1,9 @@
+use crate::{DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, SubDeviceProductTuple};
 use crate::{EthercatDeviceIdentity, IdentifiedDevice};
+use crate::{EthercatDeviceProcessing, NewEthercatDevice};
 use bitvec::field::BitField;
 use qitech_lib_ethercat_hal::DeviceError;
 use qitech_lib_ethercat_hal::PdoError;
-
-use crate::{DynamicEthercatDevice, EthercatDevice, EthercatDynamicPDO, SubDeviceProductTuple};
-use crate::{EthercatDeviceProcessing, NewEthercatDevice};
 use qitech_lib_ethercat_hal::io::serial_interface::SerialInterfaceDevice;
 const WAGO750_652_MAX_BUF_LENGTH: usize = 48;
 

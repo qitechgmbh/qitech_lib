@@ -10,6 +10,7 @@ use qitech_lib_ethercat_hal_devices::{
 };
 use std::{env, time::Duration};
 const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
+const SDO_WRITE_TIMEOUT: Duration = Duration::from_secs(4);
 const INIT_DELAY_NS: u64 = 20_000_000;
 const PULSE_DELAY_NS: u64 = 200_000;
 const PULSE_WIDTH_NS: u64 = 50_000;
@@ -38,13 +39,16 @@ fn main() {
 
     for subdevice in eth_control.try_get_subdevices_vec_sync().unwrap() {
         if EL1259::IDENTITY.matches(&subdevice) {
-            el1259
-                .write_config(
-                    eth_control.get_channel(),
+            let failed_writes = eth_control
+                .write_configuration(
                     subdevice.device_address,
-                    &el1259.get_config(),
+                    el1259.get_config(),
+                    SDO_WRITE_TIMEOUT,
                 )
                 .expect("Failed to write config");
+            for (sdo_index, err) in &failed_writes {
+                eprintln!("SDO write {:?} failed: {}", sdo_index, err);
+            }
             eth_control
                 .enable_dc_sync0(subdevice.device_address)
                 .expect("Failed to enable DC Sync!");

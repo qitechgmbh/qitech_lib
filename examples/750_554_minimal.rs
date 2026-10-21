@@ -1,6 +1,7 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use qitech_lib_ethercat_hal::{
-    EtherCATState, convert_module_to_meta_ethercat_device, init_ethercat, io::analog_output::AnalogCurrentOutputDevice,
+    EtherCATState, convert_module_to_meta_ethercat_device, init_ethercat,
+    io::analog_output::AnalogCurrentOutputDevice,
 };
 use qitech_lib_ethercat_hal_devices::{
     EthercatDevice, IdentifiedDevice, NewEthercatDevice,

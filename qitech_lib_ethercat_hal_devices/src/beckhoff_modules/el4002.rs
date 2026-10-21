@@ -1,8 +1,7 @@
 use super::{
     EthercatDeviceIdentity, EthercatDeviceProcessing, IdentifiedDevice, NewEthercatDevice,
 };
-use qitech_lib_ethercat_hal::EtherCATThreadChannel;
-use qitech_lib_ethercat_hal::coe::Configuration;
+use qitech_lib_ethercat_hal::device::{ConfigurableDevice, Configuration};
 use qitech_lib_ethercat_hal::io::analog_output::{AnalogOutputDevice, AnalogOutputOutput};
 use qitech_lib_ethercat_hal::pdo::PredefinedPdoAssignment;
 use qitech_lib_ethercat_hal::pdo::RxPdo;
@@ -60,9 +59,9 @@ impl NewEthercatDevice for EL4002 {
     fn new() -> Self {
         let configuration: EL4002Configuration = EL4002Configuration::default();
         Self {
-            configuration: configuration.clone(),
-            rxpdo: configuration.pdo_assignment.rxpdo_assignment(),
-            txpdo: configuration.pdo_assignment.txpdo_assignment(),
+            rxpdo: configuration.rxpdo_assignment(),
+            txpdo: configuration.txpdo_assignment(),
+            configuration,
         }
     }
 }
@@ -98,32 +97,43 @@ impl AnalogOutputDevice for EL4002 {
     }
 }
 
-impl EL4002 {
-    pub fn write_config(
-        &mut self,
-        ecat_channel: EtherCATThreadChannel,
-        device_address: u16,
-    ) -> Result<(), qitech_lib_ethercat_hal::Error> {
-        /*
-        self.configuration
-            .channel1
-            .write_channel_config(subdevice, 0x8000)
-            .await?;
-        self.configuration
-            .channel1
-            .write_channel_config(subdevice, 0x8010)
-            .await?;
-        */
-        self.configuration
-            .pdo_assignment
-            .txpdo_assignment()
-            .write_config(ecat_channel.clone(), device_address)?;
-        self.configuration
-            .pdo_assignment
-            .rxpdo_assignment()
-            .write_config(ecat_channel.clone(), device_address)?;
-        Ok(())
+impl ConfigurableDevice for EL4002 {
+    type Config = EL4002Configuration;
+
+    fn set_config(&mut self, config: EL4002Configuration) {
+        self.txpdo = config.txpdo_assignment();
+        self.rxpdo = config.rxpdo_assignment();
+        self.configuration = config;
     }
+
+    fn get_config(&self) -> &EL4002Configuration {
+        &self.configuration
+    }
+}
+
+impl Configuration for EL4002Configuration {
+    type TxPdo = EL4002TxPdo;
+    type RxPdo = EL4002RxPdo;
+
+    fn txpdo_assignment(&self) -> EL4002TxPdo {
+        self.pdo_assignment.txpdo_assignment()
+    }
+
+    fn rxpdo_assignment(&self) -> EL4002RxPdo {
+        self.pdo_assignment.rxpdo_assignment()
+    }
+
+    /*
+    fn get_config_coe_writes(
+        &self,
+        device_address: u16,
+    ) -> Result<Vec<SdoRequest>, qitech_lib_ethercat_hal::Error> {
+        let mut writes = Vec::new();
+        writes.extend(self.channel1.get_channel_coe_writes(device_address, 0x8000));
+        writes.extend(self.channel1.get_channel_coe_writes(device_address, 0x8010));
+        Ok(writes)
+    }
+    */
 }
 
 #[derive(Debug, Clone, RxPdo)]

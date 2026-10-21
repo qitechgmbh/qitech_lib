@@ -4,11 +4,12 @@ pub mod pdo;
 use coe::EL7031Configuration;
 use pdo::{EL7031RxPdo, EL7031TxPdo};
 use qitech_lib_ethercat_hal::{
+    device::Configuration,
     helpers::counter_wrapper_u16_i128::CounterWrapperU16U128,
     io::stepper_velocity_el70x1::{
         StepperVelocityEL70x1Device, StepperVelocityEL70x1Input, StepperVelocityEL70x1Output,
     },
-    pdo::{PredefinedPdoAssignment, RxPdo, TxPdo},
+    pdo::{RxPdo, TxPdo},
     shared_config::el70x1::EL70x1OperationMode,
 };
 use qitech_lib_ethercat_hal_derive::EthercatDevice;
@@ -93,8 +94,8 @@ impl NewEthercatDevice for EL7031 {
     fn new() -> Self {
         let configuration: EL7031Configuration = EL7031Configuration::default();
         Self {
-            txpdo: configuration.pdo_assignment.txpdo_assignment(),
-            rxpdo: configuration.pdo_assignment.rxpdo_assignment(),
+            txpdo: configuration.txpdo_assignment(),
+            rxpdo: configuration.rxpdo_assignment(),
             configuration,
             counter_wrapper: CounterWrapperU16U128::new(),
         }

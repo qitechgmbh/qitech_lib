@@ -14,16 +14,16 @@ pub struct Module {
     pub name: String,
     pub slot: u16,
     pub belongs_to_addr: u16,
-    
+
     pub has_tx: bool,
     pub has_rx: bool,
-    
+
     pub vendor_id: u32,
     pub product_id: u32,
-    
+
     pub tx_offset: usize,
     pub tx_size: usize,
-    
+
     pub rx_offset: usize,
     pub rx_size: usize,
 }
@@ -109,7 +109,8 @@ pub trait ConfigurableDevice {
 /// provides interface to read and write the PDO data
 pub trait EthercatDevice
 where
-    Self: NewEthercatDevice + EthercatDeviceProcessing + IdentifiedDevice + Any + Send + Sync + Debug,
+    Self:
+        NewEthercatDevice + EthercatDeviceProcessing + IdentifiedDevice + Any + Send + Sync + Debug,
 {
     /// Input data from the last cycle
     /// `ts` is the timestamp when the input data was sent by the device
@@ -182,9 +183,8 @@ pub struct EthercatDeviceIdentity {
 
 impl EthercatDeviceIdentity {
     pub fn matches(&self, subdevice: &MetaSubdevice) -> bool {
-        subdevice.vendor == self.vendor
-            && subdevice.product_id == self.product
-           // && self.revisions.contains(&subdevice.revision)
+        subdevice.vendor == self.vendor && subdevice.product_id == self.product
+        // && self.revisions.contains(&subdevice.revision)
     }
 }
 

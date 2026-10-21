@@ -365,22 +365,19 @@ impl EtherCATThreadChannel {
                 .iter()
                 .find(|map| map.module_i == m.slot.into() && map.sub_index == 0x1);
 
-            
             m.tx_offset = match tx_pdo_mapping {
                 Some(map) => map.offset,
                 None => 0,
             };
-            
 
             let rx_pdo_mapping = rx_pdo_mappings
                 .iter()
-                .find(|map| map.module_i == m.slot.into() && map.sub_index == 0x1);            
-            
+                .find(|map| map.module_i == m.slot.into() && map.sub_index == 0x1);
+
             m.rx_offset = match rx_pdo_mapping {
                 Some(map) => map.offset,
                 None => 0,
-            }            
-
+            }
         }
         Ok(())
     }
@@ -431,10 +428,13 @@ impl EtherCATThreadChannel {
             false => 0x7000 as u16,
         };
 
-        let count_mappings = self.sdo_read::<u8>(device_address, index.0, index.1)?;
+        // look at the TX/RX Assign count of assignments that the coupler has. The modules are there too
+        let count_assignments = self.sdo_read::<u8>(device_address, index.0, index.1)?;
+        // Get the first index from the TX/RX Assignment
         let pdo_index = self.sdo_read::<u16>(device_address, index.0, 1)?;
+        // Get the count of mapping variables
         let pdo_map_count = self.sdo_read::<u8>(device_address, pdo_index, 0)?;
-
+        // Loop over the mapping variables 1 + i, because 0 is always the count
         for i in 0..pdo_map_count {
             let pdo_mapping: u32 = self.sdo_read(device_address, pdo_index, 1 + i)?;
             let bit_length = (pdo_mapping & 0xFF) as u8;
@@ -442,8 +442,7 @@ impl EtherCATThreadChannel {
         }
 
         let mut mappings_without_coupler: Vec<(u16, u32)> = vec![];
-
-        for i in start_subindex..=count_mappings {
+        for i in start_subindex..=count_assignments {
             let pdo_index = self.sdo_read(device_address, index.0, i)?;
             let pdo_map_count = self.sdo_read::<u8>(device_address, pdo_index, 0)?;
 
@@ -515,70 +514,9 @@ impl EtherCATThreadChannel {
                 Some(map) => {
                     let name = map.map.get(&ident_iom).unwrap().clone();
                     module.name = name;
-                },
+                }
                 None => (),
             };
-
-
-            /* match ident_iom {
-                // Add Module idents here:
-                WAGO_750_1506_PRODUCT_ID => {
-                    module.has_tx = true;
-                    module.has_rx = true;
-                    module.name = "750-1506".to_string();
-                }
-                WAGO_750_455_PRODUCT_ID => {
-                    module.has_tx = true;
-                    module.has_rx = false;
-                    module.name = "750-455".to_string();
-                }
-                WAGO_750_501_PRODUCT_ID => {
-                    module.has_tx = false;
-                    module.has_rx = true;
-                    module.name = "750-501".to_string();
-                }
-                WAGO_750_530_PRODUCT_ID => {
-                    module.has_tx = false;
-                    module.has_rx = true;
-                    module.name = "750-530".to_string();
-                }
-                WAGO_750_531_PRODUCT_ID => {
-                    module.has_tx = false;
-                    module.has_rx = true;
-                    module.name = "750-531".to_string();
-                }
-                WAGO_750_652_PRODUCT_ID => {
-                    module.has_tx = true;
-                    module.has_rx = true;
-                    module.name = "750-652".to_string();
-                }
-                WAGO_750_554_PRODUCT_ID => {
-                    module.has_tx = false;
-                    module.has_rx = true;
-                    module.name = "750-554".to_string();
-                }
-                WAGO_750_402_PRODUCT_ID => {
-                    module.has_tx = true;
-                    module.has_rx = false;
-                    module.name = "750-402".to_string();
-                }
-                WAGO_750_430_PRODUCT_ID => {
-                    module.has_tx = true;
-                    module.has_rx = false;
-                    module.name = "750-430".to_string();
-                }
-                WAGO_750_671_PRODUCT_ID => {
-                    module.has_tx = true;
-                    module.has_rx = true;
-                    module.name = "750-671".to_string();
-                }
-                WAGO_750_672_PRODUCT_ID => {
-                    module.has_tx = true;
-                    module.has_rx = true;
-                    module.name = "750-672".to_string();
-                }
-                _ => tracing::warn!("found unknown/unimplemented module: {ident_iom}"),
-            }*/
 
             modules.push(module);
         }
@@ -587,8 +525,6 @@ impl EtherCATThreadChannel {
     }
 }
 
-
 pub struct ProductIdModuleNameMap {
-    pub map : HashMap<u32, String>
+    pub map: HashMap<u32, String>,
 }
-
