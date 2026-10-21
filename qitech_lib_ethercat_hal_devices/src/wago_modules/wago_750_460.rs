@@ -28,7 +28,6 @@ use qitech_lib_ethercat_hal::pdo::basic::Limit;
 //
 // TX PDO: 4 × 16 bits = 64 bits  (16-bit-only mode, no optional status bytes)
 // RX PDO: 0 bits
-// =============================================================================
 
 #[derive(Debug, Clone, Copy)]
 pub enum Wago750_460Port {

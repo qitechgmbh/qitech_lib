@@ -43,7 +43,7 @@ fn main() {
                     Duration::from_secs(4),
                 )
                 .expect("Failed to write configuration");
-            println!("{:?}", results);
+
             eth_control
                 .enable_dc_sync0(subdevice.device_address)
                 .expect("Failed to enable DC Sync!");
