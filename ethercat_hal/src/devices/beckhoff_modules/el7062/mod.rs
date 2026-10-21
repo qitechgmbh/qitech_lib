@@ -276,6 +276,66 @@ impl EL7062 {
         };
         channel.sdo_read(device_address, index, 0x28)
     }
+
+    /// Run the terminal's "Scan Motor" command (FB00) on one channel.
+    ///
+    /// The shaft moves. Set the motor currents first and keep the axis
+    /// disabled. Blocks until done, so don't call it from the cycle loop.
+    pub fn scan_motor(
+        channel: &EtherCATThreadChannel,
+        device_address: u16,
+        port: EL7062Port,
+        timeout: Duration,
+    ) -> Result<MotorScanResult, anyhow::Error> {
+        let (request, amplifier_index, motor_index): (u16, u16, u16) = match port {
+            EL7062Port::Ch1 => (0x8007, 0x8010, 0x8011),
+            EL7062Port::Ch2 => (0x8017, 0x8110, 0x8111),
+        };
+        channel.sdo_write(device_address, 0xFB00, 0x01, request)?;
+
+        // Status may still be 0 from an earlier command.
+        let started = Instant::now();
+        let mut seen_running = false;
+        loop {
+            let status: u8 = channel.sdo_read(device_address, 0xFB00, 0x02)?;
+            match status {
+                0 | 1 if seen_running => break,
+                2 | 3 => {
+                    return Err(anyhow!(
+                        "motor scan on {port:?} failed with status {status}; \
+                         see the terminal's diagnosis history"
+                    ));
+                }
+                0 | 1 => {}
+                _ => seen_running = true,
+            }
+            if started.elapsed() > timeout {
+                return Err(if seen_running {
+                    anyhow!("motor scan on {port:?} still running after {timeout:?}")
+                } else {
+                    anyhow!(
+                        "motor scan on {port:?} never started; is the axis enabled, \
+                         or did the terminal reject request 0x{request:04X}?"
+                    )
+                });
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+
+        Ok(MotorScanResult {
+            winding_inductance: channel.sdo_read(device_address, motor_index, 0x19)?,
+            winding_resistance: channel.sdo_read(device_address, motor_index, 0x30)?,
+            controller_gains: coe::ControllerGains::read(channel, device_address, amplifier_index)?,
+        })
+    }
+}
+
+/// What [`EL7062::scan_motor`] measured, in raw terminal units.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MotorScanResult {
+    pub winding_inductance: u16,
+    pub winding_resistance: u32,
+    pub controller_gains: coe::ControllerGains,
 }
 
 impl Axis<'_> {

@@ -429,27 +429,9 @@ pub struct El7062AmplifierConfiguration {
     /// [`StatuswordProcessDataMonitor`].
     pub statusword_monitor: StatuswordProcessDataMonitor,
 
-    /// # 8010:12 / 8110:12
-    /// Integral component of the current controller, in 0.1 ms (default `50`).
-    pub current_loop_integral_time: u16,
-
-    /// # 8010:13 / 8110:13
-    /// Proportional component of the current controller, in 0.1 V/A
-    /// (default `50`).
-    pub current_loop_proportional_gain: u16,
-
-    /// # 8010:14 / 8110:14
-    /// Integral component of the velocity controller, in 0.1 ms (default `30`).
-    pub velocity_loop_integral_time: u32,
-
-    /// # 8010:15 / 8110:15
-    /// Proportional component of the velocity controller, in mA/(rad/s)
-    /// (default `150`).
-    pub velocity_loop_proportional_gain: u32,
-
-    /// # 8010:17 / 8110:17
-    /// Proportional component of the position controller, in 1/s (default `10`).
-    pub position_loop_proportional_gain: u32,
+    /// # 8010:12-17 / 8110:12-17
+    /// `None` keeps the gains stored in the terminal, e.g. from a motor scan.
+    pub controller_gains: Option<ControllerGains>,
 
     /// # 8010:31 / 8110:31
     /// Velocity limitation in 1/min. Only effective in CSP and CSV; see
@@ -540,13 +522,9 @@ impl Default for El7062AmplifierConfiguration {
     fn default() -> Self {
         Self {
             statusword_monitor: StatuswordProcessDataMonitor::None,
-            current_loop_integral_time: 0x0032,      // 50 * 0.1 ms
-            current_loop_proportional_gain: 0x0032,  // 50 * 0.1 V/A
-            velocity_loop_integral_time: 0x0000001E, // 30 * 0.1 ms
-            velocity_loop_proportional_gain: 0x00000096, // 150 mA/(rad/s)
-            position_loop_proportional_gain: 0x0000000A, // 10 1/s
-            velocity_limitation: 3000,               // 1/min, power-on default 100000
-            stand_still_window: 1,                   // 1/min
+            controller_gains: None,
+            velocity_limitation: 3000, // 1/min, power-on default 100000
+            stand_still_window: 1,     // 1/min
             info_data_1: InfoDataSource::default(),
             info_data_2: InfoDataSource::default(),
             info_data_3: InfoDataSource::default(),
@@ -767,36 +745,9 @@ impl El7062AmplifierConfiguration {
             0x02,
             self.statusword_monitor.enable_input_cycle_counter(),
         )?;
-        ecat_channel.sdo_write(
-            device_address,
-            base_index,
-            0x12,
-            self.current_loop_integral_time,
-        )?;
-        ecat_channel.sdo_write(
-            device_address,
-            base_index,
-            0x13,
-            self.current_loop_proportional_gain,
-        )?;
-        ecat_channel.sdo_write(
-            device_address,
-            base_index,
-            0x14,
-            self.velocity_loop_integral_time,
-        )?;
-        ecat_channel.sdo_write(
-            device_address,
-            base_index,
-            0x15,
-            self.velocity_loop_proportional_gain,
-        )?;
-        ecat_channel.sdo_write(
-            device_address,
-            base_index,
-            0x17,
-            self.position_loop_proportional_gain,
-        )?;
+        if let Some(gains) = &self.controller_gains {
+            gains.write_config(ecat_channel.clone(), device_address, base_index)?;
+        }
         ecat_channel.sdo_write(device_address, base_index, 0x31, self.velocity_limitation)?;
         ecat_channel.sdo_write(device_address, base_index, 0x33, self.stand_still_window)?;
         ecat_channel.sdo_write(device_address, base_index, 0x39, self.info_data_1.as_raw())?;
@@ -856,6 +807,112 @@ impl El7062AmplifierConfiguration {
     }
 }
 
+/// Controller gains of one channel (`0x8010:12-17` / `0x8110:12-17`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ControllerGains {
+    /// # 8010:12 / 8110:12
+    /// Integral component of the current controller, in 0.1 ms (default `50`).
+    pub current_loop_integral_time: u16,
+
+    /// # 8010:13 / 8110:13
+    /// Proportional component of the current controller, in 0.1 V/A
+    /// (default `50`).
+    pub current_loop_proportional_gain: u16,
+
+    /// # 8010:14 / 8110:14
+    /// Integral component of the velocity controller, in 0.1 ms (default `30`).
+    pub velocity_loop_integral_time: u32,
+
+    /// # 8010:15 / 8110:15
+    /// Proportional component of the velocity controller, in mA/(rad/s)
+    /// (default `150`).
+    pub velocity_loop_proportional_gain: u32,
+
+    /// # 8010:17 / 8110:17
+    /// Proportional component of the position controller, in 1/s (default `10`).
+    pub position_loop_proportional_gain: u32,
+}
+
+impl Default for ControllerGains {
+    /// Power-on defaults.
+    fn default() -> Self {
+        Self {
+            current_loop_integral_time: 0x0032,          // 50 * 0.1 ms
+            current_loop_proportional_gain: 0x0032,      // 50 * 0.1 V/A
+            velocity_loop_integral_time: 0x0000001E,     // 30 * 0.1 ms
+            velocity_loop_proportional_gain: 0x00000096, // 150 mA/(rad/s)
+            position_loop_proportional_gain: 0x0000000A, // 10 1/s
+        }
+    }
+}
+
+impl ControllerGains {
+    pub fn write_config(
+        &self,
+        ecat_channel: EtherCATThreadChannel,
+        device_address: u16,
+        base_index: u16,
+    ) -> Result<(), anyhow::Error> {
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x12,
+            self.current_loop_integral_time,
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x13,
+            self.current_loop_proportional_gain,
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x14,
+            self.velocity_loop_integral_time,
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x15,
+            self.velocity_loop_proportional_gain,
+        )?;
+        ecat_channel.sdo_write(
+            device_address,
+            base_index,
+            0x17,
+            self.position_loop_proportional_gain,
+        )?;
+        Ok(())
+    }
+
+    pub fn read(
+        ecat_channel: &EtherCATThreadChannel,
+        device_address: u16,
+        base_index: u16,
+    ) -> Result<Self, anyhow::Error> {
+        Ok(Self {
+            current_loop_integral_time: ecat_channel.sdo_read(device_address, base_index, 0x12)?,
+            current_loop_proportional_gain: ecat_channel.sdo_read(
+                device_address,
+                base_index,
+                0x13,
+            )?,
+            velocity_loop_integral_time: ecat_channel.sdo_read(device_address, base_index, 0x14)?,
+            velocity_loop_proportional_gain: ecat_channel.sdo_read(
+                device_address,
+                base_index,
+                0x15,
+            )?,
+            position_loop_proportional_gain: ecat_channel.sdo_read(
+                device_address,
+                base_index,
+                0x17,
+            )?,
+        })
+    }
+}
+
 /// Motor settings for one channel of the EL7062.
 ///
 /// Corresponds to `0x8011` / `0x8111`.
@@ -864,6 +921,14 @@ pub struct El7062MotorConfiguration {
     /// # 8011:12 / 8111:12
     /// Rated current of the motor in mA (see `Default`).
     pub rated_current: u32,
+
+    /// # 8011:19 / 8111:19
+    /// Winding inductance, unit undocumented. `None` keeps the stored value.
+    pub winding_inductance: Option<u16>,
+
+    /// # 8011:30 / 8111:30
+    /// Winding resistance, unit undocumented. `None` keeps the stored value.
+    pub winding_resistance: Option<u32>,
 
     /// # 8011:33 / 8111:33
     /// Motor full steps per revolution (default `200`).
@@ -882,7 +947,9 @@ impl Default for El7062MotorConfiguration {
     /// load across the two channels, which full current on both gives up.
     fn default() -> Self {
         Self {
-            rated_current: 500,                          // mA, power-on default 3000
+            rated_current: 500, // mA, power-on default 3000
+            winding_inductance: None,
+            winding_resistance: None,
             motor_full_steps_per_revolution: 0x000000C8, // 200
             configured_motor_current: 500,               // mA, power-on default 3000
         }
@@ -897,6 +964,12 @@ impl El7062MotorConfiguration {
         base_index: u16,
     ) -> Result<(), anyhow::Error> {
         ecat_channel.sdo_write(device_address, base_index, 0x12, self.rated_current)?;
+        if let Some(inductance) = self.winding_inductance {
+            ecat_channel.sdo_write(device_address, base_index, 0x19, inductance)?;
+        }
+        if let Some(resistance) = self.winding_resistance {
+            ecat_channel.sdo_write(device_address, base_index, 0x30, resistance)?;
+        }
         ecat_channel.sdo_write(
             device_address,
             base_index,
