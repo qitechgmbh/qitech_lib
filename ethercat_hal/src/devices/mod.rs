@@ -4,12 +4,12 @@ pub mod step_drives_common;
 pub mod wago_modules;
 use crate::MetaSubdevice;
 
+#[cfg(feature = "mock")]
+use crate::TypeErasedValue;
 use crate::devices::beckhoff_modules::el1124::{EL1124, EL1124_IDENTITY_A};
 use crate::devices::beckhoff_modules::el1259::{EL1259, EL1259_IDENTITY_A};
 use crate::devices::beckhoff_modules::el4008::{EL4008, EL4008_IDENTITY_A};
 use crate::devices::beckhoff_modules::el9505::{EL9505, EL9505_IDENTITY_A};
-#[cfg(feature = "mock")]
-use crate::TypeErasedValue;
 
 use crate::devices::beckhoff_modules::el1008::EL1008;
 use crate::devices::beckhoff_modules::ep2339_0021::EP2339_0021_IDENTITY_A;
@@ -52,8 +52,8 @@ use bitvec::slice::BitSlice;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::{any::Any, fmt::Debug};
-use wago_modules::ip20_ec_di8_do8::{IP20EcDi8Do8, IP20_EC_DI8_DO8_IDENTITY};
-use wago_modules::wago_750_354::{Wago750_354, WAGO_750_354_IDENTITY_A};
+use wago_modules::ip20_ec_di8_do8::{IP20_EC_DI8_DO8_IDENTITY, IP20EcDi8Do8};
+use wago_modules::wago_750_354::{WAGO_750_354_IDENTITY_A, Wago750_354};
 
 #[derive(Debug, Clone)]
 pub struct Module {

@@ -1,5 +1,5 @@
 /*
-    EL7062 channel 1 as a linear traverse, controlled from the terminal.
+    One EL7062 channel as a linear traverse, controlled from the terminal.
 
     The drive runs Cyclic Synchronous Position with commutation type 17
     ("stepper with encoder"): it closes its position loop around the encoder,
@@ -47,6 +47,8 @@ use std::{
 const USAGE: &str = "el7062_traverse <interface>\n \
      example: sudo ./target/release/examples/el7062_traverse enp4s0";
 
+/// Which EL7062 to drive when the bus has several, counted from 1 in bus order.
+const EL7062_INDEX: usize = 1;
 const CH: EL7062Port = EL7062Port::Ch1;
 
 const CYCLE_TIME_US: u64 = 1000;
@@ -142,29 +144,32 @@ fn main() {
     let cycle_time_us: u64 = CYCLE_TIME_US;
 
     let mut el7062 = EL7062::new();
-    let channel1 = &mut el7062.configuration.channel_1;
-    channel1.motor.rated_current = MOTOR_RATED_MA;
-    channel1.motor.configured_motor_current = MOTOR_CONFIGURED_MA;
-    channel1.motor.motor_full_steps_per_revolution = MOTOR_FULL_STEPS_PER_REV;
-    channel1.feedback.encoder =
+    let channel = match CH {
+        EL7062Port::Ch1 => &mut el7062.configuration.channel_1,
+        EL7062Port::Ch2 => &mut el7062.configuration.channel_2,
+    };
+    channel.motor.rated_current = MOTOR_RATED_MA;
+    channel.motor.configured_motor_current = MOTOR_CONFIGURED_MA;
+    channel.motor.motor_full_steps_per_revolution = MOTOR_FULL_STEPS_PER_REV;
+    channel.feedback.encoder =
         EncoderConfig::wired(ENCODER_TYPE, ENCODER_INCR_PER_REV).expect("non-zero resolution");
     // This rig's encoder counts the opposite way round to its motor; at type
     // 17 that closes the loop with positive feedback unless inverted.
-    channel1.feedback.invert_feedback_direction = true;
+    channel.feedback.invert_feedback_direction = true;
 
-    let amp = &mut channel1.amplifier;
+    let amp = &mut channel.amplifier;
     amp.commutation = Commutation::StepperWithEncoder;
     amp.stand_still_torque_limitation = STAND_STILL_TORQUE_PERMILLE;
     amp.velocity_limitation = VELOCITY_LIMIT_REV_PER_MIN;
     amp.acceleration_limitation = ACCEL_LIMIT_0_1_RAD_PER_S2;
     // One revolution of following error for 100 ms before the drive faults.
     amp.following_error = FollowingErrorMonitor::enabled(
-        channel1.feedback.position_scale.increments_per_revolution(),
+        channel.feedback.position_scale.increments_per_revolution(),
         100,
     )
     .expect("usable following error window");
 
-    let position_scale = el7062.configuration.channel_1.feedback.position_scale;
+    let position_scale = channel.feedback.position_scale;
     let scale = Scale {
         incr_per_step: position_scale.increments_per_step(MOTOR_FULL_STEPS_PER_REV),
     };
@@ -240,13 +245,21 @@ fn main() {
         std::thread::sleep(Duration::from_millis(100));
     }
 
-    let addr = eth_handle
+    let el7062_addrs: Vec<u16> = eth_handle
         .try_get_subdevices_vec_sync()
         .unwrap()
         .iter()
-        .find(|s| s.product_id == EL7062_PRODUCT_ID)
+        .filter(|s| s.product_id == EL7062_PRODUCT_ID)
         .map(|s| s.device_address)
-        .expect("No EL7062 found on the bus");
+        .collect();
+    let addr = *el7062_addrs
+        .get(EL7062_INDEX.wrapping_sub(1))
+        .unwrap_or_else(|| {
+            panic!(
+                "EL7062_INDEX is {EL7062_INDEX}, but the bus has {} EL7062 ({el7062_addrs:04X?})",
+                el7062_addrs.len()
+            )
+        });
     el7062
         .write_config(eth_control.channel.clone(), addr, &el7062.get_config())
         .expect("Failed to write EL7062 config");
@@ -263,7 +276,13 @@ fn main() {
         std::thread::sleep(Duration::from_millis(10));
     }
 
-    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    // Other EL7062s on the bus are left untouched.
+    let subdevice = eth_handle
+        .try_get_subdevices_vec_sync()
+        .unwrap()
+        .into_iter()
+        .find(|s| s.device_address == addr)
+        .expect("selected EL7062 missing from the process image");
 
     // Reading stdin blocks, so it gets its own thread and the cycle loop only
     // polls the channel.
@@ -309,13 +328,9 @@ fn main() {
         }
 
         if let Some(inputs) = eth_handle.get_inputs() {
-            for subdevice in &subdevices {
-                if subdevice.product_id == EL7062_PRODUCT_ID {
-                    let input = &inputs[subdevice.start_tx..subdevice.end_tx];
-                    el7062.input(BitSlice::from_slice(input)).unwrap();
-                    el7062.input_post_process().unwrap();
-                }
-            }
+            let input = &inputs[subdevice.start_tx..subdevice.end_tx];
+            el7062.input(BitSlice::from_slice(input)).unwrap();
+            el7062.input_post_process().unwrap();
         }
 
         let cycle = eth_handle.get_current_cycle();
@@ -390,13 +405,9 @@ fn main() {
         }
 
         if let Some(outputs) = eth_handle.write_outputs() {
-            for subdevice in &subdevices {
-                if subdevice.product_id == EL7062_PRODUCT_ID {
-                    el7062.output_pre_process().unwrap();
-                    let out = &mut outputs[subdevice.start_rx..subdevice.end_rx];
-                    el7062.output(BitSlice::from_slice_mut(out)).unwrap();
-                }
-            }
+            el7062.output_pre_process().unwrap();
+            let out = &mut outputs[subdevice.start_rx..subdevice.end_rx];
+            el7062.output(BitSlice::from_slice_mut(out)).unwrap();
         }
         eth_handle.send_outputs();
     }

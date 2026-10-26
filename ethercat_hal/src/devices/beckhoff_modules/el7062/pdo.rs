@@ -507,80 +507,83 @@ impl TxPdoObject for DiInputs {
 ///
 /// Each field corresponds to one TxPDO mapping object. The order and the
 /// `Option` state must match the SyncManager 3 assignment (`0x1C13`) for the
-/// selected device mode.
+/// selected device mode. Keep the fields in ascending index order: some
+/// terminals lay out the process image by index regardless of the order
+/// written to `0x1C13`.
 #[derive(Debug, Clone, TxPdo)]
 pub struct EL7062TxPdo {
     #[pdo_object_index(0x1A00)]
     pub ch1_position: Option<FbPosition>,
     #[pdo_object_index(0x1A01)]
     pub ch1_statusword: Option<DrvStatusWord>,
-    #[pdo_object_index(0x1A06)]
-    pub ch1_following_error: Option<DrvFollowingError>,
     #[pdo_object_index(0x1A02)]
     pub ch1_velocity_actual: Option<DrvVelocityActual>,
-    #[pdo_object_index(0x1A10)]
-    pub ch1_digital_inputs: Option<DiInputs>,
     #[pdo_object_index(0x1A03)]
     pub ch1_torque_actual: Option<DrvTorqueActual>,
-    #[pdo_object_index(0x1A0E)]
-    pub ch1_mode_display: Option<DrvModeOfOperationDisplay>,
     #[pdo_object_index(0x1A04)]
     pub ch1_info_data_1: Option<DrvInfoData>,
     #[pdo_object_index(0x1A05)]
     pub ch1_info_data_2: Option<DrvInfoData>,
+    #[pdo_object_index(0x1A06)]
+    pub ch1_following_error: Option<DrvFollowingError>,
     #[pdo_object_index(0x1A0D)]
     pub ch1_info_data_3: Option<DrvInfoData>,
+    #[pdo_object_index(0x1A0E)]
+    pub ch1_mode_display: Option<DrvModeOfOperationDisplay>,
+    #[pdo_object_index(0x1A10)]
+    pub ch1_digital_inputs: Option<DiInputs>,
 
     #[pdo_object_index(0x1A80)]
     pub ch2_position: Option<FbPosition>,
     #[pdo_object_index(0x1A81)]
     pub ch2_statusword: Option<DrvStatusWord>,
-    #[pdo_object_index(0x1A86)]
-    pub ch2_following_error: Option<DrvFollowingError>,
     #[pdo_object_index(0x1A82)]
     pub ch2_velocity_actual: Option<DrvVelocityActual>,
-    #[pdo_object_index(0x1A90)]
-    pub ch2_digital_inputs: Option<DiInputs>,
     #[pdo_object_index(0x1A83)]
     pub ch2_torque_actual: Option<DrvTorqueActual>,
-    #[pdo_object_index(0x1A8E)]
-    pub ch2_mode_display: Option<DrvModeOfOperationDisplay>,
     #[pdo_object_index(0x1A84)]
     pub ch2_info_data_1: Option<DrvInfoData>,
     #[pdo_object_index(0x1A85)]
     pub ch2_info_data_2: Option<DrvInfoData>,
+    #[pdo_object_index(0x1A86)]
+    pub ch2_following_error: Option<DrvFollowingError>,
     #[pdo_object_index(0x1A8D)]
     pub ch2_info_data_3: Option<DrvInfoData>,
+    #[pdo_object_index(0x1A8E)]
+    pub ch2_mode_display: Option<DrvModeOfOperationDisplay>,
+    #[pdo_object_index(0x1A90)]
+    pub ch2_digital_inputs: Option<DiInputs>,
 }
 
 /// # RxPDO of the EL7062.
 ///
 /// Each field corresponds to one RxPDO mapping object. The order and the
 /// `Option` state must match the SyncManager 2 assignment (`0x1C12`) for the
-/// selected device mode.
+/// selected device mode. Keep the fields in ascending index order, as for
+/// [`EL7062TxPdo`].
 #[derive(Debug, Clone, RxPdo)]
 pub struct EL7062RxPdo {
     #[pdo_object_index(0x1600)]
     pub ch1_controlword: Option<DrvControlWord>,
-    #[pdo_object_index(0x1606)]
-    pub ch1_position: Option<DrvTargetPosition>,
     #[pdo_object_index(0x1601)]
     pub ch1_target_velocity: Option<DrvTargetVelocity>,
     #[pdo_object_index(0x1602)]
     pub ch1_target_torque: Option<DrvTargetTorque>,
     #[pdo_object_index(0x1603)]
     pub ch1_commutation_angle: Option<DrvCommutationAngle>,
+    #[pdo_object_index(0x1606)]
+    pub ch1_position: Option<DrvTargetPosition>,
 
     #[pdo_object_index(0x1680)]
     pub ch2_controlword: Option<DrvControlWord>,
-    #[pdo_object_index(0x1686)]
-    pub ch2_position: Option<DrvTargetPosition>,
     #[pdo_object_index(0x1681)]
     pub ch2_target_velocity: Option<DrvTargetVelocity>,
     #[pdo_object_index(0x1682)]
     pub ch2_target_torque: Option<DrvTargetTorque>,
     #[pdo_object_index(0x1683)]
     pub ch2_commutation_angle: Option<DrvCommutationAngle>,
+    #[pdo_object_index(0x1686)]
+    pub ch2_position: Option<DrvTargetPosition>,
 }
 
 /// Predefined PDO assignments for the EL7062.
