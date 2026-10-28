@@ -2,7 +2,7 @@ use crate::{EthercatDeviceIdentity, IdentifiedDevice};
 use bitvec::field::BitField;
 use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;
-use qitech_lib_ethercat_hal::PdoError;
+use qitech_lib_ethercat_hal::{DeviceError, PdoError};
 use qitech_lib_ethercat_hal_derive::PdoObject;
 
 use crate::{
@@ -55,16 +55,29 @@ impl AnalogCurrentInputDevice for Wago750_455 {
         ElectricCurrent::new::<milliampere>(20.0)
     }
 
-    fn get_current_relative(&self, port: usize) -> Option<f64> {
+    fn get_current_relative(&self, port: usize) -> Result<f64, DeviceError> {
         let input = match port {
             0 => &self.tx_pdo.ai1,
             1 => &self.tx_pdo.ai2,
             2 => &self.tx_pdo.ai3,
             3 => &self.tx_pdo.ai4,
-            _ => panic!("Port index out of range [0, 3]!"),
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "Wago750_455",
+                    port,
+                });
+            }
         };
 
-        if input.error { None } else { Some(input.value) }
+        if input.error {
+            return Err(DeviceError::ChannelFault {
+                device: "Wago750_455",
+                channel: port,
+                fault: "Wiring error or current outside of valid range",
+            });
+        }
+
+        Ok(input.value)
     }
 
     fn get_port_count(&self) -> usize {

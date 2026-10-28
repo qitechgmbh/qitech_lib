@@ -77,8 +77,8 @@ fn main() {
         eth_control.finish_read();
 
         match wago750_455.get_current(0) {
-            Some(current) => println!("AI {:.2} mA", current.get::<milliampere>()),
-            None => println!("Wiring Error"),
+            Ok(current) => println!("AI {:.2} mA", current.get::<milliampere>()),
+            Err(err) => eprintln!("Device Error: {err}"),
         }
         std::thread::sleep(Duration::from_millis(250));
     }
