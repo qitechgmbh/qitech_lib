@@ -65,7 +65,9 @@ where
     cycle: Arc<AtomicU64>,
     cycle_time_us: Arc<AtomicU64>,
     subdevice_count: Arc<AtomicU64>, // maybe a Mailbox<Status> or smth like that makes more sense?
-    next_cycle: Instant,
+    /// When OP was requested, and how many cycles have passed since without all subdevices in OP.
+    op_ramp_started: Instant,
+    op_ramp_cycles: u32,
     interface: Option<String>,
     subdevices: Arc<Mutex<[MetaSubdevice; MAX_SUBDEVICES]>>,
     state: Arc<AtomicU8>,
@@ -111,7 +113,8 @@ where
             cycle_time_us,
             interface,
             subdevice_count,
-            next_cycle: std::time::Instant::now(),
+            op_ramp_started: Instant::now(),
+            op_ramp_cycles: 0,
             subdevices,
             state,
             pending_state_change: None,
