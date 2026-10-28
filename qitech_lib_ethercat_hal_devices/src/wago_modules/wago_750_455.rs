@@ -61,11 +61,20 @@ impl AnalogCurrentInputDevice for Wago750_455 {
             1 => &self.tx_pdo.ai2,
             2 => &self.tx_pdo.ai3,
             3 => &self.tx_pdo.ai4,
-            _ => return Err(DeviceError::InvalidPort { device: "Wago750_455", port })
+            _ => {
+                return Err(DeviceError::InvalidPort {
+                    device: "Wago750_455",
+                    port,
+                });
+            }
         };
 
         if input.error {
-            return Err(DeviceError::ChannelFault { device: "Wago750_455", channel: port, fault: "Wiring error or current outside of valid range" });
+            return Err(DeviceError::ChannelFault {
+                device: "Wago750_455",
+                channel: port,
+                fault: "Wiring error or current outside of valid range",
+            });
         }
 
         Ok(input.value)

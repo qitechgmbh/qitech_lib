@@ -204,7 +204,6 @@ pub enum EL30XXPresentation {
 }
 
 impl EL30XXPresentation {
-
     pub fn raw_to_relative(&self, raw: u16) -> f64 {
         let raw = U16SigningConverter::load_raw(raw);
 
