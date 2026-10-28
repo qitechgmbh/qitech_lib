@@ -16,20 +16,20 @@ pub trait AnalogCurrentInputDevice {
     /// The given `value` will be in the interval `[-1, 1]` for devices that support negative
     /// input values and in the interval `[0, 1]` for devices with only positive input values.
     /// The value should be interpolated between the minimum and maximum values of the device.
-    fn get_current_relative(&self, port: usize) -> Option<f64>;
+    fn get_current_relative(&self, port: usize) -> Result<f64, DeviceError>;
 
     /// Get the current of a specific input.
     /// If the retured `Option` is `None´, a wireing error occured or
     /// actual current present at the physical input is out of range.
     ///
     /// The current will be inside the interval `[get_minimum_current(), get_maximum_current()]`.
-    fn get_current(&self, port: usize) -> Option<ElectricCurrent> {
+    fn get_current(&self, port: usize) -> Result<ElectricCurrent, DeviceError> {
         let value = from_relative(
             self.get_current_relative(port)?,
             self.get_minimum_current().get::<ampere>(),
             self.get_maximum_current().get::<ampere>(),
         );
-        Some(ElectricCurrent::new::<ampere>(value))
+        Ok(ElectricCurrent::new::<ampere>(value))
     }
 
     fn get_port_count(&self) -> usize;
@@ -75,17 +75,11 @@ pub trait AnalogInputDevice {
 
 impl<T: AnalogCurrentInputDevice> AnalogInputDevice for T {
     fn get_input(&self, port: usize) -> Result<AnalogInputInput, DeviceError> {
-        if let Some(value) = self.get_current_relative(port) {
-            Ok(AnalogInputInput {
-                normalized: value as f32,
-                wiring_error: false,
-            })
-        } else {
-            Ok(AnalogInputInput {
-                normalized: 0.0,
-                wiring_error: true,
-            })
-        }
+        let value = self.get_current_relative(port)?;
+        Ok(AnalogInputInput {
+            normalized: value as f32,
+            wiring_error: false,
+        })
     }
 
     fn get_port_count(&self) -> usize {
