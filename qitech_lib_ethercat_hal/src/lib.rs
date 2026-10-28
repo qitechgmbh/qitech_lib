@@ -6,10 +6,11 @@ pub mod debugging;
 pub mod device;
 pub mod ecat_channel_impl;
 pub mod error;
-pub(crate) mod ethercrab_impl;
+//pub(crate) mod ethercrab_impl;
 pub mod helpers;
 pub mod interface_discovery;
 pub mod io;
+pub mod mock;
 pub mod pdo;
 pub mod sdo;
 pub mod shared_config;
@@ -126,6 +127,86 @@ where
         }
     }
 }
+
+
+
+/// The EtherCAT master the [`StateMachine`](crate::StateMachine) drives. Implement it to run the
+/// state machine on your own master; `qitech_lib_ethercat_hal` has one on ethercrab, and
+/// [`MockMaster`](crate::mock::MockMaster) needs no hardware.
+///
+/// The state machine calls the transitions in this order: `init` (Init → PreOp), then on a
+/// request to go to OP `into_pre_op_pdi`, `configure_dc_sync`, `into_safe_op` and
+/// `request_into_op`, and from PreOp+PDI on `tx_rx` once per cycle. Subdevice requests (SDO,
+/// EEPROM, DC sync, oversampling) only come in PreOp, the diagnostics (`register_read`,
+/// `al_status_snapshot`) in every state.
+pub trait EthercatMaster : Send {
+    /// Init → PreOp: find the subdevices, which `get_subdevices` lists afterwards.
+    fn init(&mut self, interface : &str) -> Result<(), EthercatErr>;
+    
+    /// PreOp → PreOp with process data, including any static DC sync at `cycle_time`.
+    fn into_pre_op_pdi(&mut self, cycle_time: Duration) -> Result<(), EthercatErr>;
+    
+    fn configure_dc_sync(&mut self, config: &DcConfiguration) -> Result<(), EthercatErr>;
+    
+    /// → SafeOp. Afterwards `get_subdevices` has the process image ranges.
+    fn into_safe_op(&mut self) -> Result<(), EthercatErr>;
+    
+    fn request_into_op(&mut self) -> Result<(), EthercatErr>;
+    
+    /// One cycle: sends the outputs given to `write_outputs`, receives the inputs.
+    fn tx_rx(&mut self) -> Result<TxRxResult, EthercatErr>;
+
+    fn get_subdevices(&self) -> Vec<MetaSubdevice>;
+    
+    /// Copies the inputs of all subdevices back to back into `buffer`, as received by `tx_rx`.
+    fn read_inputs(&self, buffer: &mut [u8]);
+    
+    /// Takes the outputs of all subdevices back to back, to be sent with the next `tx_rx`.
+    fn write_outputs(&mut self, outputs: &[u8]);
+    /// Technically an "expedited" write
+    fn sdo_write<T: sdo::EthercatSdoBytes>(&mut self, device_address: u16, index : u16, sub_index : u8,value : T) -> Result<(), ChannelError>;
+    /// Technically an "expedited" read
+    fn sdo_read<T: sdo::EthercatSdoBytes>(&mut self, device_address: u16, index : u16, sub_index : u8) -> Result<T, ChannelError>;
+    
+    fn eeprom_read_u16(
+        &mut self,
+        device_address: u16,
+        word_address: u16,
+    ) -> Result<u16, ChannelError>;
+    
+    fn eeprom_write_u16(
+        &mut self,
+        device_address: u16,
+        word_address: u16,
+        word: u16,
+    ) -> Result<(), ChannelError>;
+    
+    fn enable_dc_sync0(&mut self, device_address: u16) -> Result<(), ChannelError>;    
+    fn enable_dc_sync01(
+        &mut self,
+        device_address: u16,
+        sync1_period: Duration,
+    ) -> Result<(), ChannelError>;
+    fn configure_oversampling(
+        &mut self,
+        device_address: u16,
+        oversampling_settings: &[(u16, u16)],
+    ) -> Result<(), ChannelError>;
+
+    fn register_read(&mut self, device_address: u16, register: u16) -> Result<u16, ChannelError>;
+    /// The AL state of every subdevice, also while a transition is failing.
+    fn al_status_snapshot(&mut self) -> Vec<al_diagnostics::SubDeviceAlStatus>;
+}
+
+/// What one [`EthercatMaster::tx_rx`] cycle reports.
+#[derive(Clone, Copy, Debug)]
+pub struct TxRxResult {
+    pub dc_system_time: u64,
+    /// How long to wait before the next cycle to stay in step with the DC reference clock.
+    pub next_cycle_wait: Duration,
+    pub all_op: bool,
+}
+
 
 pub trait Consumer {
     fn read(&mut self) -> Option<&[u8]>;
@@ -848,6 +929,16 @@ impl Default for MasterConfiguration {
 }
 
 pub fn init_ethercat(
+    _interface_name: &str,
+    _config: Option<MasterConfiguration>,
+) -> EtherCATControl<TripleBufConsumer, Arc<Mailbox>> {
+    todo!("pass EtherCrabMaster to init_ethercat_with once ethercrab_impl compiles again")
+}
+
+/// Like [`init_ethercat`], but the state machine drives `master`, e.g. a
+/// [`MockMaster`](crate::mock::MockMaster).
+pub fn init_ethercat_with<M: EthercatMaster + Send + 'static>(
+    mut master: M,
     interface_name: &str,
     config: Option<MasterConfiguration>,
 ) -> EtherCATControl<TripleBufConsumer, Arc<Mailbox>> {
@@ -934,7 +1025,7 @@ pub fn init_ethercat(
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx, diagnostic_tx);
     let join_handle = std::thread::Builder::new()
         .name("EthercatStateMachine".into())
-        .spawn(move || controller.ethercat_state_machine())
+        .spawn(move || controller.ethercat_state_machine(&mut master))
         .expect("Failed to spawn thread");
     EtherCATControl {
         channel,
