@@ -1,4 +1,4 @@
-use crate::sdo::SdoRequest;
+use crate::{helpers::signing_converter_u16::U16SigningConverter, sdo::SdoRequest};
 
 impl EL30XXChannelConfiguration {
     pub fn get_channel_coe_writes(&self, device_address: u16, base_index: u16) -> Vec<SdoRequest> {
@@ -203,10 +203,19 @@ pub enum EL30XXPresentation {
     SignedMagnitude,
 }
 
-pub enum EL30XXValue {
-    Signed(i16),
-    Unsigned(u16),
-    SignedMagnitude(i16),
+impl EL30XXPresentation {
+
+    pub fn raw_to_relative(&self, raw: u16) -> f64 {
+        let raw = U16SigningConverter::load_raw(raw);
+
+        let value: i16 = match self {
+            EL30XXPresentation::Unsigned => raw.as_unsigned() as i16,
+            EL30XXPresentation::Signed => raw.as_signed(),
+            EL30XXPresentation::SignedMagnitude => raw.as_signed_magnitude(),
+        };
+
+        f64::from(value) / f64::from(i16::MAX)
+    }
 }
 
 impl From<EL30XXPresentation> for u8 {
