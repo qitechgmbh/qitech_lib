@@ -3,7 +3,7 @@ use super::{EthercatDeviceIdentity, IdentifiedDevice, NewEthercatDevice};
 use qitech_lib_ethercat_hal::DeviceError;
 use qitech_lib_ethercat_hal::device::{ConfigurableDevice, Configuration};
 use qitech_lib_ethercat_hal::io::analog_input::physical::AnalogInputRange;
-use qitech_lib_ethercat_hal::io::analog_input::{AnalogInputDevice, AnalogInputInput};
+use qitech_lib_ethercat_hal::io::analog_input::{AnalogCurrentInputDevice, AnalogInputDevice, AnalogInputInput};
 use qitech_lib_ethercat_hal::pdo::RxPdo;
 use qitech_lib_ethercat_hal::pdo::TxPdo;
 use qitech_lib_ethercat_hal::sdo::SdoRequest;
@@ -67,52 +67,56 @@ impl NewEthercatDevice for EL3021 {
     }
 }
 
-impl AnalogInputDevice for EL3021 {
-    fn get_input(&self, port: usize) -> Result<AnalogInputInput, DeviceError> {
-        let raw_value = match port {
-            0 => match &self.txpdo {
-                EL3021TxPdo {
-                    ai_standard_channel1: Some(ai_standard),
-                    ..
-                } => ai_standard.value,
-                EL3021TxPdo {
-                    ai_compact_channel1: Some(ai_compact),
-                    ..
-                } => ai_compact.value,
-                _ => panic!("EL3001 only has one port"),
-            },
-            _ => {
-                return Err(DeviceError::InvalidPort {
-                    device: "EL3021",
-                    port,
-                });
-            }
-        };
-        let channel_config = &self.configuration.channel1;
-        let raw_value = U16SigningConverter::load_raw(raw_value);
-        let value: i16 = match channel_config.presentation {
-            EL30XXPresentation::Unsigned => raw_value.as_unsigned() as i16,
-            EL30XXPresentation::Signed => raw_value.as_signed(),
-            EL30XXPresentation::SignedMagnitude => raw_value.as_signed_magnitude(),
-        };
-        let normalized = f32::from(value) / f32::from(i16::MAX);
-        Ok(AnalogInputInput {
-            normalized,
-            wiring_error: false,
-        })
+impl AnalogCurrentInputDevice for EL3021 {
+
+    fn get_minimum_current(&self) -> ElectricCurrent {
+        ElectricCurrent::new::<milliampere>(4.0)
+    }
+
+    fn get_maximum_current(&self) -> ElectricCurrent {
+        ElectricCurrent::new::<milliampere>(20.0)
     }
 
     fn get_port_count(&self) -> usize {
         1
     }
 
-    fn analog_input_range(&self) -> AnalogInputRange {
-        AnalogInputRange::Current {
-            min: ElectricCurrent::new::<milliampere>(4.0),
-            max: ElectricCurrent::new::<milliampere>(20.0),
-            min_raw: 0,
-            max_raw: i16::MAX,
+    fn get_current_relative(&self, port: usize) -> Result<f64, DeviceError> {
+        if port != 0 {
+            return Err(DeviceError::InvalidPort {
+                device: "EL3021",
+                port,
+            });
         }
+
+        let raw = match &self.txpdo {
+            EL3021TxPdo {
+                ai_standard_channel1: Some(ai_standard),
+                ..
+            } => {
+                if ai_standard.undervoltage {
+                    return Err(DeviceError::ChannelFault { device: "EL3021", channel: port, fault: "Undervoltage" })
+                }
+
+                if ai_standard.overvoltage {
+                    return Err(DeviceError::ChannelFault { device: "EL3021", channel: port, fault: "Overvoltage" })
+                }
+
+                if ai_standard.error {
+                    return Err(DeviceError::ChannelFault { device: "EL3021", channel: port, fault: "Wiring error" })
+                }
+
+                ai_standard.value
+            },
+            EL3021TxPdo {
+                ai_compact_channel1: Some(ai_compact),
+                ..
+            } => ai_compact.value,
+            _ => return Err(DeviceError::InvalidState { device: "EL3021", reason: "No input channel configured" })
+        };
+
+        let presentation = self.configuration.channel1.presentation;
+        Ok(presentation.raw_to_relative(raw))
     }
 }
 
