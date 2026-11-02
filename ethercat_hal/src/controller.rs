@@ -17,7 +17,9 @@ use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority};
 use anyhow::bail;
 #[cfg(target_os = "linux")]
 use common::set_irq_affinity;
+use ethercrab::TxRxResponse;
 use ethercrab::std::ethercat_now;
+use ethercrab::subdevice_group::CycleInfo;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi},
@@ -42,6 +44,13 @@ type OpGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, ethercrab::DefaultLock, O
 enum PreopResult {
     Preop(PreopGroup),
     PreopPdiDc(PreopPdiDcGroup),
+}
+
+#[derive(Default)]
+struct DcFramePiState {
+    integral: i64,
+    error: i64,
+    delta: i64,
 }
 
 fn setup_tx_rx_thread(
@@ -417,84 +426,132 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         return Ok(group_op);
     }
 
+    fn calc_frame_timing(
+        &mut self,
+        cycle_start: Instant,
+        cycle_info: &CycleInfo,
+        state: &mut DcFramePiState,
+        cycle_time_ns: i64,
+    ) {
+        // Should these be configurable?
+        const PGAIN: f64 = 0.01 as f64;
+        const IGAIN: f64 = 0.00002 as f64;
+        // sync_offset_ns is 50% of macro cycle time(Sync1 FULL period)
+        // This essentially means we send the frame 50% into the sync1 period
+        let sync_offset_ns: i64 = (cycle_time_ns) / 2;
+        state.delta = (cycle_info.dc_system_time - sync_offset_ns as u64) as i64 % cycle_time_ns;
+        if state.delta > (sync_offset_ns) {
+            state.delta = state.delta - cycle_time_ns
+        }
+        state.error = -state.delta;
+        // Not sure what to clamp to, if at all Clamping seemed to have a negative effect? so just keep it as is
+        state.integral = state.integral + state.error;
+        // Maybe instead it makes sense to clamp offsettime?
+        let offsettime = ((state.error as f64 * PGAIN) + (state.integral as f64 * IGAIN)) as i64;
+        self.dc_system_time_ns
+            .store(cycle_info.dc_system_time, Relaxed);
+        self.next_cycle = cycle_start
+            + Duration::from_nanos(
+                (cycle_time_ns + offsettime.clamp(cycle_time_ns * -1, cycle_time_ns)) as u64,
+            );
+    }
+
     async fn handle_op(
         &mut self,
         group_opt: Option<OpGroup>,
         maindevice: &MainDevice<'_>,
         spinner: SpinSleeper,
     ) -> Result<(), EthercatErr> {
+        let mut dc_frame_pi_state = DcFramePiState::default();
         let mut is_all_op = false;
         let mut not_all_op_cycles: u32 = 0;
         let ramp_started = Instant::now();
-        let cycle_time_ns = self.current_config.target_cycle_time_us as i64 * 1000;
-        let mut integral: i64 = 0;
-        let mut error: i64;
-        let mut delta: i64;
-        // TODO Make these configurable?
-        let pgain = 0.01 as f64;
-        let igain = 0.00002 as f64;
-        // sync_offset_ns is 50% of macro cycle time(Sync1 FULL period)
-        // This essentially means we send the frame 50% into the sync1 period
-        let sync_offset_ns: u64 = (self.current_config.target_cycle_time_us as u64 * 1000) / 2;
+        let cycle_time_ns = self.current_config.target_cycle_time_us as i64 * 1000;        
         let group = group_opt.unwrap();
-
         loop {
             // Instant::now() on Almost any modern linux pc compiles down to one instruction if pc is not older than 2006 or so
             let cycle_start = Instant::now();
-            let res = self
-                .guard(
-                    EtherCATTransition::TxRx(EtherCATState::Op),
-                    maindevice,
-                    group.tx_rx_dc(maindevice),
-                )
-                .await?;
-            delta = (res.extra.dc_system_time - sync_offset_ns) as i64 % cycle_time_ns;
-            if delta > (cycle_time_ns / 2) {
-                delta = delta - cycle_time_ns
-            }
-            error = -delta;
-            // Not sure what to clamp to, if at all Clamping seemed to have a negative effect? so just keep it as is
-            integral = integral + error;
-            // Maybe instead it makes sense to clamp offsettime?
-            let offsettime = ((error as f64 * pgain) + (integral as f64 * igain)) as i64;
-            self.dc_system_time_ns
-                .store(res.extra.dc_system_time, Relaxed);
-            self.next_cycle = cycle_start
-                + Duration::from_nanos(
-                    (cycle_time_ns + offsettime.clamp(cycle_time_ns * -1, cycle_time_ns)) as u64,
-                );
+            let res = group.tx_rx_dc(maindevice).await;
 
-            if !is_all_op {
-                if res.all_op() {
-                    let mut subdevice_guard = self.subdevices.lock().await;
-                    for i in 0..self.subdevice_count.load(Relaxed) {
-                        subdevice_guard[i as usize].initialized = true;
-                    }
-                    self.all_subdevices_operational.store(true, Relaxed);
-                    drop(subdevice_guard);
-                    not_all_op_cycles = 0;
-                    is_all_op = true;
-                } else {
-                    spinner.sleep_until(self.next_cycle);
-                    self.cycle_time_us
-                        .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
-                    not_all_op_cycles += 1;
+            match res {
+                Ok(response) => {
+                    self.calc_frame_timing(
+                        cycle_start,
+                        &response.extra,
+                        &mut dc_frame_pi_state,
+                        cycle_time_ns,
+                    );
 
-                    if not_all_op_cycles >= self.current_config.op_ramp_grace_cycles {
-                        self.record(
-                            EtherCATTransition::OpRamp,
-                            maindevice,
-                            ramp_started,
-                            Err::<(), _>(format!(
-                                "not all subdevices reached OP within \
-                                                 {not_all_op_cycles} cycles"
-                            )),
-                        )
-                        .await?;
+                    if !is_all_op {
+                        if response.all_op() {
+                            let mut subdevice_guard = self.subdevices.lock().await;
+                            for i in 0..self.subdevice_count.load(Relaxed) {
+                                subdevice_guard[i as usize].initialized = true;
+                            }
+                            self.all_subdevices_operational.store(true, Relaxed);
+                            drop(subdevice_guard);
+                            not_all_op_cycles = 0;
+                            is_all_op = true;
+                        } else {
+                            spinner.sleep_until(self.next_cycle);
+                            self.cycle_time_us
+                                .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
+                            not_all_op_cycles += 1;
+
+                            if not_all_op_cycles >= self.current_config.op_ramp_grace_cycles {
+                                self.record(
+                                    EtherCATTransition::OpRamp,
+                                    maindevice,
+                                    ramp_started,
+                                    Err::<(), _>(format!(
+                                        "not all subdevices reached OP within \
+                                                    {not_all_op_cycles} cycles"
+                                    )),
+                                )
+                                .await?;
+                            }
+                            continue;
+                        }
                     }
-                    continue;
                 }
-            }
+                Err(e) => {
+                    match e {
+                        ethercrab::error::Error::Pdu(pdu_error) => {
+                        
+                        },
+                        ethercrab::error::Error::WorkingCounter { expected, received } => {
+
+                        },
+                        ethercrab::error::Error::Timeout(timeout_error) => {
+
+                        },
+                        ethercrab::error::Error::SendFrame => {
+
+                        },
+                        ethercrab::error::Error::ReceiveFrame => {
+
+                        },
+                        ethercrab::error::Error::PartialSend { len, sent } => {
+
+                        }
+                        ethercrab::error::Error::PdiTooLong { max_length, desired_length } => {
+
+                        },
+                        ethercrab::error::Error::Wire(wire_error) => {
+
+                        },
+                        ethercrab::error::Error::SubDevice(al_status_code) => {
+
+                        },
+                        ethercrab::error::Error::DistributedClock(distributed_clock_error) => {
+                            
+                        },
+                        _ => {
+                            // Not relevant errors
+                        }
+                    }
+                }
+            };
 
             match self.input_producer.input_buffer_mut() {
                 Some(buffer) => {
@@ -522,6 +579,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
             // This gives the client side time to look at the inputs and write outputs
             // Might be a bit too tight if running < 125us but at that point it isnt really stable anyways
+            // When running low cycle times and wanting rt-latency you will always need extra work client-side
+            // Alternatively check for outputs before tx_rx
             spinner.sleep_until(self.next_cycle - Duration::from_nanos(10000));
             match self.output_consumer.read() {
                 Some(full_buffer) => {
