@@ -747,13 +747,16 @@ pub fn set_current_thread_rt_priority(_priority: i32) {
     );
 }
 
-// Currently ignored by controller, but should be used to select driver for txrx
-// XDP should in theory be most performant
-// While tx_rx_blocking is supported on most platforms
-// Which of these actually work depend on the controller.rs used (ethercrab supports xdp io_uring and the standard one)
+/// Which ethercrab TX/RX task the TX/RX thread runs.
+// XDP should in theory be most performant, ethercrab has it behind its `xdp` feature
 #[derive(Clone, Debug)]
 pub enum MasterTxRxConfig {
+    /// ethercrab's poll-based `tx_rx_task` on a non-blocking raw socket. Recovers from lost
+    /// frames, but a stale or duplicate reply ends it.
     TxRxBlocking,
+    /// ethercrab's `tx_rx_task_io_uring`, Linux only (falls back to `TxRxBlocking` elsewhere).
+    /// Fewer syscalls per frame, but it waits for a reply to every frame it sent, so one
+    /// unanswered frame stalls it for good.
     TxRxIoUring,
     //TX_RX_XDP
 }

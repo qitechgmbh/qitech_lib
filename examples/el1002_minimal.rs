@@ -1,9 +1,12 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use ethercat_hal::{
-    BECKHOFF_VENDOR_ID, EtherCATState, MasterConfiguration, devices::{
+    BECKHOFF_VENDOR_ID, EtherCATState, MasterConfiguration,
+    devices::{
         EthercatDevice, NewEthercatDevice,
         beckhoff_modules::el1002::{EL1002, EL1002_PRODUCT_ID},
-    }, init_ethercat, io::digital_input::DigitalInputDevice,
+    },
+    init_ethercat,
+    io::digital_input::DigitalInputDevice,
 };
 use std::{env, time::Duration};
 
@@ -11,9 +14,9 @@ use std::{env, time::Duration};
 fn main() {
     // Initialize EtherCAT Master with the default configuration
     let interface = env::args().nth(1).expect("No Interface-name given");
-    let mut config : MasterConfiguration = MasterConfiguration::default();
-    config.target_cycle_time_us = 1000000;
-    let eth_control = init_ethercat(&interface, Some (config) );
+    let mut config: MasterConfiguration = MasterConfiguration::default();
+    config.target_cycle_time_us = 100000;
+    let eth_control = init_ethercat(&interface, Some(config));
     let mut eth_handle = eth_control.app_handle;
 
     eth_control

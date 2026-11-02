@@ -1,6 +1,5 @@
 use crate::ChannelRequest;
 use crate::EthercatErr;
-use crate::RtOptimizationConfig;
 use crate::TripleBufProducer;
 use crate::ethercat_helpers::configure_oversampling;
 use crate::ethercat_helpers::enable_dc_sync01;
@@ -14,6 +13,7 @@ use crate::{
     send_response,
 };
 use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority};
+use crate::{MasterTxRxConfig, RtOptimizationConfig};
 use crate::{OpCycleError, OpCycleFailure};
 use anyhow::bail;
 #[cfg(target_os = "linux")]
@@ -56,6 +56,7 @@ struct DcFramePiState {
 fn setup_tx_rx_thread(
     interface: String,
     opt: Option<RtOptimizationConfig>,
+    tx_rx_config: MasterTxRxConfig,
 ) -> (Option<MainDevice<'static>>, JoinHandle<Result<(), String>>) {
     let (tx, rx, pdu) = PDU_STORAGE.try_split().expect("can only split once");
     let pdu_tx = tx;
@@ -83,23 +84,22 @@ fn setup_tx_rx_thread(
                 None => (),
             };
 
-            #[cfg(not(target_os = "linux"))]
-            use ethercrab::std::tx_rx_task;
-            #[cfg(target_os = "linux")]
-            use ethercrab::std::tx_rx_task_io_uring;
-
-            #[cfg(target_os = "linux")]
-            return tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
-                .map(|_| ())
-                .map_err(|e| format!("TX/RX task (io_uring) failed: {e}"));
-            #[cfg(not(target_os = "linux"))]
-            return get_async_runtime().block_on(async {
-                let task = tx_rx_task(&interface, pdu_tx, pdu_rx)
-                    .map_err(|e| format!("Failed to create TX/RX task: {e}"))?;
-                task.await
-                    .map(|_| ())
-                    .map_err(|e| format!("TX/RX task failed: {e}"))
-            });
+            match tx_rx_config {
+                #[cfg(target_os = "linux")]
+                MasterTxRxConfig::TxRxIoUring => {
+                    ethercrab::std::tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
+                        .map(|_| ())
+                        .map_err(|e| format!("TX/RX task (io_uring) failed: {e}"))
+                }
+                // smol::block_on drives the async-io reactor the socket is registered with
+                _ => smol::block_on(async {
+                    let task = ethercrab::std::tx_rx_task(&interface, pdu_tx, pdu_rx)
+                        .map_err(|e| format!("Failed to create TX/RX task: {e}"))?;
+                    task.await
+                        .map(|_| ())
+                        .map_err(|e| format!("TX/RX task failed: {e}"))
+                }),
+            }
         })
         .expect("Failed to spawn TX/RX thread");
 
@@ -107,14 +107,14 @@ fn setup_tx_rx_thread(
         pdu,
         Timeouts {
             state_transition: Duration::from_millis(20000),
-            pdu: Duration::from_micros(1000000),
+            pdu: Duration::from_micros(100000),
             eeprom: Duration::from_millis(100),
             wait_loop_delay: Duration::from_millis(0),
             mailbox_echo: Duration::from_millis(100),
             mailbox_response: Duration::from_millis(1000),
         },
         MainDeviceConfig {
-            retry_behaviour: RetryBehaviour::Count(5),
+            retry_behaviour: RetryBehaviour::Count(0),
             dc_static_sync_iterations: 10_000,
         },
     ));
@@ -557,7 +557,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     consecutive_failures += 1;
                     // The client may have dropped its handle, which is no reason to stop,
                     // so send results are ignored below.
-                    
+
                     // A dead TX/RX thread only shows up here as timeouts or a lack of frame
                     // slots, and retrying can't bring it back.
                     if let Some(reason) = self.take_tx_rx_thread_exit() {
@@ -701,6 +701,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                         (maindevice, tx_rx_thread) = setup_tx_rx_thread(
                             self.interface.clone().expect("Should be some"),
                             self.current_config.realtime_optimizations.clone(),
+                            self.current_config.tx_rx_config.clone(),
                         );
                         self.tx_rx_thread = Some(tx_rx_thread);
                         let rt = get_async_runtime();
