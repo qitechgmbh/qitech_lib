@@ -958,16 +958,27 @@ pub fn convert_module_to_meta_ethercat_device(
     let start_rx = coupler_start_rx + module.rx_offset;
     let end_rx = coupler_start_rx + module.rx_offset + module.rx_size;
 
+    // FIXME: if one device has its end aligned to a byte-boundary, the next device's start shifts.
+    // All following devices shift as well. We need to accumulate the shift, possibly calling this
+    // method within the `controller.get_channel().get_modules()` call to fix offsets there
+    let align_to_byte_boundary = |bits: usize| {
+        let rem = bits % 8;
+
+        let aligned = if rem == 0 { bits } else { bits + 8 - rem };
+
+        aligned / 8
+    };
+
     MetaSubdevice {
         name,
         product_id: module.product_id,
         revision: 0x00,
         vendor: module.vendor_id,
-        start_tx: start_tx / 8,
-        end_tx: end_tx / 8,
-        start_rx: start_rx / 8,
-        end_rx: end_rx / 8,
-        device_address: module.slot,
+        start_tx: align_to_byte_boundary(start_tx),
+        end_tx: align_to_byte_boundary(end_tx),
+        start_rx: align_to_byte_boundary(start_rx),
+        end_rx: align_to_byte_boundary(end_rx),
+        device_address: module.belongs_to_addr + module.slot,
         initialized: true,
     }
 }
