@@ -356,9 +356,12 @@ pub enum EL7031DigitalInputPort {
 }
 
 impl IdentifiedDevice for EL7031 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+    fn get_identity() -> EthercatDeviceIdentity {
+        
+    EthercatDeviceIdentity {
         vendor: 0x2,
         product: 0x1b773052,
         revisions: &[0x1A0000, 0x190000],
-    };
+    }
+    }
 }

@@ -78,9 +78,12 @@ impl Default for EL2024RxPdo {
 }
 
 impl IdentifiedDevice for EL2024 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
-        vendor: 0x2,
-        product: 0x07e83052,
-        revisions: &[],
-    };
+    fn get_identity() -> EthercatDeviceIdentity {
+        
+        EthercatDeviceIdentity {
+            vendor: 0x2,
+            product: 0x07e83052,
+            revisions: &[],
+        }
+    }
 }

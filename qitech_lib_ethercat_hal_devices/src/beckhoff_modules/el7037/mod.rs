@@ -346,9 +346,12 @@ impl StepperVelocityEL70x1Device for EL7037 {
 }
 
 impl IdentifiedDevice for EL7037 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+    fn get_identity() -> EthercatDeviceIdentity {
+        
+    EthercatDeviceIdentity {
         vendor: 0x2,
         product: 0x1b7d3052,
         revisions: &[0x00170000],
-    };
+    }
+    }
 }

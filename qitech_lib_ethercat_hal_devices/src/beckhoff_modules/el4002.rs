@@ -162,9 +162,12 @@ impl PredefinedPdoAssignment<EL4002TxPdo, EL4002RxPdo> for EL4002PredefinedPdoAs
     }
 }
 impl IdentifiedDevice for EL4002 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+    fn get_identity() -> EthercatDeviceIdentity {
+        
+    EthercatDeviceIdentity {
         vendor: 0x2,
         product: 0xfa23052,
         revisions: &[0x140000],
-    };
+    }
+    }
 }

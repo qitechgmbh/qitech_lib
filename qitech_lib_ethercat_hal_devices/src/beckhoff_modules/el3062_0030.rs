@@ -232,9 +232,12 @@ impl PredefinedPdoAssignment<EL3062_0030TxPdo, EL3062_0030RxPdo>
 }
 
 impl IdentifiedDevice for EL3062_0030 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
-        vendor: 0x2,
-        product: 0x0bf63052,
-        revisions: &[0x0017001e],
-    };
+    fn get_identity() -> EthercatDeviceIdentity {
+        
+        EthercatDeviceIdentity {
+            vendor: 0x2,
+            product: 0x0bf63052,
+            revisions: &[0x0017001e],
+        }
+    }
 }

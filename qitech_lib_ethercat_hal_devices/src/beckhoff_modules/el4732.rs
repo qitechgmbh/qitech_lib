@@ -209,11 +209,14 @@ impl Default for EL4732Configuration {
 }
 
 impl IdentifiedDevice for EL4732 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+    fn get_identity() -> EthercatDeviceIdentity {
+        
+    EthercatDeviceIdentity {
         vendor: 0x2,
         product: 0x127C3052,
         // Revisions 0x00000000 and 0x00000001 are marked HideType (legacy) in the ESI
         // and are intentionally excluded.
         revisions: &[0x00020000, 0x00030000, 0x00040000],
-    };
+    }
+    }
 }

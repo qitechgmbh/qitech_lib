@@ -29,7 +29,7 @@ fn main() {
     // Find the Wago 750-354 coupler subdevice
     let coupler_subdev = subdevices
         .iter()
-        .find(|s| Wago750_354::IDENTITY.matches(s))
+        .find(|s| Wago750_354::get_identity().matches(s))
         .expect("No Wago 750-354 coupler found on the bus");
 
     // Devices connected to 750-354 are not actual ethercat terminals and are commonly called "modules"
@@ -48,7 +48,7 @@ fn main() {
     let (coupler_start_tx, coupler_start_rx) = {
         let coupler_subdev = subdevices
             .iter()
-            .find(|s| Wago750_354::IDENTITY.matches(s))
+            .find(|s| Wago750_354::get_identity().matches(s))
             .expect("No Wago 750-354 coupler found on the bus");
         (coupler_subdev.start_tx, coupler_subdev.start_rx)
     };

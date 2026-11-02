@@ -109,9 +109,12 @@ impl Default for EL3204TxPdo {
 }
 
 impl IdentifiedDevice for EL3204 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+    fn get_identity() -> EthercatDeviceIdentity {
+        
+    EthercatDeviceIdentity {
         vendor: 0x2,
         product: 0xc843052,
         revisions: &[0x160000, 0x150000],
-    };
+    }
+    }
 }

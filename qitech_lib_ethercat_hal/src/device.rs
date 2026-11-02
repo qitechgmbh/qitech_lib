@@ -191,7 +191,10 @@ impl EthercatDeviceIdentity {
 /// A driver for one kind of subdevice. Find a subdevice for it with
 /// `EL2004::IDENTITY.matches(&subdevice)`.
 pub trait IdentifiedDevice {
-    const IDENTITY: EthercatDeviceIdentity;
+
+    fn get_identity() -> EthercatDeviceIdentity
+    where
+        Self: Sized;
 }
 
 // vendor id at 0, and prod id at 1

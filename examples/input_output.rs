@@ -50,7 +50,7 @@ fn main() {
         while eth_control.check_inputs_ready() == false {}
         let inputs = eth_control.get_inputs().unwrap();
         for subdevice in &subdevices {
-            if EL1008::IDENTITY.matches(subdevice) {
+            if EL1008::get_identity().matches(subdevice) {
                 let input_slice = &inputs[subdevice.start_tx..subdevice.end_tx];
                 el1008
                     .input(BitSlice::<u8, Lsb0>::from_slice(input_slice))
@@ -70,7 +70,7 @@ fn main() {
         if let Some(outputs) = eth_control.write_outputs() {
             for subdevice in &subdevices {
                 // Loop over the subdevices until the EL2004 is found
-                if EL2004::IDENTITY.matches(subdevice) {
+                if EL2004::get_identity().matches(subdevice) {
                     // Get the part of the Rx PDO that is used by the EL2004
                     let subdevice_outputs = &mut outputs[subdevice.start_rx..subdevice.end_rx];
 

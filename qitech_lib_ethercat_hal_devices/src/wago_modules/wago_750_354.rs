@@ -72,9 +72,12 @@ impl std::fmt::Debug for Wago750_354 {
 }
 
 impl IdentifiedDevice for Wago750_354 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+    fn get_identity() -> EthercatDeviceIdentity {
+        
+    EthercatDeviceIdentity {
         vendor: 0x00000021,
         product: 0x07500354,
         revisions: &[0x2],
-    };
+    }
+    }
 }

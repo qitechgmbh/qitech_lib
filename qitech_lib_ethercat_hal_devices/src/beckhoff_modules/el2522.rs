@@ -677,9 +677,12 @@ mod tests {
 }
 
 impl IdentifiedDevice for EL2522 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
-        vendor: 0x2,
-        product: 0x09da3052,
-        revisions: &[0x00160000],
-    };
+    fn get_identity() -> EthercatDeviceIdentity {
+        EthercatDeviceIdentity {
+            vendor: 0x2,
+            product: 0x09da3052,
+            revisions: &[0x00160000],
+        }
+        
+    }
 }

@@ -184,20 +184,19 @@ impl std::fmt::Debug for Wago750_460 {
     }
 }
 
-// =============================================================================
-// Device Identity
-// =============================================================================
-
 pub const WAGO_750_460_VENDOR_ID: u32 = 0x00000021;
 pub const WAGO_750_460_PRODUCT_ID: u32 = 0x046041b3;
 pub const WAGO_750_460_MODULE_IDENT: SubDeviceProductTuple =
     (WAGO_750_460_VENDOR_ID, WAGO_750_460_PRODUCT_ID);
 
 impl IdentifiedDevice for Wago750_460 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
-        // Modules have no vendor id of their own, it is the vendor of the 750-354 coupler
+    fn get_identity() -> EthercatDeviceIdentity {
+        
+        EthercatDeviceIdentity {
+            // Modules have no vendor id of their own, it is the vendor of the 750-354 coupler
         vendor: WAGO_750_460_VENDOR_ID,
         product: WAGO_750_460_PRODUCT_ID,
-        revisions: &[],
-    };
+            revisions: &[],
+        }
+    }
 }

@@ -146,9 +146,13 @@ impl PredefinedPdoAssignment<EL1124TxPdo, ()> for EL1124PredefinedPdoAssignment 
 }
 
 impl IdentifiedDevice for EL1124 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+    fn get_identity() -> EthercatDeviceIdentity {
+        
+    EthercatDeviceIdentity {
         vendor: 0x2,
         product: 0x04643052,
         revisions: &[0x00120000],
-    };
+    }
+    }
+
 }

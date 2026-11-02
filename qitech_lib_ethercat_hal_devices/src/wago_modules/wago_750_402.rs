@@ -181,10 +181,13 @@ pub const WAGO_750_402_MODULE_IDENT: SubDeviceProductTuple =
     (WAGO_750_402_VENDOR_ID, WAGO_750_402_PRODUCT_ID);
 
 impl IdentifiedDevice for Wago750_402 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+    fn get_identity() -> EthercatDeviceIdentity {
+        
+    EthercatDeviceIdentity {
         // Modules have no vendor id of their own, it is the vendor of the 750-354 coupler
         vendor: WAGO_750_402_VENDOR_ID,
         product: WAGO_750_402_PRODUCT_ID,
         revisions: &[],
-    };
+    }
+    }
 }

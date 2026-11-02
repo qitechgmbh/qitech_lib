@@ -23,9 +23,12 @@ impl std::fmt::Debug for EL9505 {
 }
 
 impl IdentifiedDevice for EL9505 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+    fn get_identity() -> EthercatDeviceIdentity {
+        
+    EthercatDeviceIdentity {
         vendor: 0x2,
         product: 0x25213052,
         revisions: &[0x00120000],
-    };
+    }
+    }
 }

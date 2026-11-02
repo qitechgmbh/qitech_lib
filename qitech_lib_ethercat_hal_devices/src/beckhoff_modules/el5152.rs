@@ -344,9 +344,12 @@ impl Default for EL5152ChannelConfiguration {
 }
 
 impl IdentifiedDevice for EL5152 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
+    fn get_identity() -> EthercatDeviceIdentity {
+        
+EthercatDeviceIdentity {
         vendor: 0x2,
         product: 0x14203052,
         revisions: &[0x140000],
-    };
+    }
+    }
 }
