@@ -33,6 +33,11 @@ pub enum EthercatErr {
     SafeopTransitionFailed,
     OpTransitionFailed,
     WorkingCounterErr,
+    TxRxFailed {
+        error: ethercrab::error::Error,
+        consecutive_failures: u32,
+    },
+    TxRxThreadExited(String),
 }
 
 impl fmt::Display for EthercatErr {
@@ -45,10 +50,40 @@ impl fmt::Display for EthercatErr {
             }
             EthercatErr::OpTransitionFailed => write!(f, "Failed to transition to OP state"),
             EthercatErr::WorkingCounterErr => write!(f, "Working counter error (WKC)"),
+            EthercatErr::TxRxFailed {
+                error,
+                consecutive_failures,
+            } => write!(
+                f,
+                "tx_rx failed in OP ({consecutive_failures} consecutive failures): {error}"
+            ),
+            EthercatErr::TxRxThreadExited(reason) => {
+                write!(f, "TX/RX thread stopped in OP: {reason}")
+            }
         }
     }
 }
 impl std::error::Error for EthercatErr {}
+
+#[derive(Debug, Clone)]
+pub enum OpCycleFailure {
+    /// `tx_rx` returned an error
+    TxRx(ethercrab::error::Error),
+    /// The TX/RX thread has stopped, so no frame goes out again. Always fatal.
+    TxRxThreadExited(String),
+}
+
+/// Sent to the client for every failed `tx_rx` in OP.
+#[derive(Debug, Clone)]
+pub struct OpCycleError {
+    /// Value of the cycle counter when the failure happened
+    pub cycle: u64,
+    pub failure: OpCycleFailure,
+    /// Failures in a row, including this one. Reset by the next successful cycle.
+    pub consecutive_failures: u32,
+    /// The controller stops after sending this error
+    pub fatal: bool,
+}
 
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -93,6 +128,9 @@ where
     /// `ChangeState`/`Shutdown` the current arm cannot honour.
     diagnostic_channel: Receiver<DiagnosticRequest>,
     transition_log: TransitionLog,
+    op_error_tx: Sender<OpCycleError>,
+    /// Set once the TX/RX thread is spawned on the transition out of Init
+    tx_rx_thread: Option<JoinHandle<Result<(), String>>>,
     input_producer: P,
     output_consumer: C,
 }
@@ -118,6 +156,7 @@ where
         all_subdevices_operational: Arc<AtomicBool>,
         inputs_ready: Arc<AtomicBool>,
         transition_log: TransitionLog,
+        op_error_tx: Sender<OpCycleError>,
     ) -> Self {
         Self {
             cycle,
@@ -131,6 +170,8 @@ where
             rx_channel: rx,
             diagnostic_channel,
             transition_log,
+            op_error_tx,
+            tx_rx_thread: None,
             input_producer: input,
             output_consumer: output,
             current_config: config,
@@ -287,6 +328,7 @@ where
     dc_sys_time: Arc<AtomicU64>,
     inputs_ready: Arc<AtomicBool>,
     transition_log: TransitionLog,
+    op_error_rx: Receiver<OpCycleError>,
 }
 
 impl<C, P> EtherCATAppHandle<C, P>
@@ -294,6 +336,11 @@ where
     C: Consumer,
     P: Producer,
 {
+    /// Next `tx_rx` failure reported by the controller in OP, if any. Doesn't block.
+    pub fn try_recv_op_error(&self) -> Option<OpCycleError> {
+        self.op_error_rx.try_recv().ok()
+    }
+
     pub fn check_all_op(&self) -> bool {
         self.all_op.load(Relaxed)
     }
@@ -764,6 +811,10 @@ pub struct MasterConfiguration {
     pub dc_config: DcConfiguration,
     pub wkc_mismatch_threshold: u32,
     pub op_ramp_grace_cycles: u32,
+    /// Consecutive transient `tx_rx` failures (timeouts, garbled or late replies, no free
+    /// frame slot) tolerated in OP. The next one stops the controller. Any other error, and
+    /// the TX/RX thread stopping, stop it immediately.
+    pub max_consecutive_tx_rx_failures: u32,
 }
 
 impl Default for MasterConfiguration {
@@ -775,6 +826,7 @@ impl Default for MasterConfiguration {
             realtime_optimizations: None,
             wkc_mismatch_threshold: 5,
             op_ramp_grace_cycles: 10000,
+            max_consecutive_tx_rx_failures: 5,
         }
     }
 }
@@ -787,6 +839,7 @@ pub fn init_ethercat(
     use std::sync::atomic::AtomicU8;
     let (tx, rx) = mpsc::channel();
     let (diagnostic_tx, diagnostic_rx) = mpsc::channel();
+    let (op_error_tx, op_error_rx) = mpsc::channel();
     let transition_log = TransitionLog::new();
     let mailbox = Arc::new(Mailbox {
         data: [0u8; ETHERCAT_TX_RX_SIZE].into(),
@@ -827,6 +880,7 @@ pub fn init_ethercat(
             all_op.clone(),
             inputs_ready.clone(),
             transition_log.clone(),
+            op_error_tx.clone(),
         ),
         None => EtherCATController::new(
             TripleBufProducer {
@@ -846,6 +900,7 @@ pub fn init_ethercat(
             all_op.clone(),
             inputs_ready.clone(),
             transition_log.clone(),
+            op_error_tx.clone(),
         ),
     };
 
@@ -862,6 +917,7 @@ pub fn init_ethercat(
         dc_sys_time,
         inputs_ready,
         transition_log,
+        op_error_rx,
     };
 
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx, diagnostic_tx);

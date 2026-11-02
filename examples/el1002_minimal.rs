@@ -1,12 +1,9 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use ethercat_hal::{
-    BECKHOFF_VENDOR_ID, EtherCATState,
-    devices::{
+    BECKHOFF_VENDOR_ID, EtherCATState, MasterConfiguration, devices::{
         EthercatDevice, NewEthercatDevice,
         beckhoff_modules::el1002::{EL1002, EL1002_PRODUCT_ID},
-    },
-    init_ethercat,
-    io::digital_input::DigitalInputDevice,
+    }, init_ethercat, io::digital_input::DigitalInputDevice,
 };
 use std::{env, time::Duration};
 
@@ -14,7 +11,9 @@ use std::{env, time::Duration};
 fn main() {
     // Initialize EtherCAT Master with the default configuration
     let interface = env::args().nth(1).expect("No Interface-name given");
-    let eth_control = init_ethercat(&interface, None);
+    let mut config : MasterConfiguration = MasterConfiguration::default();
+    config.target_cycle_time_us = 1000000;
+    let eth_control = init_ethercat(&interface, Some (config) );
     let mut eth_handle = eth_control.app_handle;
 
     eth_control
@@ -57,6 +56,19 @@ fn main() {
     // This variable "knows" how to format the Rx PDOs for the EL2004
     let mut el1002 = EL1002::new();
     loop {
+        // The controller reports every failed cycle in OP. A tolerated failure only means
+        // that cycle exchanged no data, a fatal one means the controller has stopped.
+        while let Some(err) = eth_handle.try_recv_op_error() {
+            eprintln!(
+                "cycle {} failed ({} in a row): {:?}",
+                err.cycle, err.consecutive_failures, err.failure
+            );
+            if err.fatal {
+                eprintln!("EtherCAT controller stopped");
+                return;
+            }
+        }
+
         // We ONLY have inputs so no need to call write_outputs
         if let Some(inputs) = eth_handle.get_inputs() {
             for subdevice in &subdevices {
