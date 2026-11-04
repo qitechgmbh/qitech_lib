@@ -76,8 +76,7 @@ impl Default for EL2004RxPdo {
 }
 
 impl IdentifiedDevice for EL2004 {
-    fn get_identity() -> EthercatDeviceIdentity {
-        
+    fn identity() -> EthercatDeviceIdentity {
         EthercatDeviceIdentity {
             vendor: 0x2,
             product: 131346514,

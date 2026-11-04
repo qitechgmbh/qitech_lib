@@ -15,7 +15,7 @@ use crate::{
     },
     {
         DynamicEthercatDevice, EthercatDevice, EthercatDeviceProcessing, EthercatDynamicPDO,
-        NewEthercatDevice, SubDeviceProductTuple,
+        NewEthercatDevice,
     },
 };
 use qitech_lib_ethercat_hal::io::digital_input::DigitalInputDevice;
@@ -358,18 +358,12 @@ impl std::fmt::Debug for Wago750_672 {
     }
 }
 
-pub const WAGO_750_672_VENDOR_ID: u32 = 0x00000021;
-pub const WAGO_750_672_PRODUCT_ID: u32 = 108139752;
-pub const WAGO_750_672_MODULE_IDENT: SubDeviceProductTuple =
-    (WAGO_750_672_VENDOR_ID, WAGO_750_672_PRODUCT_ID);
-
 impl IdentifiedDevice for Wago750_672 {
-    fn get_identity() -> EthercatDeviceIdentity {
-        
+    fn identity() -> EthercatDeviceIdentity {
         EthercatDeviceIdentity {
             // Modules have no vendor id of their own, it is the vendor of the 750-354 coupler
-            vendor: WAGO_750_672_VENDOR_ID,
-            product: WAGO_750_672_PRODUCT_ID,
+            vendor: 0x00000021,
+            product: 108139752,
             revisions: &[],
         }
     }

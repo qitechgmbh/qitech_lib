@@ -488,12 +488,11 @@ mod tests {
 }
 
 impl IdentifiedDevice for EL2521 {
-    fn get_identity() -> EthercatDeviceIdentity {
+    fn identity() -> EthercatDeviceIdentity {
         EthercatDeviceIdentity {
             vendor: 0x2,
             product: 0x09d93052,
             revisions: &[0x03fe0000, 0x03f90000, 0x03f80018],
         }
-        
     }
 }

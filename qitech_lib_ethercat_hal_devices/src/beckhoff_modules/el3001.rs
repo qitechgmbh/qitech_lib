@@ -182,8 +182,7 @@ impl PredefinedPdoAssignment<EL3001TxPdo, EL3001RxPdo> for EL3001PredefinedPdoAs
 }
 
 impl IdentifiedDevice for EL3001 {
-    fn get_identity() -> EthercatDeviceIdentity {
-
+    fn identity() -> EthercatDeviceIdentity {
         EthercatDeviceIdentity {
             vendor: 0x2,
             product: 0x0bb93052,

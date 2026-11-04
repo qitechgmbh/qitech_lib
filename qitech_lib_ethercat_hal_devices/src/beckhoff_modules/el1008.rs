@@ -195,12 +195,11 @@ impl PredefinedPdoAssignment<EL1008TxPdo, ()> for EL1008PredefinedPdoAssignment 
 }
 
 impl IdentifiedDevice for EL1008 {
-    fn get_identity() -> EthercatDeviceIdentity {
-        
-     EthercatDeviceIdentity {
-        vendor: 0x2,
-        product: 0x03f03052,
-        revisions: &[0x00120000, 0x00110000],
-    }
+    fn identity() -> EthercatDeviceIdentity {
+        EthercatDeviceIdentity {
+            vendor: 0x2,
+            product: 0x03f03052,
+            revisions: &[0x00120000, 0x00110000],
+        }
     }
 }

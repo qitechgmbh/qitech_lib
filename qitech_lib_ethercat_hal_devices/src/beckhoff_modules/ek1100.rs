@@ -22,12 +22,11 @@ impl std::fmt::Debug for EK1100 {
 }
 
 impl IdentifiedDevice for EK1100 {
-    fn get_identity() -> EthercatDeviceIdentity {
-        
-    EthercatDeviceIdentity {
-        vendor: 0x2,
-        product: 0x044c2c52,
-        revisions: &[0x00120000],
-    }
+    fn identity() -> EthercatDeviceIdentity {
+        EthercatDeviceIdentity {
+            vendor: 0x2,
+            product: 0x044c2c52,
+            revisions: &[0x00120000],
+        }
     }
 }

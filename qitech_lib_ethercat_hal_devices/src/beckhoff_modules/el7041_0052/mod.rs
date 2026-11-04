@@ -348,12 +348,11 @@ pub enum EL7041_0052Port {
 }
 
 impl IdentifiedDevice for EL7041_0052 {
-    fn get_identity() -> EthercatDeviceIdentity {
-        
-    EthercatDeviceIdentity {
-        vendor: 0x2,
-        product: 461451346,
-        revisions: &[1048628],
-    }
+    fn identity() -> EthercatDeviceIdentity {
+        EthercatDeviceIdentity {
+            vendor: 0x2,
+            product: 461451346,
+            revisions: &[1048628],
+        }
     }
 }

@@ -38,7 +38,7 @@ fn main() {
         .expect("Failed to go into PreOp");
 
     for subdevice in eth_control.try_get_subdevices_vec_sync().unwrap() {
-        if EL1259::get_identity().matches(&subdevice) {
+        if EL1259::identity().matches(&subdevice) {
             let failed_writes = eth_control
                 .write_configuration(
                     subdevice.device_address,
@@ -70,10 +70,10 @@ fn main() {
 
     let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
     loop {
-        while eth_control.check_inputs_ready() == false {}
+        while !eth_control.check_inputs_ready() {}
         if let Some(input) = eth_control.get_inputs() {
             for subdevice in &subdevices {
-                if EL1259::get_identity().matches(subdevice) {
+                if EL1259::identity().matches(subdevice) {
                     let input = &input[subdevice.start_tx..subdevice.end_tx];
                     el1259
                         .input(BitSlice::from_slice(input))
@@ -116,7 +116,7 @@ fn main() {
 
         if let Some(output) = eth_control.write_outputs() {
             for subdevice in &subdevices {
-                if EL1259::get_identity().matches(subdevice) {
+                if EL1259::identity().matches(subdevice) {
                     el1259
                         .output_pre_process()
                         .expect("Failed to prepare output");

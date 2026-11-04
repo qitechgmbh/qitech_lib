@@ -214,12 +214,11 @@ impl PredefinedPdoAssignment<EL3021TxPdo, EL3021RxPdo> for EL3021PredefinedPdoAs
 }
 
 impl IdentifiedDevice for EL3021 {
-    fn get_identity() -> EthercatDeviceIdentity {
+    fn identity() -> EthercatDeviceIdentity {
         EthercatDeviceIdentity {
             vendor: 2,
             product: 197996626,
             revisions: &[1310720],
         }
-        
     }
 }

@@ -255,12 +255,11 @@ impl Default for EP2339_0021TxPdo {
 }
 
 impl IdentifiedDevice for EP2339_0021 {
-    fn get_identity() -> EthercatDeviceIdentity {
-        
-    EthercatDeviceIdentity {
-        vendor: 0x2,
-        product: 0x9234052,
-        revisions: &[0x130015],
-    }
+    fn identity() -> EthercatDeviceIdentity {
+        EthercatDeviceIdentity {
+            vendor: 0x2,
+            product: 0x9234052,
+            revisions: &[0x130015],
+        }
     }
 }

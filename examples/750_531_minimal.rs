@@ -5,10 +5,7 @@ use qitech_lib_ethercat_hal::{
 };
 use qitech_lib_ethercat_hal_devices::{
     EthercatDevice, IdentifiedDevice, NewEthercatDevice,
-    wago_modules::{
-        wago_750_354::Wago750_354,
-        wago_750_531::{WAGO_750_531_PRODUCT_ID, Wago750_531},
-    },
+    wago_modules::{wago_750_354::Wago750_354, wago_750_531::Wago750_531},
 };
 use std::{env, time::Duration};
 const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -28,7 +25,7 @@ fn main() {
     // Find the Wago 750-354 coupler subdevice
     let coupler_subdev = subdevices
         .iter()
-        .find(|s| Wago750_354::get_identity().matches(s))
+        .find(|s| Wago750_354::identity().matches(s))
         .expect("No Wago 750-354 coupler found on the bus");
 
     // Devices connected to 750-354 are not actual ethercat terminals and are commonly called "modules"
@@ -47,7 +44,7 @@ fn main() {
     let (coupler_start_tx, coupler_start_rx) = {
         let coupler_subdev = subdevices
             .iter()
-            .find(|s| Wago750_354::get_identity().matches(s))
+            .find(|s| Wago750_354::identity().matches(s))
             .expect("No Wago 750-354 coupler found on the bus");
         (coupler_subdev.start_tx, coupler_subdev.start_rx)
     };
@@ -62,7 +59,7 @@ fn main() {
 
     let wago750_531_sdev = subdevices
         .iter()
-        .find(|s| WAGO_750_531_PRODUCT_ID == s.product_id)
+        .find(|s| Wago750_531::identity().matches(s))
         .expect("No WAGO_750_531 found on the bus");
 
     // Cycle through the 4 digital outputs
