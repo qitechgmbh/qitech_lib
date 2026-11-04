@@ -221,9 +221,11 @@ impl Configuration for EL1259Configuration {
 }
 
 impl IdentifiedDevice for EL1259 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
-        vendor: BECKHOFF_VENDOR_ID,
-        product: 82522194,
-        revisions: &[0],
-    };
+    fn identity() -> EthercatDeviceIdentity {
+        EthercatDeviceIdentity {
+            vendor: BECKHOFF_VENDOR_ID,
+            product: 82522194,
+            revisions: &[0],
+        }
+    }
 }

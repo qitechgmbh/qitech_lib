@@ -137,9 +137,11 @@ impl Default for EL2809RxPdo {
 }
 
 impl IdentifiedDevice for EL2809 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
-        vendor: 0x2,
-        product: 0x0AF93052,
-        revisions: &[],
-    };
+    fn identity() -> EthercatDeviceIdentity {
+        EthercatDeviceIdentity {
+            vendor: 0x2,
+            product: 0x0AF93052,
+            revisions: &[],
+        }
+    }
 }

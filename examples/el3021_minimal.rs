@@ -26,7 +26,7 @@ fn main() {
     let subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
     let subdevice = subdevices
         .iter()
-        .find(|sub| EL3021::IDENTITY.matches(sub))
+        .find(|sub| EL3021::identity().matches(sub))
         .expect("No EL3021 found!");
 
     let mut el3021 = EL3021::new();

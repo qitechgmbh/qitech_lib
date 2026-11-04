@@ -100,7 +100,7 @@ fn main() {
         .expect("Failed to go into PreOp");
 
     for subdevice in eth_control.try_get_subdevices_vec_sync().unwrap() {
-        if EL4732::IDENTITY.matches(&subdevice) {
+        if EL4732::identity().matches(&subdevice) {
             if oversampling_factor > 1 {
                 eth_control
                     .configure_oversampling(
@@ -151,7 +151,7 @@ fn main() {
             }
 
             for subdevice in &subdevices {
-                if EL4732::IDENTITY.matches(subdevice) {
+                if EL4732::identity().matches(subdevice) {
                     el4732
                         .output_pre_process()
                         .expect("Failed to prepare output");

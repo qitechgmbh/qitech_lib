@@ -38,7 +38,7 @@ fn main() {
         if let Some(inputs) = eth_control.get_inputs() {
             for subdevice in &subdevices {
                 // Loop over the subdevices until the EL2004 is found
-                if EL1002::IDENTITY.matches(subdevice) {
+                if EL1002::identity().matches(subdevice) {
                     // Get the part of the Rx PDO that is used by the EL2004
                     let subdevice_inputs = &inputs[subdevice.start_tx..subdevice.end_tx];
                     // Create the actual Rx PDO and put it into the output

@@ -46,7 +46,7 @@ fn main() {
         if let Some(outputs) = eth_control.write_outputs() {
             for subdevice in &subdevices {
                 // Loop over the subdevices until the EL2004 is found
-                if EL2004::IDENTITY.matches(subdevice) {
+                if EL2004::identity().matches(subdevice) {
                     // Get the part of the Rx PDO that is used by the EL2004
                     let subdevice_outputs = &mut outputs[subdevice.start_rx..subdevice.end_rx];
 

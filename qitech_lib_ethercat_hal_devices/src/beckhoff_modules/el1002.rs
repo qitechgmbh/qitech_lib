@@ -102,9 +102,11 @@ impl PredefinedPdoAssignment<EL1002TxPdo, ()> for EL1002PredefinedPdoAssignment 
 }
 
 impl IdentifiedDevice for EL1002 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
-        vendor: 0x2,
-        product: 65679442,
-        revisions: &[1179648],
-    };
+    fn identity() -> EthercatDeviceIdentity {
+        EthercatDeviceIdentity {
+            vendor: 0x2,
+            product: 65679442,
+            revisions: &[1179648],
+        }
+    }
 }

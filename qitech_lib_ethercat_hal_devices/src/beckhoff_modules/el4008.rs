@@ -104,9 +104,11 @@ impl Default for EL4008RxPdo {
 }
 
 impl IdentifiedDevice for EL4008 {
-    const IDENTITY: EthercatDeviceIdentity = EthercatDeviceIdentity {
-        vendor: 0x2,
-        product: 0x0fa83052,
-        revisions: &[0x00140000],
-    };
+    fn identity() -> EthercatDeviceIdentity {
+        EthercatDeviceIdentity {
+            vendor: 0x2,
+            product: 0x0fa83052,
+            revisions: &[0x00140000],
+        }
+    }
 }
