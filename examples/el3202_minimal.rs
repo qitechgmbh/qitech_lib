@@ -1,0 +1,89 @@
+use bitvec::{order::Lsb0, slice::BitSlice};
+use ethercat_hal::{
+    BECKHOFF_VENDOR_ID, EtherCATState,
+    devices::{
+        EthercatDevice, NewEthercatDevice,
+        beckhoff_modules::el3202::{EL3202, EL3202_PRODUCT_ID},
+    },
+    init_ethercat,
+    io::temperature_input::TemperatureInputDevice,
+};
+use std::{env, time::Duration};
+
+/// Minimal example: scan the EtherCAT bus and read temperatures from an EL3202
+/// (2-channel RTD, PT100/PT1000).
+///
+/// Usage: sudo -E ./el3202_minimal <interface>   (e.g. eth0)
+fn main() {
+    let interface = env::args().nth(1).expect("Usage: el3202_minimal <interface>");
+    let eth_control = init_ethercat(&interface, None);
+    let mut eth_handle = eth_control.app_handle;
+
+    eth_control
+        .channel
+        .request_state_change(EtherCATState::PreOp)
+        .expect("Channel was not ready");
+    loop {
+        if let EtherCATState::PreOp = eth_handle.get_state() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    println!("found {:?} ethercat terminals:", eth_handle.get_subdevice_count());
+
+    eth_control
+        .channel
+        .request_state_change(EtherCATState::Op)
+        .expect("Failed to go into OP");
+    loop {
+        if let EtherCATState::Op = eth_handle.get_state() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    for sdev in &subdevices {
+        println!(
+            " - {} (vendor 0x{:x}, product 0x{:x}, revision 0x{:x})",
+            sdev.get_name().expect("No utf8 name!"),
+            sdev.vendor,
+            sdev.product_id,
+            sdev.revision
+        );
+    }
+
+    let mut el3202 = EL3202::new();
+    loop {
+        if let Some(inputs) = eth_handle.get_inputs() {
+            for subdevice in &subdevices {
+                if subdevice.vendor == BECKHOFF_VENDOR_ID
+                    && subdevice.product_id == EL3202_PRODUCT_ID
+                {
+                    let subdevice_inputs = &inputs[subdevice.start_tx..subdevice.end_tx];
+                    el3202
+                        .input(BitSlice::<u8, Lsb0>::from_slice(subdevice_inputs))
+                        .expect("Failed to read Tx PDO");
+                }
+            }
+        }
+
+        for i in 0..el3202.get_port_count() {
+            match el3202.get_input(i) {
+                Ok(input) => {
+                    if input.error {
+                        println!("T{}: <error (not connected / out of range)>", i + 1);
+                    } else {
+                        // RtdInput::read() liefert bereits °C (Wert/10 intern)
+                        println!("T{}: {:.1} °C", i + 1, input.temperature);
+                    }
+                }
+                Err(e) => println!("T{}: {:?}", i + 1, e),
+            }
+        }
+
+        eth_handle.send_outputs();
+        std::thread::sleep(Duration::from_millis(500));
+    }
+}
