@@ -1,6 +1,7 @@
 pub mod analog_input;
 pub mod basic;
 pub mod el252x;
+pub mod el25xx;
 pub mod el32xx;
 pub mod el40xx;
 pub mod el5152;

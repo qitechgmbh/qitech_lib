@@ -16,9 +16,11 @@ use crate::devices::panasonic_modules::minas_a6::{self, MINAS_A6_IDENTITY_A};
 use beckhoff_modules::ek1100::{EK1100, EK1100_IDENTITY_A};
 use beckhoff_modules::el1002::{EL1002, EL1002_IDENTITY_A};
 use beckhoff_modules::el1008::{EL1008_IDENTITY_A, EL1008_IDENTITY_B};
+use beckhoff_modules::el1814::{EL1814, EL1814_IDENTITY_A, EL1814_IDENTITY_B, EL1814_IDENTITY_C};
 use beckhoff_modules::el2002::{EL2002, EL2002_IDENTITY_A, EL2002_IDENTITY_B};
 use beckhoff_modules::el2004::{EL2004, EL2004_IDENTITY_A};
 use beckhoff_modules::el2008::{EL2008, EL2008_IDENTITY_A, EL2008_IDENTITY_B};
+use beckhoff_modules::el2502::{EL2502, EL2502_IDENTITY_A, EL2502_IDENTITY_B, EL2502_IDENTITY_C, EL2502_IDENTITY_D, EL2502_IDENTITY_E, EL2502_IDENTITY_F, EL2502_IDENTITY_G, EL2502_IDENTITY_H, EL2502_IDENTITY_I, EL2502_IDENTITY_J, EL2502_IDENTITY_K};
 use beckhoff_modules::el2521::EL2521;
 use beckhoff_modules::el2521::{
     EL2521_IDENTITY_0000_A, EL2521_IDENTITY_0000_B, EL2521_IDENTITY_0024_A,
@@ -27,7 +29,14 @@ use beckhoff_modules::el2522::{EL2522, EL2522_IDENTITY_A};
 use beckhoff_modules::el3001::EL3001_IDENTITY_A;
 use beckhoff_modules::el3021::EL3021_IDENTITY_A;
 use beckhoff_modules::el3024::EL3024_IDENTITY_A;
+use beckhoff_modules::el2808::{
+    EL2808, EL2808_IDENTITY_A, EL2808_IDENTITY_B, EL2808_IDENTITY_C,
+};
 use beckhoff_modules::el3062_0030::EL3062_0030_IDENTITY_A;
+use beckhoff_modules::el3202::{
+    EL3202, EL3202_IDENTITY_A, EL3202_IDENTITY_B, EL3202_IDENTITY_C, EL3202_IDENTITY_D,
+    EL3202_IDENTITY_E, EL3202_IDENTITY_F, EL3202_IDENTITY_G,
+};
 use beckhoff_modules::el3204::EL3204_IDENTITY_A;
 use beckhoff_modules::el3204::EL3204_IDENTITY_B;
 use beckhoff_modules::el4002::EL4002;
@@ -168,11 +177,22 @@ pub fn device_from_subdevice_identity(
         EK1100_IDENTITY_A => Ok(Box::new(EK1100::new())),
         EL1002_IDENTITY_A => Ok(Box::new(EL1002::new())),
         EL1008_IDENTITY_A | EL1008_IDENTITY_B => Ok(Box::new(EL1008::new())),
+        EL1814_IDENTITY_A | EL1814_IDENTITY_B | EL1814_IDENTITY_C => {
+            Ok(Box::new(EL1814::new()))
+        }
         EL1259_IDENTITY_A => Ok(Box::new(EL1259::new())),
         EL2002_IDENTITY_A | EL2002_IDENTITY_B => Ok(Box::new(EL2002::new())),
         EL2004_IDENTITY_A => Ok(Box::new(EL2004::new())),
         EL2008_IDENTITY_A | EL2008_IDENTITY_B => Ok(Box::new(EL2008::new())),
+        EL2502_IDENTITY_A | EL2502_IDENTITY_B | EL2502_IDENTITY_C | EL2502_IDENTITY_D
+        | EL2502_IDENTITY_E | EL2502_IDENTITY_F | EL2502_IDENTITY_G | EL2502_IDENTITY_H
+        | EL2502_IDENTITY_I | EL2502_IDENTITY_J | EL2502_IDENTITY_K => {
+            Ok(Box::new(EL2502::new()))
+        }
         EL2522_IDENTITY_A => Ok(Box::new(EL2522::new())),
+        EL2808_IDENTITY_A | EL2808_IDENTITY_B | EL2808_IDENTITY_C => {
+            Ok(Box::new(EL2808::new()))
+        }
         EL3001_IDENTITY_A => Ok(Box::new(el3001::EL3001::new())),
         EL3021_IDENTITY_A => Ok(Box::new(el3021::EL3021::new())),
         EL3024_IDENTITY_A => Ok(Box::new(el3024::EL3024::new())),
@@ -185,6 +205,10 @@ pub fn device_from_subdevice_identity(
         }
         EL9505_IDENTITY_A => Ok(Box::new(EL9505::new())),
         EL1124_IDENTITY_A => Ok(Box::new(EL1124::new())),
+        EL3202_IDENTITY_A | EL3202_IDENTITY_B | EL3202_IDENTITY_C | EL3202_IDENTITY_D
+        | EL3202_IDENTITY_E | EL3202_IDENTITY_F | EL3202_IDENTITY_G => {
+            Ok(Box::new(EL3202::new()))
+        }
         EL3204_IDENTITY_A | EL3204_IDENTITY_B => Ok(Box::new(el3204::EL3204::new())),
         EL7031_IDENTITY_A | EL7031_IDENTITY_B => Ok(Box::new(el7031::EL7031::new())),
         EL7031_0030_IDENTITY_A => Ok(Box::new(el7031_0030::EL7031_0030::new())),
@@ -217,11 +241,22 @@ pub fn device_from_subdevice_identity_rc(
         EK1100_IDENTITY_A => Ok(Rc::new(RefCell::new(EK1100::new()))),
         EL1002_IDENTITY_A => Ok(Rc::new(RefCell::new(EL1002::new()))),
         EL1008_IDENTITY_A | EL1008_IDENTITY_B => Ok(Rc::new(RefCell::new(EL1008::new()))),
+        EL1814_IDENTITY_A | EL1814_IDENTITY_B | EL1814_IDENTITY_C => {
+            Ok(Rc::new(RefCell::new(EL1814::new())))
+        }
         EL1259_IDENTITY_A => Ok(Rc::new(RefCell::new(EL1259::new()))),
         EL2002_IDENTITY_A | EL2002_IDENTITY_B => Ok(Rc::new(RefCell::new(EL2002::new()))),
         EL2004_IDENTITY_A => Ok(Rc::new(RefCell::new(EL2004::new()))),
         EL2008_IDENTITY_A | EL2008_IDENTITY_B => Ok(Rc::new(RefCell::new(EL2008::new()))),
+        EL2502_IDENTITY_A | EL2502_IDENTITY_B | EL2502_IDENTITY_C | EL2502_IDENTITY_D
+        | EL2502_IDENTITY_E | EL2502_IDENTITY_F | EL2502_IDENTITY_G | EL2502_IDENTITY_H
+        | EL2502_IDENTITY_I | EL2502_IDENTITY_J | EL2502_IDENTITY_K => {
+            Ok(Rc::new(RefCell::new(EL2502::new())))
+        }
         EL2522_IDENTITY_A => Ok(Rc::new(RefCell::new(EL2522::new()))),
+        EL2808_IDENTITY_A | EL2808_IDENTITY_B | EL2808_IDENTITY_C => {
+            Ok(Rc::new(RefCell::new(EL2808::new())))
+        }
         EL3001_IDENTITY_A => Ok(Rc::new(RefCell::new(el3001::EL3001::new()))),
         EL3021_IDENTITY_A => Ok(Rc::new(RefCell::new(el3021::EL3021::new()))),
         EL3024_IDENTITY_A => Ok(Rc::new(RefCell::new(el3024::EL3024::new()))),
@@ -231,6 +266,10 @@ pub fn device_from_subdevice_identity_rc(
         EL5152_IDENTITY_A => Ok(Rc::new(RefCell::new(EL5152::new()))),
         EL6021_IDENTITY_A | EL6021_IDENTITY_B | EL6021_IDENTITY_C | EL6021_IDENTITY_D => {
             Ok(Rc::new(RefCell::new(el6021::EL6021::new())))
+        }
+        EL3202_IDENTITY_A | EL3202_IDENTITY_B | EL3202_IDENTITY_C | EL3202_IDENTITY_D
+        | EL3202_IDENTITY_E | EL3202_IDENTITY_F | EL3202_IDENTITY_G => {
+            Ok(Rc::new(RefCell::new(EL3202::new())))
         }
         EL3204_IDENTITY_A | EL3204_IDENTITY_B => Ok(Rc::new(RefCell::new(el3204::EL3204::new()))),
         EL7031_IDENTITY_A | EL7031_IDENTITY_B => Ok(Rc::new(RefCell::new(el7031::EL7031::new()))),
