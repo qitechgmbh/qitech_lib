@@ -350,34 +350,43 @@ impl EtherCATThreadChannel {
     ) -> Result<(), qitech_lib_ethercat_hal::Error> {
         let tx_pdo_mappings = self.get_module_pdo_offsets(device_address, true)?;
         let rx_pdo_mappings = self.get_module_pdo_offsets(device_address, false)?;
-        for m in modules.iter_mut() {
-            m.tx_size = 0;
-            for pdo_map in tx_pdo_mappings.iter() {
-                m.tx_size += pdo_map.size;
-            }
-
+        for m in modules.iter_mut() {            
+            m.tx_size = 0;          
             m.rx_size = 0;
-            for pdo_map in rx_pdo_mappings.iter() {
-                m.rx_size += pdo_map.size;
-            }
+        let tx_mappings: Vec<_> = tx_pdo_mappings
+            .iter()
+            .filter(|map| map.module_i == m.slot.into())
+            .collect();
+        let rx_mappings: Vec<_> = rx_pdo_mappings
+            .iter()
+            .filter(|map| map.module_i == m.slot.into())
+            .collect();
+        
+        for rx_map in rx_mappings {
+            m.rx_size += rx_map.size;
+        };
 
-            let tx_pdo_mapping = tx_pdo_mappings
-                .iter()
-                .find(|map| map.module_i == m.slot.into() && map.sub_index == 0x1);
+        for tx_map in tx_mappings {
+            m.tx_size += tx_map.size;
+        };
 
-            m.tx_offset = match tx_pdo_mapping {
+        let tx_pdo_mapping = tx_pdo_mappings
+            .iter()
+            .find(|map| map.module_i == m.slot.into() && map.sub_index == 0x1);
+
+        m.tx_offset = match tx_pdo_mapping {
+            Some(map) => map.offset,
+            None => 0,
+        };
+
+        let rx_pdo_mapping = rx_pdo_mappings
+            .iter()
+            .find(|map| map.module_i == m.slot.into() && map.sub_index == 0x1);
+
+        m.rx_offset = match rx_pdo_mapping {
                 Some(map) => map.offset,
                 None => 0,
-            };
-
-            let rx_pdo_mapping = rx_pdo_mappings
-                .iter()
-                .find(|map| map.module_i == m.slot.into() && map.sub_index == 0x1);
-
-            m.rx_offset = match rx_pdo_mapping {
-                Some(map) => map.offset,
-                None => 0,
-            }
+            }        
         }
         Ok(())
     }

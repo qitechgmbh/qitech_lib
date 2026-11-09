@@ -956,18 +956,18 @@ pub fn convert_module_to_meta_ethercat_device(
     let start_tx = coupler_start_tx + module.tx_offset;
     let end_tx = coupler_start_tx + module.tx_offset + module.tx_size;
     let start_rx = coupler_start_rx + module.rx_offset;
-    let end_rx = coupler_start_rx + module.rx_offset + module.rx_size;
-
-    MetaSubdevice {
+    let end_rx = coupler_start_rx + module.rx_offset + module.rx_size;        
+    let device = MetaSubdevice {
         name,
         product_id: module.product_id,
         revision: 0x00,
         vendor: module.vendor_id,
-        start_tx: start_tx / 8,
-        end_tx: end_tx / 8,
-        start_rx: start_rx / 8,
-        end_rx: end_rx / 8,
-        device_address: module.slot,
+        start_tx: start_tx,
+        end_tx: end_tx,
+        start_rx: start_rx,
+        end_rx: end_rx,
+        device_address: module.belongs_to_addr + module.slot,
         initialized: true,
-    }
+    };
+    return device;
 }
