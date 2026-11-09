@@ -1,4 +1,4 @@
-use bitvec::{order::Lsb0, slice::BitSlice};
+use bitvec::{order::Lsb0, view::BitView};
 use qitech_lib_ethercat_hal::{
     EtherCATState, init_ethercat, io::digital_input::DigitalInputDevice,
 };
@@ -40,10 +40,11 @@ fn main() {
                 // Loop over the subdevices until the EL2004 is found
                 if EL1002::identity().matches(subdevice) {
                     // Get the part of the Rx PDO that is used by the EL2004
-                    let subdevice_inputs = &inputs[subdevice.start_tx..subdevice.end_tx];
+                    let subdevice_inputs =
+                        &inputs.view_bits::<Lsb0>()[subdevice.start_tx..subdevice.end_tx];
                     // Create the actual Rx PDO and put it into the output
                     el1002
-                        .input(BitSlice::<u8, Lsb0>::from_slice(subdevice_inputs))
+                        .input(subdevice_inputs)
                         .expect("Failed to read Tx PDO");
                 }
             }

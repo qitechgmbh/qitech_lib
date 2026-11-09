@@ -1,4 +1,4 @@
-use bitvec::{order::Lsb0, slice::BitSlice};
+use bitvec::{order::Lsb0, view::BitView};
 use qitech_lib_ethercat_hal::{
     EtherCATState, convert_module_to_meta_ethercat_device, init_ethercat,
     io::analog_input::AnalogCurrentInputDevice,
@@ -66,9 +66,10 @@ fn main() {
     let mut wago750_455 = Wago750_455::new();
     loop {
         if let Some(inputs) = eth_control.get_inputs() {
-            let subdevice_inputs = &inputs[wago750_455_sdev.start_tx..wago750_455_sdev.end_tx];
+            let subdevice_inputs =
+                &inputs.view_bits::<Lsb0>()[wago750_455_sdev.start_tx..wago750_455_sdev.end_tx];
             wago750_455
-                .input(BitSlice::<u8, Lsb0>::from_slice(subdevice_inputs))
+                .input(subdevice_inputs)
                 .expect("Failed to read Tx PDO");
         }
         eth_control.finish_read();

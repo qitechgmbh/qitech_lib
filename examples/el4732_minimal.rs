@@ -1,4 +1,4 @@
-use bitvec::slice::BitSlice;
+use bitvec::{order::Lsb0, view::BitView};
 use qitech_lib_ethercat_hal::{
     DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig, init_ethercat,
     io::analog_output::{AnalogOutputDevice, AnalogOutputOutput},
@@ -155,10 +155,9 @@ fn main() {
                     el4732
                         .output_pre_process()
                         .expect("Failed to prepare output");
-                    let out = &mut output[subdevice.start_rx..subdevice.end_rx];
-                    el4732
-                        .output(BitSlice::from_slice_mut(out))
-                        .expect("Failed to write output");
+                    let out =
+                        &mut output.view_bits_mut::<Lsb0>()[subdevice.start_rx..subdevice.end_rx];
+                    el4732.output(out).expect("Failed to write output");
                 }
             }
         }

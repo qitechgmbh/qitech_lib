@@ -539,10 +539,12 @@ pub struct MetaSubdevice {
     pub product_id: u32,
     pub revision: u32,
     pub vendor: u32,
-    // Gives the offset at which the TxPdo starts
+    // Bit offset at which the TxPdo starts (end is exclusive). Slice the input image via
+    // `inputs.view_bits::<Lsb0>()[start_tx..end_tx]`, not the byte slice.
     pub start_tx: usize,
     pub end_tx: usize,
-    // Gives the offset at which the RxPdo starts
+    // Bit offset at which the RxPdo starts (end is exclusive). Slice the output image via
+    // `outputs.view_bits_mut::<Lsb0>()[start_rx..end_rx]`, not the byte slice.
     pub start_rx: usize,
     pub end_rx: usize,
     // Device address first one would be 0x1000, so 4096

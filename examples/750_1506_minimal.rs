@@ -1,4 +1,4 @@
-use bitvec::{order::Lsb0, slice::BitSlice};
+use bitvec::{order::Lsb0, view::BitView};
 use qitech_lib_ethercat_hal::{
     EtherCATState, convert_module_to_meta_ethercat_device, init_ethercat,
     io::digital_output::DigitalOutputDevice,
@@ -65,12 +65,14 @@ fn main() {
     let mut wago750_1506 = Wago750_1506::new();
     loop {
         if let Some(outputs) = eth_control.write_outputs() {
-            let subdevice_inputs =
-                &mut outputs[wago750_1506_sdev.start_rx..wago750_1506_sdev.end_rx];
+            // start_rx/end_rx are bit offsets, so slice the bit view of the process image
+            let bit_buffer = outputs.view_bits_mut::<Lsb0>();
+            let subdevice_bits =
+                &mut bit_buffer[wago750_1506_sdev.start_rx..wago750_1506_sdev.end_rx];
             wago750_1506.set_output(0, true);
             wago750_1506
-                .output(BitSlice::<u8, Lsb0>::from_slice_mut(subdevice_inputs))
-                .expect("Failed to read Tx PDO");
+                .output(subdevice_bits)
+                .expect("Failed to write Rx PDO");
         }
         eth_control.send_outputs();
     }
