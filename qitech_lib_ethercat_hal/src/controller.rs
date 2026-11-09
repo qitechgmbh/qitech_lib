@@ -409,7 +409,7 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
             let mut tx_offset = 0;
             let mut subdevice_guard = get_async_runtime().block_on(self.subdevices.lock());
             for (i, subdevice) in group.iter(maindevice).enumerate() {
-                let length_tx = subdevice.io_raw().inputs().len();
+                let length_tx = subdevice.io_raw().inputs().len(); 
                 let length_rx = subdevice.io_raw().outputs().len();
 
                 subdevice_guard[i].start_tx = tx_offset;
