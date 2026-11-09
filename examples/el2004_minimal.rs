@@ -36,6 +36,19 @@ fn main() {
     // This variable "knows" how to format the Rx PDOs for the EL2004
     let mut el2004: EL2004 = EL2004::new();
     for iter in 0.. {
+        // The controller reports every failed cycle in OP. A tolerated failure only means
+        // that cycle exchanged no data, a fatal one means the controller has stopped.
+        while let Some(err) = eth_control.try_recv_op_error() {
+            eprintln!(
+                "cycle {} failed ({} in a row): {:?}",
+                err.cycle, err.consecutive_failures, err.failure
+            );
+            if err.fatal {
+                eprintln!("EtherCAT controller stopped");
+                return;
+            }
+        }
+
         // Tick our application.
         // Here, we just alternate which LED is on
         for i in 0..el2004.get_port_count() {

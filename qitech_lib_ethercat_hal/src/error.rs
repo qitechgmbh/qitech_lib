@@ -187,6 +187,16 @@ pub enum EthercatErr {
     /// The state machine thread panicked and is no longer running.
     #[error("EtherCAT state machine panicked: {0}")]
     Panicked(String),
+    /// `tx_rx` failed in OP with a non-retryable error, or more than
+    /// `max_consecutive_tx_rx_failures` times in a row.
+    #[error("tx_rx failed in OP ({consecutive_failures} consecutive failures): {error}")]
+    TxRxFailed {
+        error: ethercrab::error::Error,
+        consecutive_failures: u32,
+    },
+    /// The TX/RX thread stopped while in OP, so no frame goes out again.
+    #[error("TX/RX thread stopped in OP: {0}")]
+    TxRxThreadExited(String),
 }
 
 /// Any error of this crate.
