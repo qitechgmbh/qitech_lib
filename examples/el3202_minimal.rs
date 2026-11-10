@@ -37,17 +37,6 @@ fn main() {
 
     println!("found {:?} ethercat terminals:", eth_handle.get_subdevice_count());
 
-    eth_control
-        .channel
-        .request_state_change(EtherCATState::Op)
-        .expect("Failed to go into OP");
-    loop {
-        if let EtherCATState::Op = eth_handle.get_state() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
     for sdev in &subdevices {
         println!(
@@ -60,6 +49,7 @@ fn main() {
     }
 
     // EL3202 auf PT1000 stellen (Auslieferungszustand: PT100 — Anlage ist PT1000)
+    // WICHTIG: SDO/CoE wird vom HAL nur im PreOp bedient → Konfig VOR dem Op-Übergang!
     for meta in &subdevices {
         if meta.product_id == EL3202_PRODUCT_ID {
             EL3202Configuration::default()
@@ -67,6 +57,17 @@ fn main() {
                 .expect("PT1000-Konfiguration fehlgeschlagen");
             println!("EL3202 @0x{:x}: Sensortyp = PT1000", meta.device_address);
         }
+    }
+
+    eth_control
+        .channel
+        .request_state_change(EtherCATState::Op)
+        .expect("Failed to go into OP");
+    loop {
+        if let EtherCATState::Op = eth_handle.get_state() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
 
     let mut el3202 = EL3202::new();

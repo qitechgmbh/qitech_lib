@@ -82,14 +82,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::thread::sleep(Duration::from_millis(10));
     }
 
-    eth_control
-        .channel
-        .request_state_change(EtherCATState::Op)
-        .expect("Failed to go into OP");
-    while !matches!(eth_handle.get_state(), EtherCATState::Op) {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-
+    // WICHTIG: SDO/CoE-Requests werden vom HAL nur im PreOp bedient
+    // (preop_group) — Konfiguration muss VOR dem Op-Übergang geschehen.
     let subdevices = eth_handle
         .try_get_subdevices_vec_sync()
         .expect("could not list subdevices");
@@ -102,11 +96,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             EL3202Configuration::default()
                 .write_config(eth_control.channel.clone(), meta.device_address)
                 .expect("PT1000-Konfiguration fehlgeschlagen");
-            println!(
-                "EL3202 @0x{:x}: Sensortyp = PT1000",
-                meta.device_address
-            );
+            println!("EL3202 @0x{:x}: Sensortyp = PT1000", meta.device_address);
         }
+    }
+
+    eth_control
+        .channel
+        .request_state_change(EtherCATState::Op)
+        .expect("Failed to go into OP");
+    while !matches!(eth_handle.get_state(), EtherCATState::Op) {
+        std::thread::sleep(Duration::from_millis(10));
     }
 
     let mut devices: Vec<BusDevice> = Vec::new();
