@@ -1,6 +1,5 @@
 use crate::ChannelRequest;
 use crate::EthercatErr;
-use crate::RtOptimizationConfig;
 use crate::TripleBufProducer;
 use crate::ethercat_helpers::configure_oversampling;
 use crate::ethercat_helpers::enable_dc_sync01;
@@ -14,10 +13,13 @@ use crate::{
     send_response,
 };
 use crate::{EtherCATController, Mailbox, set_current_thread_rt_priority};
+use crate::{MasterTxRxConfig, RtOptimizationConfig};
+use crate::{OpCycleError, OpCycleFailure};
 use anyhow::bail;
 #[cfg(target_os = "linux")]
 use common::set_irq_affinity;
 use ethercrab::std::ethercat_now;
+use ethercrab::subdevice_group::CycleInfo;
 use ethercrab::{
     MainDevice, MainDeviceConfig, RegisterAddress, RetryBehaviour, SubDeviceGroup, Timeouts,
     subdevice_group::{DcConfiguration, HasDc, NoDc, Op, PreOpPdi},
@@ -44,15 +46,23 @@ enum PreopResult {
     PreopPdiDc(PreopPdiDcGroup),
 }
 
+#[derive(Default)]
+struct DcFramePiState {
+    integral: i64,
+    error: i64,
+    delta: i64,
+}
+
 fn setup_tx_rx_thread(
     interface: String,
     opt: Option<RtOptimizationConfig>,
-) -> Option<MainDevice<'static>> {
+    tx_rx_config: MasterTxRxConfig,
+) -> (Option<MainDevice<'static>>, JoinHandle<Result<(), String>>) {
     let (tx, rx, pdu) = PDU_STORAGE.try_split().expect("can only split once");
     let pdu_tx = tx;
     let pdu_rx = rx;
 
-    let _ethercat_tx_rx_handle = std::thread::Builder::new()
+    let tx_rx_thread = std::thread::Builder::new()
         .name("EthercatTxRxThread".to_owned())
         .spawn(move || {
             match opt {
@@ -74,30 +84,30 @@ fn setup_tx_rx_thread(
                 None => (),
             };
 
-            #[cfg(not(target_os = "linux"))]
-            use ethercrab::std::tx_rx_task;
-            #[cfg(target_os = "linux")]
-            use ethercrab::std::tx_rx_task_io_uring;
-
-            #[cfg(target_os = "linux")]
-            tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
-                .expect("Failed to run TX/RX task (io_uring)");
-            #[cfg(not(target_os = "linux"))]
-            get_async_runtime().block_on(async {
-                match tx_rx_task(&interface, pdu_tx, pdu_rx) {
-                    Ok(task) => {
-                        task.await.expect("TX/RX task failed");
-                    }
-                    Err(e) => panic!("Failed to create TX/RX task: {e}"),
+            match tx_rx_config {
+                #[cfg(target_os = "linux")]
+                MasterTxRxConfig::TxRxIoUring => {
+                    ethercrab::std::tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
+                        .map(|_| ())
+                        .map_err(|e| format!("TX/RX task (io_uring) failed: {e}"))
                 }
-            });
-        });
+                // smol::block_on drives the async-io reactor the socket is registered with
+                _ => smol::block_on(async {
+                    let task = ethercrab::std::tx_rx_task(&interface, pdu_tx, pdu_rx)
+                        .map_err(|e| format!("Failed to create TX/RX task: {e}"))?;
+                    task.await
+                        .map(|_| ())
+                        .map_err(|e| format!("TX/RX task failed: {e}"))
+                }),
+            }
+        })
+        .expect("Failed to spawn TX/RX thread");
 
     let maindevice = Some(MainDevice::new(
         pdu,
         Timeouts {
             state_transition: Duration::from_millis(20000),
-            pdu: Duration::from_micros(30_000),
+            pdu: Duration::from_micros(30000),
             eeprom: Duration::from_millis(100),
             wait_loop_delay: Duration::from_millis(0),
             mailbox_echo: Duration::from_millis(100),
@@ -108,12 +118,29 @@ fn setup_tx_rx_thread(
             dc_static_sync_iterations: 10_000,
         },
     ));
-    return maindevice;
+    return (maindevice, tx_rx_thread);
 }
 
-/*
-    if ecat OP state
-*/
+/// Whether a failed `tx_rx_dc` may succeed on the next cycle. Errors `tx_rx_dc` can't
+/// return (state transitions, SDO, EEPROM, WKC) are fatal so they don't go unnoticed if
+/// that changes.
+fn is_retryable(error: &ethercrab::error::Error) -> bool {
+    use ethercrab::error::{Error, PduError};
+    match error {
+        // Lost, late or garbled reply
+        Error::Timeout(_) | Error::Wire(_) => true,
+        Error::Pdu(PduError::Decode | PduError::InvalidIndex(_) | PduError::Validation(_)) => true,
+        // No free frame slot. Either briefly, or because the TX/RX thread stopped, which
+        // handle_op checks separately.
+        Error::Pdu(PduError::InvalidFrameState | PduError::SwapState) => true,
+        // The PDI doesn't fit a frame, which recurs every cycle
+        Error::Pdu(PduError::TooLong | PduError::CreateFrame | PduError::Ethernet) => false,
+        // SendFrame, ReceiveFrame and PartialSend end the TX/RX task instead of reaching
+        // tx_rx_dc, so they show up as the TX/RX thread exiting
+        _ => false,
+    }
+}
+
 fn handle_channel_requests(
     msg: ChannelRequest,
     maindev: &MainDevice<'_>,
@@ -265,6 +292,25 @@ fn dc_static_sync(
 }
 
 impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
+    // Why the TX/RX thread stopped, if it has. Joins it, so this returns the reason once.
+    fn take_tx_rx_thread_exit(&mut self) -> Option<String> {
+        if !self.tx_rx_thread.as_ref()?.is_finished() {
+            return None;
+        }
+        let reason = match self.tx_rx_thread.take()?.join() {
+            Ok(Ok(())) => "TX/RX task exited".to_string(),
+            Ok(Err(reason)) => reason,
+            Err(panic) => match panic.downcast::<String>() {
+                Ok(msg) => format!("TX/RX thread panicked: {msg}"),
+                Err(panic) => match panic.downcast::<&str>() {
+                    Ok(msg) => format!("TX/RX thread panicked: {msg}"),
+                    Err(_) => "TX/RX thread panicked".to_string(),
+                },
+            },
+        };
+        Some(reason)
+    }
+
     fn apply_op_optimizations(&self) -> Result<(), anyhow::Error> {
         match &self.current_config.realtime_optimizations {
             Some(opt) => {
@@ -417,84 +463,143 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
         return Ok(group_op);
     }
 
+    fn calc_frame_timing(
+        &mut self,
+        cycle_start: Instant,
+        cycle_info: &CycleInfo,
+        state: &mut DcFramePiState,
+        cycle_time_ns: i64,
+    ) {
+        // Should these be configurable?
+        const PGAIN: f64 = 0.01 as f64;
+        const IGAIN: f64 = 0.00002 as f64;
+        // sync_offset_ns is 50% of macro cycle time(Sync1 FULL period)
+        // This essentially means we send the frame 50% into the sync1 period
+        let sync_offset_ns: i64 = (cycle_time_ns) / 2;
+        state.delta = (cycle_info.dc_system_time - sync_offset_ns as u64) as i64 % cycle_time_ns;
+        if state.delta > (sync_offset_ns) {
+            state.delta = state.delta - cycle_time_ns
+        }
+        state.error = -state.delta;
+        // Not sure what to clamp to, if at all Clamping seemed to have a negative effect? so just keep it as is
+        state.integral = state.integral + state.error;
+        // Maybe instead it makes sense to clamp offsettime?
+        let offsettime = ((state.error as f64 * PGAIN) + (state.integral as f64 * IGAIN)) as i64;
+        self.dc_system_time_ns
+            .store(cycle_info.dc_system_time, Relaxed);
+        self.next_cycle = cycle_start
+            + Duration::from_nanos(
+                (cycle_time_ns + offsettime.clamp(cycle_time_ns * -1, cycle_time_ns)) as u64,
+            );
+    }
+
     async fn handle_op(
         &mut self,
         group_opt: Option<OpGroup>,
         maindevice: &MainDevice<'_>,
         spinner: SpinSleeper,
     ) -> Result<(), EthercatErr> {
+        let mut dc_frame_pi_state = DcFramePiState::default();
         let mut is_all_op = false;
         let mut not_all_op_cycles: u32 = 0;
+        let mut consecutive_failures: u32 = 0;
         let ramp_started = Instant::now();
         let cycle_time_ns = self.current_config.target_cycle_time_us as i64 * 1000;
-        let mut integral: i64 = 0;
-        let mut error: i64;
-        let mut delta: i64;
-        // TODO Make these configurable?
-        let pgain = 0.01 as f64;
-        let igain = 0.00002 as f64;
-        // sync_offset_ns is 50% of macro cycle time(Sync1 FULL period)
-        // This essentially means we send the frame 50% into the sync1 period
-        let sync_offset_ns: u64 = (self.current_config.target_cycle_time_us as u64 * 1000) / 2;
         let group = group_opt.unwrap();
-
         loop {
             // Instant::now() on Almost any modern linux pc compiles down to one instruction if pc is not older than 2006 or so
             let cycle_start = Instant::now();
-            let res = self
-                .guard(
-                    EtherCATTransition::TxRx(EtherCATState::Op),
-                    maindevice,
-                    group.tx_rx_dc(maindevice),
-                )
-                .await?;
-            delta = (res.extra.dc_system_time - sync_offset_ns) as i64 % cycle_time_ns;
-            if delta > (cycle_time_ns / 2) {
-                delta = delta - cycle_time_ns
-            }
-            error = -delta;
-            // Not sure what to clamp to, if at all Clamping seemed to have a negative effect? so just keep it as is
-            integral = integral + error;
-            // Maybe instead it makes sense to clamp offsettime?
-            let offsettime = ((error as f64 * pgain) + (integral as f64 * igain)) as i64;
-            self.dc_system_time_ns
-                .store(res.extra.dc_system_time, Relaxed);
-            self.next_cycle = cycle_start
-                + Duration::from_nanos(
-                    (cycle_time_ns + offsettime.clamp(cycle_time_ns * -1, cycle_time_ns)) as u64,
-                );
+            let res = group.tx_rx_dc(maindevice).await;
 
-            if !is_all_op {
-                if res.all_op() {
-                    let mut subdevice_guard = self.subdevices.lock().await;
-                    for i in 0..self.subdevice_count.load(Relaxed) {
-                        subdevice_guard[i as usize].initialized = true;
+            match res {
+                Ok(response) => {
+                    consecutive_failures = 0;
+                    self.calc_frame_timing(
+                        cycle_start,
+                        &response.extra,
+                        &mut dc_frame_pi_state,
+                        cycle_time_ns,
+                    );
+
+                    if !is_all_op {
+                        if response.all_op() {
+                            let mut subdevice_guard = self.subdevices.lock().await;
+                            for i in 0..self.subdevice_count.load(Relaxed) {
+                                subdevice_guard[i as usize].initialized = true;
+                            }
+                            self.all_subdevices_operational.store(true, Relaxed);
+                            drop(subdevice_guard);
+                            not_all_op_cycles = 0;
+                            is_all_op = true;
+                        } else {
+                            spinner.sleep_until(self.next_cycle);
+                            self.cycle_time_us
+                                .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
+                            not_all_op_cycles += 1;
+
+                            if not_all_op_cycles >= self.current_config.op_ramp_grace_cycles {
+                                self.record(
+                                    EtherCATTransition::OpRamp,
+                                    maindevice,
+                                    ramp_started,
+                                    Err::<(), _>(format!(
+                                        "not all subdevices reached OP within \
+                                                    {not_all_op_cycles} cycles"
+                                    )),
+                                )
+                                .await?;
+                            }
+                            continue;
+                        }
                     }
-                    self.all_subdevices_operational.store(true, Relaxed);
-                    drop(subdevice_guard);
-                    not_all_op_cycles = 0;
-                    is_all_op = true;
-                } else {
+                }
+                Err(error) => {
+                    consecutive_failures += 1;
+                    // The client may have dropped its handle, which is no reason to stop,
+                    // so send results are ignored below.
+
+                    // A dead TX/RX thread only shows up here as timeouts or a lack of frame
+                    // slots, and retrying can't bring it back.
+                    if let Some(reason) = self.take_tx_rx_thread_exit() {
+                        let _ = self.op_error_tx.send(OpCycleError {
+                            cycle: self.cycle.load(Relaxed),
+                            failure: OpCycleFailure::TxRxThreadExited(reason.clone()),
+                            consecutive_failures,
+                            fatal: true,
+                        });
+                        return Err(EthercatErr::TxRxThreadExited(reason));
+                    }
+
+                    let fatal = !is_retryable(&error)
+                        || consecutive_failures
+                            > self.current_config.max_consecutive_tx_rx_failures;
+                    let _ = self.op_error_tx.send(OpCycleError {
+                        cycle: self.cycle.load(Relaxed),
+                        failure: OpCycleFailure::TxRx(error),
+                        consecutive_failures,
+                        fatal,
+                    });
+                    if fatal {
+                        return Err(EthercatErr::TxRxFailed {
+                            error,
+                            consecutive_failures,
+                        });
+                    }
+
+                    // No fresh inputs and no DC time this cycle, so skip the exchange
+                    // and keep the previous cycle period.
+                    self.next_cycle = cycle_start + Duration::from_nanos(cycle_time_ns as u64);
                     spinner.sleep_until(self.next_cycle);
                     self.cycle_time_us
                         .store(cycle_start.elapsed().as_micros() as u64, Relaxed);
-                    not_all_op_cycles += 1;
-
-                    if not_all_op_cycles >= self.current_config.op_ramp_grace_cycles {
-                        self.record(
-                            EtherCATTransition::OpRamp,
-                            maindevice,
-                            ramp_started,
-                            Err::<(), _>(format!(
-                                "not all subdevices reached OP within \
-                                                 {not_all_op_cycles} cycles"
-                            )),
-                        )
-                        .await?;
+                    if self.cycle.load(Relaxed) == u64::MAX {
+                        self.cycle.store(0, Relaxed);
+                    } else {
+                        self.cycle.fetch_add(1, Relaxed);
                     }
                     continue;
                 }
-            }
+            };
 
             match self.input_producer.input_buffer_mut() {
                 Some(buffer) => {
@@ -522,6 +627,8 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
 
             // This gives the client side time to look at the inputs and write outputs
             // Might be a bit too tight if running < 125us but at that point it isnt really stable anyways
+            // When running low cycle times and wanting rt-latency you will always need extra work client-side
+            // Alternatively check for outputs before tx_rx
             spinner.sleep_until(self.next_cycle - Duration::from_nanos(10000));
             match self.output_consumer.read() {
                 Some(full_buffer) => {
@@ -590,10 +697,13 @@ impl EtherCATController<Arc<Mailbox>, TripleBufProducer> {
                     }
 
                     if self.interface.is_some() {
-                        maindevice = setup_tx_rx_thread(
+                        let tx_rx_thread;
+                        (maindevice, tx_rx_thread) = setup_tx_rx_thread(
                             self.interface.clone().expect("Should be some"),
                             self.current_config.realtime_optimizations.clone(),
+                            self.current_config.tx_rx_config.clone(),
                         );
+                        self.tx_rx_thread = Some(tx_rx_thread);
                         let rt = get_async_runtime();
                         let maindev = maindevice.as_ref().unwrap();
 
