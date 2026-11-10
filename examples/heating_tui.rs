@@ -84,14 +84,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // WICHTIG: SDO/CoE-Requests werden vom HAL nur im PreOp bedient
     // (preop_group) — Konfiguration muss VOR dem Op-Übergang geschehen.
-    let subdevices = eth_handle
+    // ACHTUNG: In PreOp haben die Subdevices noch keine PDO-Offsets
+    // (start_tx==end_tx) — die verbindliche Liste wird nach Op erneut geholt.
+    let subdevices_preop = eth_handle
         .try_get_subdevices_vec_sync()
         .expect("could not list subdevices");
 
     // EL3202-Sensortyp auf PT1000 stellen (Anlage ist durchgehend PT1000;
     // Beckhoff-Auslieferungszustand ist PT100 → 1-kΩ-Fühler würde sonst als
     // „offen/Overrange" angezeigt)
-    for meta in &subdevices {
+    for meta in &subdevices_preop {
         if meta.product_id == EL3202_PRODUCT_ID {
             EL3202Configuration::default()
                 .write_config(eth_control.channel.clone(), meta.device_address)
@@ -107,6 +109,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     while !matches!(eth_handle.get_state(), EtherCATState::Op) {
         std::thread::sleep(Duration::from_millis(10));
     }
+
+    // Nach Op: PDO-Offsets vergeben → verbindliche Geräteliste
+    let subdevices = eth_handle
+        .try_get_subdevices_vec_sync()
+        .expect("could not list subdevices");
 
     let mut devices: Vec<BusDevice> = Vec::new();
     for (i, meta) in subdevices.iter().enumerate() {

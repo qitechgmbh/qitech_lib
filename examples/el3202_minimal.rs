@@ -37,8 +37,11 @@ fn main() {
 
     println!("found {:?} ethercat terminals:", eth_handle.get_subdevice_count());
 
-    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
-    for sdev in &subdevices {
+    // ACHTUNG: In PreOp haben die Subdevices noch keine PDO-Offsets (start_tx==end_tx)
+    // — diese Liste dient nur dem Scan und der Config. PDO-Zugriffe brauchen die
+    // Liste nach dem Op-Übergang!
+    let subdevices_preop = eth_handle.try_get_subdevices_vec_sync().unwrap();
+    for sdev in &subdevices_preop {
         println!(
             " - {} (vendor 0x{:x}, product 0x{:x}, revision 0x{:x})",
             sdev.get_name().expect("No utf8 name!"),
@@ -50,7 +53,7 @@ fn main() {
 
     // EL3202 auf PT1000 stellen (Auslieferungszustand: PT100 — Anlage ist PT1000)
     // WICHTIG: SDO/CoE wird vom HAL nur im PreOp bedient → Konfig VOR dem Op-Übergang!
-    for meta in &subdevices {
+    for meta in &subdevices_preop {
         if meta.product_id == EL3202_PRODUCT_ID {
             EL3202Configuration::default()
                 .write_config(eth_control.channel.clone(), meta.device_address)
@@ -69,6 +72,9 @@ fn main() {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
+
+    // Nach Op: PDO-Offsets sind vergeben → jetzt die verbindliche Liste holen
+    let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
 
     // Alle EL3202 einzeln verfolgen (Adresse → eigenes Device-Objekt)
     let mut modules: Vec<(u16, EL3202)> = subdevices
