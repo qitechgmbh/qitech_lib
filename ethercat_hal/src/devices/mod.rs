@@ -16,6 +16,7 @@ use crate::devices::panasonic_modules::minas_a6::{self, MINAS_A6_IDENTITY_A};
 use beckhoff_modules::ek1100::{EK1100, EK1100_IDENTITY_A};
 use beckhoff_modules::el1002::{EL1002, EL1002_IDENTITY_A};
 use beckhoff_modules::el1008::{EL1008_IDENTITY_A, EL1008_IDENTITY_B};
+use beckhoff_modules::el1804::{EL1804, EL1804_IDENTITY_A, EL1804_IDENTITY_B, EL1804_IDENTITY_C};
 use beckhoff_modules::el1814::{EL1814, EL1814_IDENTITY_A, EL1814_IDENTITY_B, EL1814_IDENTITY_C};
 use beckhoff_modules::el2002::{EL2002, EL2002_IDENTITY_A, EL2002_IDENTITY_B};
 use beckhoff_modules::el2004::{EL2004, EL2004_IDENTITY_A};
@@ -177,6 +178,9 @@ pub fn device_from_subdevice_identity(
         EK1100_IDENTITY_A => Ok(Box::new(EK1100::new())),
         EL1002_IDENTITY_A => Ok(Box::new(EL1002::new())),
         EL1008_IDENTITY_A | EL1008_IDENTITY_B => Ok(Box::new(EL1008::new())),
+        EL1804_IDENTITY_A | EL1804_IDENTITY_B | EL1804_IDENTITY_C => {
+            Ok(Box::new(EL1804::new()))
+        }
         EL1814_IDENTITY_A | EL1814_IDENTITY_B | EL1814_IDENTITY_C => {
             Ok(Box::new(EL1814::new()))
         }
@@ -241,6 +245,9 @@ pub fn device_from_subdevice_identity_rc(
         EK1100_IDENTITY_A => Ok(Rc::new(RefCell::new(EK1100::new()))),
         EL1002_IDENTITY_A => Ok(Rc::new(RefCell::new(EL1002::new()))),
         EL1008_IDENTITY_A | EL1008_IDENTITY_B => Ok(Rc::new(RefCell::new(EL1008::new()))),
+        EL1804_IDENTITY_A | EL1804_IDENTITY_B | EL1804_IDENTITY_C => {
+            Ok(Rc::new(RefCell::new(EL1804::new())))
+        }
         EL1814_IDENTITY_A | EL1814_IDENTITY_B | EL1814_IDENTITY_C => {
             Ok(Rc::new(RefCell::new(EL1814::new())))
         }

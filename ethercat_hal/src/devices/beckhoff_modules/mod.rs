@@ -3,6 +3,7 @@ pub mod el1002;
 pub mod el1008;
 pub mod el1124;
 pub mod el1259;
+pub mod el1804;
 pub mod el1814;
 pub mod el2002;
 pub mod el2004;

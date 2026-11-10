@@ -20,6 +20,7 @@ use ethercat_hal::{
     devices::{
         EthercatDevice, NewEthercatDevice,
         beckhoff_modules::{
+            el1804::{EL1804, EL1804_PRODUCT_ID},
             el1814::{EL1814, EL1814_PRODUCT_ID},
             el3202::EL3202Configuration,
             el2808::{EL2808, EL2808_PRODUCT_ID},
@@ -43,8 +44,33 @@ use std::{env, io, time::Duration};
 
 enum DevKind {
     Rtd(EL3202),
-    Di(EL1814),
+    Di(DiKind),
     Do(EL2808),
+}
+
+enum DiKind {
+    El1804(EL1804),
+    El1814(EL1814),
+}
+
+impl DiKind {
+    fn get(&self, port: usize) -> bool {
+        match self {
+            DiKind::El1804(el) => el.get_input(port).unwrap_or(false),
+            DiKind::El1814(el) => el.get_input(port).unwrap_or(false),
+        }
+    }
+
+    fn input_from(&mut self, slice: &BitSlice<u8, Lsb0>) {
+        match self {
+            DiKind::El1804(el) => {
+                el.input(slice).ok();
+            }
+            DiKind::El1814(el) => {
+                el.input(slice).ok();
+            }
+        }
+    }
 }
 
 struct BusDevice {
@@ -137,7 +163,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let name = meta.get_name().unwrap_or_else(|_| "?".to_string());
         let kind = match meta.product_id {
             EL3202_PRODUCT_ID => Some(DevKind::Rtd(EL3202::new())),
-            EL1814_PRODUCT_ID => Some(DevKind::Di(EL1814::new())),
+            EL1804_PRODUCT_ID => Some(DevKind::Di(DiKind::El1804(EL1804::new()))),
+            EL1814_PRODUCT_ID => Some(DevKind::Di(DiKind::El1814(EL1814::new()))),
             EL2808_PRODUCT_ID => Some(DevKind::Do(EL2808::new())),
             _ => None,
         };
@@ -221,7 +248,7 @@ fn app_tick(app: &mut App, eth_handle: &mut ethercat_hal::StdEcatHandle) {
                         el.input(BitSlice::<u8, Lsb0>::from_slice(&inputs[s..e])).ok();
                     }
                     DevKind::Di(el) => {
-                        el.input(BitSlice::<u8, Lsb0>::from_slice(&inputs[s..e])).ok();
+                        el.input_from(BitSlice::<u8, Lsb0>::from_slice(&inputs[s..e]));
                     }
                     DevKind::Do(_) => (),
                 }
@@ -357,9 +384,9 @@ fn detail_content(dev: &mut BusDevice, tab: Tab) -> Vec<Line<'static>> {
             })
             .collect(),
         (DevKind::Rtd(_), _) => vec![Line::from("(s. Measurements)")],
-        (DevKind::Di(el), Tab::State) => (0..el.get_port_count())
+        (DevKind::Di(el), Tab::State) => (0..4)
             .map(|port| {
-                let on = el.get_input(port).unwrap_or(false);
+                let on = el.get(port);
                 Line::from(format!("DI{}:  {}", port + 1, if on { "■" } else { "□" }))
             })
             .collect(),
