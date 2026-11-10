@@ -1,9 +1,10 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use ethercat_hal::{
     BECKHOFF_VENDOR_ID, EtherCATState,
+    coe::Configuration,
     devices::{
         EthercatDevice, NewEthercatDevice,
-        beckhoff_modules::el3202::{EL3202, EL3202_PRODUCT_ID},
+        beckhoff_modules::el3202::{EL3202, EL3202Configuration, EL3202_PRODUCT_ID},
     },
     init_ethercat,
     io::temperature_input::TemperatureInputDevice,
@@ -56,6 +57,16 @@ fn main() {
             sdev.product_id,
             sdev.revision
         );
+    }
+
+    // EL3202 auf PT1000 stellen (Auslieferungszustand: PT100 — Anlage ist PT1000)
+    for meta in &subdevices {
+        if meta.product_id == EL3202_PRODUCT_ID {
+            EL3202Configuration::default()
+                .write_config(eth_control.channel.clone(), meta.device_address)
+                .expect("PT1000-Konfiguration fehlgeschlagen");
+            println!("EL3202 @0x{:x}: Sensortyp = PT1000", meta.device_address);
+        }
     }
 
     let mut el3202 = EL3202::new();

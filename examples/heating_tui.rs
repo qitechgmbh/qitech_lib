@@ -16,10 +16,12 @@ use crossterm::{
 };
 use ethercat_hal::{
     BECKHOFF_VENDOR_ID, EtherCATState, MetaSubdevice,
+    coe::Configuration,
     devices::{
         EthercatDevice, NewEthercatDevice,
         beckhoff_modules::{
             el1814::{EL1814, EL1814_PRODUCT_ID},
+            el3202::EL3202Configuration,
             el2808::{EL2808, EL2808_PRODUCT_ID},
             el3202::{EL3202, EL3202_PRODUCT_ID},
         },
@@ -91,6 +93,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let subdevices = eth_handle
         .try_get_subdevices_vec_sync()
         .expect("could not list subdevices");
+
+    // EL3202-Sensortyp auf PT1000 stellen (Anlage ist durchgehend PT1000;
+    // Beckhoff-Auslieferungszustand ist PT100 → 1-kΩ-Fühler würde sonst als
+    // „offen/Overrange" angezeigt)
+    for meta in &subdevices {
+        if meta.product_id == EL3202_PRODUCT_ID {
+            EL3202Configuration::default()
+                .write_config(eth_control.channel.clone(), meta.device_address)
+                .expect("PT1000-Konfiguration fehlgeschlagen");
+            println!(
+                "EL3202 @0x{:x}: Sensortyp = PT1000",
+                meta.device_address
+            );
+        }
+    }
 
     let mut devices: Vec<BusDevice> = Vec::new();
     for (i, meta) in subdevices.iter().enumerate() {

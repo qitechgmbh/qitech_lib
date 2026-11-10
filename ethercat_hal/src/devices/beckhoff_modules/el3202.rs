@@ -92,6 +92,51 @@ impl Default for EL3202TxPdo {
     }
 }
 
+/// Sensor element enumeration of the EL32xx family
+/// (CoE object 0x8xx0:19 "RTD element"; values from the Beckhoff ESI, 2026-11-10)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RtdElement {
+    Pt100 = 0,
+    Ni100 = 1,
+    /// Default for the qi-heating application (system is PT1000 throughout)
+    Pt1000 = 2,
+    Pt500 = 3,
+    Pt200 = 4,
+    Ni120 = 5,
+    Ni1000 = 6,
+}
+
+/// Runtime configuration of an EL3202 (written via CoE at PreOp)
+#[derive(Debug, Clone)]
+pub struct EL3202Configuration {
+    /// Element for channel 1 (CoE 0x8000:19)
+    pub element_ch1: RtdElement,
+    /// Element for channel 2 (CoE 0x8010:19)
+    pub element_ch2: RtdElement,
+}
+
+impl Default for EL3202Configuration {
+    fn default() -> Self {
+        // qi-heating: alle Fühler sind PT1000
+        Self {
+            element_ch1: RtdElement::Pt1000,
+            element_ch2: RtdElement::Pt1000,
+        }
+    }
+}
+
+impl crate::coe::Configuration for EL3202Configuration {
+    fn write_config(
+        &self,
+        channel: crate::EtherCATThreadChannel,
+        device_address: u16,
+    ) -> Result<(), anyhow::Error> {
+        channel.sdo_write(device_address, 0x8000, 0x19, self.element_ch1 as u16)?;
+        channel.sdo_write(device_address, 0x8010, 0x19, self.element_ch2 as u16)?;
+        Ok(())
+    }
+}
+
 pub const EL3202_VENDOR_ID: u32 = 0x2;
 pub const EL3202_PRODUCT_ID: u32 = 0x0c823052;
 pub const EL3202_REVISION_A: u32 = 0x00100000;
