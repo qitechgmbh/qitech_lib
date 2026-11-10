@@ -1,4 +1,4 @@
-const U16_MAX: i128 = std::u16::MAX as i128;
+const U16_MAX: i128 = u16::MAX as i128;
 
 /// This is a wrapper for a counter that stores a u16 that frequently overflows or underflows
 ///
