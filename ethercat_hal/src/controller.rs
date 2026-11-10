@@ -74,14 +74,29 @@ fn setup_tx_rx_thread(
                 None => (),
             };
 
-            #[cfg(not(target_os = "linux"))]
             use ethercrab::std::tx_rx_task;
             #[cfg(target_os = "linux")]
             use ethercrab::std::tx_rx_task_io_uring;
 
+            // On Linux the io_uring task is the default (fastest). Set the environment
+            // variable ETHERCAT_HAL_NO_IO_URING=1 to fall back to the standard
+            // socket-based TX/RX task (e.g. USB-NICs or links with foreign traffic,
+            // see qi-heating PoC).
             #[cfg(target_os = "linux")]
-            tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
-                .expect("Failed to run TX/RX task (io_uring)");
+            if std::env::var_os("ETHERCAT_HAL_NO_IO_URING").is_none() {
+                tx_rx_task_io_uring(&interface, pdu_tx, pdu_rx)
+                    .expect("Failed to run TX/RX task (io_uring)");
+            } else {
+                get_async_runtime().block_on(async {
+                    match tx_rx_task(&interface, pdu_tx, pdu_rx) {
+                        Ok(task) => {
+                            task.await.expect("TX/RX task failed");
+                        }
+                        Err(e) => panic!("Failed to create TX/RX task: {e}"),
+                    }
+                });
+            }
+
             #[cfg(not(target_os = "linux"))]
             get_async_runtime().block_on(async {
                 match tx_rx_task(&interface, pdu_tx, pdu_rx) {
