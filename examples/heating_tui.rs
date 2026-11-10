@@ -67,6 +67,20 @@ struct App {
     ecat_state: EtherCATState,
 }
 
+impl App {
+    /// Wählt den zum Gerätetyp passenden Tab automatisch
+    /// (RTD→Measurements, DI→State, DO→Commands), damit jede Maschine sofort
+    /// ihren sinnvollen Inhalt zeigt.
+    fn sync_tab_to_kind(&mut self) {
+        self.tab = match self.devices.get(self.selected).map(|d| &d.kind) {
+            Some(DevKind::Rtd(_)) => Tab::Measurements,
+            Some(DevKind::Di(_)) => Tab::State,
+            Some(DevKind::Do(_)) => Tab::Commands,
+            None => self.tab,
+        };
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let interface = env::args().nth(1).expect("Usage: heating_tui <interface>");
@@ -158,10 +172,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => break,
                     KeyCode::Up | KeyCode::Char('k') => {
-                        app.selected = app.selected.saturating_sub(1)
+                        app.selected = app.selected.saturating_sub(1);
+                        app.sync_tab_to_kind();
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
-                        app.selected = (app.selected + 1).min(app.devices.len().saturating_sub(1))
+                        app.selected = (app.selected + 1).min(app.devices.len().saturating_sub(1));
+                        app.sync_tab_to_kind();
                     }
                     KeyCode::Tab => {
                         app.tab = match app.tab {
@@ -295,6 +311,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     f.render_widget(tabs, detail_chunks[0]);
 
     let body = match app.devices.get_mut(app.selected) {
+        // Inhalt folgt immer dem Gerätetyp; der Tab ist zur Info mitgeschaltet
         Some(dev) => detail_content(dev, app.tab),
         None => vec![Line::from("(keine Maschine)")],
     };
@@ -305,6 +322,13 @@ fn draw(f: &mut Frame, app: &mut App) {
 }
 
 fn detail_content(dev: &mut BusDevice, tab: Tab) -> Vec<Line<'static>> {
+    // Wir zeigen je Gerätetyp das passende Panel — auch wenn ein „fremder" Tab
+    // angewählt ist (vor der Umstellung wirkten DI/DO wie „kaputt").
+    let tab = match dev.kind {
+        DevKind::Rtd(_) => Tab::Measurements,
+        DevKind::Di(_) => Tab::State,
+        DevKind::Do(_) => Tab::Commands,
+    };
     match (&mut dev.kind, tab) {
         (DevKind::Rtd(el), Tab::Measurements) => (0..el.get_port_count())
             .map(|port| match el.get_input(port) {
@@ -332,14 +356,14 @@ fn detail_content(dev: &mut BusDevice, tab: Tab) -> Vec<Line<'static>> {
                 Err(e) => Line::from(format!("T{}: {:?}", port + 1, e)),
             })
             .collect(),
-        (DevKind::Rtd(_), _) => vec![Line::from("(Tab-State/Commands nicht verwendet)")],
+        (DevKind::Rtd(_), _) => vec![Line::from("(s. Measurements)")],
         (DevKind::Di(el), Tab::State) => (0..el.get_port_count())
             .map(|port| {
                 let on = el.get_input(port).unwrap_or(false);
                 Line::from(format!("DI{}:  {}", port + 1, if on { "■" } else { "□" }))
             })
             .collect(),
-        (DevKind::Di(_), _) => vec![Line::from("(Tab Measurements/Commands nicht verwendet)")],
+        (DevKind::Di(_), _) => vec![Line::from("(s. State)")],
         (DevKind::Do(el), Tab::Commands) => (0..el.get_port_count())
             .map(|port| {
                 let on = el.get_output_state(port);
@@ -351,6 +375,6 @@ fn detail_content(dev: &mut BusDevice, tab: Tab) -> Vec<Line<'static>> {
                 ))
             })
             .collect(),
-        (DevKind::Do(_), _) => vec![Line::from("(Tab Measurements/State nicht verwendet)")],
+        (DevKind::Do(_), _) => vec![Line::from("(s. Commands)")],
     }
 }
