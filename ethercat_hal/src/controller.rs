@@ -112,7 +112,11 @@ fn setup_tx_rx_thread(
         pdu,
         Timeouts {
             state_transition: Duration::from_millis(20000),
-            pdu: Duration::from_micros(30_000),
+            // NOTE (qi-heating fork): raised from 30 ms to 1 s. On USB-Ethernet
+            // adapters, replies can arrive with >100 ms latency (observed 147 ms).
+            // A late reply to an already timed-out frame causes Pdu(InvalidIndex)
+            // and kills the TX/RX task. For machine-speed use, keep this low.
+            pdu: Duration::from_micros(1_000_000),
             eeprom: Duration::from_millis(100),
             wait_loop_delay: Duration::from_millis(0),
             mailbox_echo: Duration::from_millis(100),

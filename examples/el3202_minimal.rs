@@ -15,6 +15,10 @@ use std::{env, time::Duration};
 ///
 /// Usage: sudo -E ./el3202_minimal <interface>   (e.g. eth0)
 fn main() {
+    // Logging einschalten: zeigt ethercrab-interne Fehler (z. B. PDU-Index-Probleme)
+    // an, die sonst unsichtbar bleiben. Ansteuerung via RUST_LOG (z. B. =debug).
+    env_logger::init();
+
     let interface = env::args().nth(1).expect("Usage: el3202_minimal <interface>");
     let eth_control = init_ethercat(&interface, None);
     let mut eth_handle = eth_control.app_handle;
