@@ -70,37 +70,52 @@ fn main() {
         std::thread::sleep(Duration::from_millis(10));
     }
 
-    let mut el3202 = EL3202::new();
+    // Alle EL3202 einzeln verfolgen (Adresse → eigenes Device-Objekt)
+    let mut modules: Vec<(u16, EL3202)> = subdevices
+        .iter()
+        .filter(|s| s.vendor == BECKHOFF_VENDOR_ID && s.product_id == EL3202_PRODUCT_ID)
+        .map(|s| (s.device_address, EL3202::new()))
+        .collect();
+
     loop {
         if let Some(inputs) = eth_handle.get_inputs() {
             for subdevice in &subdevices {
                 if subdevice.vendor == BECKHOFF_VENDOR_ID
                     && subdevice.product_id == EL3202_PRODUCT_ID
                 {
-                    let subdevice_inputs = &inputs[subdevice.start_tx..subdevice.end_tx];
-                    el3202
-                        .input(BitSlice::<u8, Lsb0>::from_slice(subdevice_inputs))
-                        .expect("Failed to read Tx PDO");
+                    if let Some((_, el)) = modules
+                        .iter_mut()
+                        .find(|(addr, _)| *addr == subdevice.device_address)
+                    {
+                        let subdevice_inputs = &inputs[subdevice.start_tx..subdevice.end_tx];
+                        el.input(BitSlice::<u8, Lsb0>::from_slice(subdevice_inputs))
+                            .expect("Failed to read Tx PDO");
+                    }
                 }
             }
         }
 
-        for i in 0..el3202.get_port_count() {
-            match el3202.get_input(i) {
-                Ok(input) => {
-                    if input.error || input.overvoltage {
-                        // EL32xx: 850,0 °C im Prozessdatum = offener Kanal (kein Fühler)
-                        println!("T{}: <offen / kein Fühler>", i + 1);
-                    } else if input.undervoltage {
-                        println!("T{}: <Kurzschluss>", i + 1);
-                    } else {
-                        // RtdInput::read() liefert bereits °C (Wert/10 intern)
-                        println!("T{}: {:.1} °C", i + 1, input.temperature);
+        for (addr, el) in &modules {
+            print!("@0x{:x}: ", addr);
+            for i in 0..el.get_port_count() {
+                match el.get_input(i) {
+                    Ok(input) => {
+                        if input.error || input.overvoltage {
+                            // EL32xx: 850,0 °C im Prozessdatum = offener Kanal (kein Fühler)
+                            print!("T{}=<offen> ", i + 1);
+                        } else if input.undervoltage {
+                            print!("T{}=<kurz> ", i + 1);
+                        } else {
+                            // RtdInput::read() liefert bereits °C (Wert/10 intern)
+                            print!("T{}={:.1}°C ", i + 1, input.temperature);
+                        }
                     }
+                    Err(e) => print!("T{}={:?} ", i + 1, e),
                 }
-                Err(e) => println!("T{}: {:?}", i + 1, e),
             }
+            println!();
         }
+        println!("---");
 
         eth_handle.send_outputs();
         std::thread::sleep(Duration::from_millis(500));
