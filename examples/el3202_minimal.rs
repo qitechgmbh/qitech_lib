@@ -76,8 +76,11 @@ fn main() {
         for i in 0..el3202.get_port_count() {
             match el3202.get_input(i) {
                 Ok(input) => {
-                    if input.error {
-                        println!("T{}: <error (not connected / out of range)>", i + 1);
+                    if input.error || input.overvoltage {
+                        // EL32xx: 850,0 °C im Prozessdatum = offener Kanal (kein Fühler)
+                        println!("T{}: <offen / kein Fühler>", i + 1);
+                    } else if input.undervoltage {
+                        println!("T{}: <Kurzschluss>", i + 1);
                     } else {
                         // RtdInput::read() liefert bereits °C (Wert/10 intern)
                         println!("T{}: {:.1} °C", i + 1, input.temperature);

@@ -52,6 +52,24 @@ impl DigitalOutputDevice for EL2808 {
     }
 }
 
+impl EL2808 {
+    /// Currently set output state of a channel (the value to be sent in the next cycle).
+    pub fn get_output_state(&self, port: usize) -> bool {
+        let ch = match port {
+            0 => &self.rxpdo.channel1,
+            1 => &self.rxpdo.channel2,
+            2 => &self.rxpdo.channel3,
+            3 => &self.rxpdo.channel4,
+            4 => &self.rxpdo.channel5,
+            5 => &self.rxpdo.channel6,
+            6 => &self.rxpdo.channel7,
+            7 => &self.rxpdo.channel8,
+            _ => return false,
+        };
+        ch.as_ref().map(|c| c.value).unwrap_or(false)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum EL2808Port {
     DO1,
