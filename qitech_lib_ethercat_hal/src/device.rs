@@ -1,9 +1,7 @@
 //! Traits every device driver implements. The drivers themselves live in the
 //! `qitech_lib_ethercat_hal_devices` crate.
 use crate::{
-    DeviceError, Error, MetaSubdevice, PdoError,
-    pdo::{RxPdo, TxPdo},
-    sdo::SdoRequest,
+    DeviceError, Error, MetaSubdevice, PdoError, pdo::{RxPdo, TxPdo}, sdo::SdoRequest,
 };
 use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;

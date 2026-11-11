@@ -30,9 +30,9 @@ use tokio::sync::Mutex;
 use triple_buffer::{Input, Output};
 // Re-exported so crates defining their own devices only need this crate: the derive macros, and
 // `bitvec`, whose types appear in `EthercatDevice` and in the derive output.
-use crate::device::Module;
 pub use bitvec;
 pub use qitech_lib_ethercat_hal_derive::{EthercatDevice, PdoObject, RxPdo, TxPdo};
+use crate::device::Module;
 
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -46,8 +46,8 @@ fn get_async_runtime() -> &'static Runtime {
             .expect("Failed to create Tokio Runtime")
     })
 }
-
 pub const BECKHOFF_VENDOR_ID: u32 = 0x2;
+pub const WAGO_VENDOR_ID: u32 = 0x21;
 pub const ETHERCAT_TX_RX_SIZE: usize = 4096;
 pub const MAX_SUBDEVICES: usize = 32;
 pub const MAX_PDU_DATA: usize = PduStorage::element_size(512);
