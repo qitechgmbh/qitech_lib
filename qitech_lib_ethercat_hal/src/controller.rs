@@ -110,7 +110,7 @@ fn setup_tx_rx_thread(
         pdu,
         Timeouts {
             state_transition: Duration::from_millis(20000),
-            pdu: Duration::from_micros(30_000),
+            pdu: Duration::from_micros(300_000),
             eeprom: Duration::from_millis(100),
             wait_loop_delay: Duration::from_millis(0),
             mailbox_echo: Duration::from_millis(100),
