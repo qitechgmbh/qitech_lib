@@ -182,9 +182,11 @@ pub struct EthercatDeviceIdentity {
 }
 
 impl EthercatDeviceIdentity {
+    // DO note that this is a "naive way" to identify devices
     pub fn matches(&self, subdevice: &MetaSubdevice) -> bool {
-        subdevice.vendor == self.vendor && subdevice.product_id == self.product
-        // && self.revisions.contains(&subdevice.revision)
+        subdevice.vendor == self.vendor
+            && subdevice.product_id == self.product
+            && self.revisions.contains(&subdevice.revision)
     }
 }
 

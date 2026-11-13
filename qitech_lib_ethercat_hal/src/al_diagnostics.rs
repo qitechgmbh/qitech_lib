@@ -56,7 +56,11 @@ impl fmt::Display for SubDeviceAlStatus {
         write!(f, "{} @{:#06x}: ", self.name, self.device_address)?;
 
         if let Some(err) = &self.read_error {
-            return write!(f, "unreachable ({err})");
+            write!(f, "unreachable ({err})")?;
+            if let Some(code) = self.al_status_code {
+                write!(f, ", {code}")?;
+            }
+            return Ok(());
         }
 
         match self.state {
@@ -224,35 +228,33 @@ async fn read_one_al_status(
         .receive::<u16>(maindevice)
         .await;
 
-    let raw = match al_status {
-        Ok(raw) => raw,
-        Err(e) => {
-            return SubDeviceAlStatus {
-                device_address,
-                name,
-                state: None,
-                error_flag: false,
-                al_status_code: None,
-                read_error: Some(format!("{e:?}")),
-            };
-        }
-    };
-
-    let (state, error_flag) = decode_al_status(raw);
-
+    // Read the status code even if the status read failed, so it isn't lost with it.
     let al_status_code = Command::fprd(device_address, RegisterAddress::AlStatusCode.into())
         .ignore_wkc()
         .receive::<AlStatusCode>(maindevice)
         .await
         .ok();
 
-    SubDeviceAlStatus {
-        device_address,
-        name,
-        state,
-        error_flag,
-        al_status_code,
-        read_error: None,
+    match al_status {
+        Ok(raw) => {
+            let (state, error_flag) = decode_al_status(raw);
+            SubDeviceAlStatus {
+                device_address,
+                name,
+                state,
+                error_flag,
+                al_status_code,
+                read_error: None,
+            }
+        }
+        Err(e) => SubDeviceAlStatus {
+            device_address,
+            name,
+            state: None,
+            error_flag: false,
+            al_status_code,
+            read_error: Some(format!("{e:?}")),
+        },
     }
 }
 

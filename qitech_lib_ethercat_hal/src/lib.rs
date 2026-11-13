@@ -30,10 +30,9 @@ use tokio::sync::Mutex;
 use triple_buffer::{Input, Output};
 // Re-exported so crates defining their own devices only need this crate: the derive macros, and
 // `bitvec`, whose types appear in `EthercatDevice` and in the derive output.
+use crate::device::Module;
 pub use bitvec;
 pub use qitech_lib_ethercat_hal_derive::{EthercatDevice, PdoObject, RxPdo, TxPdo};
-
-use crate::device::Module;
 
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
