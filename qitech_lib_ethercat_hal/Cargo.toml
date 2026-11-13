@@ -20,6 +20,7 @@ core_affinity.workspace = true
 libc.workspace = true
 spin_sleep.workspace = true
 futures.workspace = true
+smol.workspace = true
 
 [dev-dependencies]
 approx.workspace = true

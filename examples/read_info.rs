@@ -67,7 +67,7 @@ fn main() {
         };
 
         println!(
-            "{}── {} at 0x{:04x}: product_id: 0x{:08x}, revision: 0x{:08x}, vendor: 0x{:08x}, start_tx: {}, end_tx: {}, start_rx: {}, end_rx: {}",
+            "{}── {} at 0x{:04x}: product_id: 0x{:08x}, revision: 0x{:08x}, vendor: 0x{:08x}, start_tx: {}, end_tx: {}, start_rx: {}, end_rx: {} (bits)",
             branch,
             name,
             subdevice.device_address,

@@ -1,4 +1,4 @@
-use bitvec::slice::BitSlice;
+use bitvec::{order::Lsb0, view::BitView};
 use qitech_lib_ethercat_hal::{
     DcConfiguration, EtherCATState, MasterConfiguration, RtOptimizationConfig, init_ethercat,
     io::analog_output::{AnalogOutputDevice, AnalogOutputOutput},
@@ -91,6 +91,7 @@ fn main() {
         realtime_optimizations: Some(rt),
         wkc_mismatch_threshold: 5,
         op_ramp_grace_cycles: 10000,
+        max_consecutive_tx_rx_failures: 5,
     };
 
     let mut eth_control = init_ethercat(&interface, Some(config));
@@ -155,10 +156,9 @@ fn main() {
                     el4732
                         .output_pre_process()
                         .expect("Failed to prepare output");
-                    let out = &mut output[subdevice.start_rx..subdevice.end_rx];
-                    el4732
-                        .output(BitSlice::from_slice_mut(out))
-                        .expect("Failed to write output");
+                    let out =
+                        &mut output.view_bits_mut::<Lsb0>()[subdevice.start_rx..subdevice.end_rx];
+                    el4732.output(out).expect("Failed to write output");
                 }
             }
         }

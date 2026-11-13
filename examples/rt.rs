@@ -57,6 +57,7 @@ fn setup() -> Setup {
         realtime_optimizations: Some(rt),
         wkc_mismatch_threshold: 5,
         op_ramp_grace_cycles: 10000,
+        max_consecutive_tx_rx_failures: 5,
     };
     setup.ec_control = Some(init_ethercat(&interface, Some(config)));
     return setup;

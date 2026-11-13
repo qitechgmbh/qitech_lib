@@ -190,7 +190,8 @@ impl IdentifiedDevice for Wago750_460 {
             // Modules have no vendor id of their own, it is the vendor of the 750-354 coupler
             vendor: 0x00000021,
             product: 0x046041b3,
-            revisions: &[],
+            // Revisions are only printed on the physical terminal itself
+            revisions: &[0],
         }
     }
 }

@@ -46,8 +46,8 @@ fn get_async_runtime() -> &'static Runtime {
             .expect("Failed to create Tokio Runtime")
     })
 }
-
 pub const BECKHOFF_VENDOR_ID: u32 = 0x2;
+pub const WAGO_VENDOR_ID: u32 = 0x21;
 pub const ETHERCAT_TX_RX_SIZE: usize = 4096;
 pub const MAX_SUBDEVICES: usize = 32;
 pub const MAX_PDU_DATA: usize = PduStorage::element_size(512);
@@ -78,6 +78,10 @@ where
     /// `ChangeState`/`Shutdown` the current arm cannot honour.
     diagnostic_channel: Receiver<DiagnosticRequest>,
     transition_log: TransitionLog,
+    /// Reports failed `tx_rx` cycles in OP to the application
+    op_error_tx: Sender<OpCycleError>,
+    /// Set once the TX/RX thread is spawned on the transition out of Init
+    tx_rx_thread: Option<JoinHandle<Result<(), String>>>,
     input_producer: P,
     output_consumer: C,
 }
@@ -103,6 +107,7 @@ where
         all_subdevices_operational: Arc<AtomicBool>,
         inputs_ready: Arc<AtomicBool>,
         transition_log: TransitionLog,
+        op_error_tx: Sender<OpCycleError>,
     ) -> Self {
         Self {
             cycle,
@@ -116,6 +121,8 @@ where
             rx_channel: rx,
             diagnostic_channel,
             transition_log,
+            op_error_tx,
+            tx_rx_thread: None,
             input_producer: input,
             output_consumer: output,
             current_config: config,
@@ -247,6 +254,7 @@ where
     dc_sys_time: Arc<AtomicU64>,
     inputs_ready: Arc<AtomicBool>,
     transition_log: TransitionLog,
+    op_error_rx: Receiver<OpCycleError>,
 }
 
 impl<C, P> EtherCATAppHandle<C, P>
@@ -254,6 +262,11 @@ where
     C: Consumer,
     P: Producer,
 {
+    /// Next `tx_rx` failure reported by the controller in OP, if any. Doesn't block.
+    pub fn try_recv_op_error(&self) -> Option<OpCycleError> {
+        self.op_error_rx.try_recv().ok()
+    }
+
     pub fn check_all_op(&self) -> bool {
         self.all_op.load(Relaxed)
     }
@@ -368,6 +381,11 @@ where
 
     pub fn check_all_op(&self) -> bool {
         self.app_handle.check_all_op()
+    }
+
+    /// Next `tx_rx` failure reported by the controller in OP, if any. Doesn't block.
+    pub fn try_recv_op_error(&self) -> Option<OpCycleError> {
+        self.app_handle.try_recv_op_error()
     }
 
     pub fn get_subdevice_count(&self) -> u64 {
@@ -539,10 +557,12 @@ pub struct MetaSubdevice {
     pub product_id: u32,
     pub revision: u32,
     pub vendor: u32,
-    // Gives the offset at which the TxPdo starts
+    // Bit offset at which the TxPdo starts (end is exclusive). Slice the input image via
+    // `inputs.view_bits::<Lsb0>()[start_tx..end_tx]`, not the byte slice.
     pub start_tx: usize,
     pub end_tx: usize,
-    // Gives the offset at which the RxPdo starts
+    // Bit offset at which the RxPdo starts (end is exclusive). Slice the output image via
+    // `outputs.view_bits_mut::<Lsb0>()[start_rx..end_rx]`, not the byte slice.
     pub start_rx: usize,
     pub end_rx: usize,
     // Device address first one would be 0x1000, so 4096
@@ -767,13 +787,36 @@ pub fn set_current_thread_rt_priority(_priority: i32) {
     tracing::warn!("Real-time scheduling is not available on this platform");
 }
 
-// Currently ignored by controller, but should be used to select driver for txrx
-// XDP should in theory be most performant
-// While tx_rx_blocking is supported on most platforms
-// Which of these actually work depend on the controller.rs used (ethercrab supports xdp io_uring and the standard one)
+#[derive(Debug, Clone)]
+pub enum OpCycleFailure {
+    /// `tx_rx` returned an error
+    TxRx(ethercrab::error::Error),
+    /// The TX/RX thread has stopped, so no frame goes out again. Always fatal.
+    TxRxThreadExited(String),
+}
+
+/// Sent to the client for every failed `tx_rx` in OP.
+#[derive(Debug, Clone)]
+pub struct OpCycleError {
+    /// Value of the cycle counter when the failure happened
+    pub cycle: u64,
+    pub failure: OpCycleFailure,
+    /// Failures in a row, including this one. Reset by the next successful cycle.
+    pub consecutive_failures: u32,
+    /// The controller stops after sending this error
+    pub fatal: bool,
+}
+
+/// Which ethercrab TX/RX task the TX/RX thread runs.
+// XDP should in theory be most performant, ethercrab has it behind its `xdp` feature
 #[derive(Clone, Debug)]
 pub enum MasterTxRxConfig {
+    /// ethercrab's poll-based `tx_rx_task` on a non-blocking raw socket. Recovers from lost
+    /// frames, but a stale or duplicate reply ends it.
     TxRxBlocking,
+    /// ethercrab's `tx_rx_task_io_uring`, Linux only (falls back to `TxRxBlocking` elsewhere).
+    /// Fewer syscalls per frame, but it waits for a reply to every frame it sent, so one
+    /// unanswered frame stalls it for good.
     TxRxIoUring,
     //TX_RX_XDP
 }
@@ -831,6 +874,10 @@ pub struct MasterConfiguration {
     pub dc_config: DcConfiguration,
     pub wkc_mismatch_threshold: u32,
     pub op_ramp_grace_cycles: u32,
+    /// Consecutive transient `tx_rx` failures (timeouts, garbled or late replies, no free
+    /// frame slot) tolerated in OP. The next one stops the controller. Any other error, and
+    /// the TX/RX thread stopping, stop it immediately.
+    pub max_consecutive_tx_rx_failures: u32,
 }
 
 impl Default for MasterConfiguration {
@@ -842,6 +889,7 @@ impl Default for MasterConfiguration {
             realtime_optimizations: None,
             wkc_mismatch_threshold: 5,
             op_ramp_grace_cycles: 10000,
+            max_consecutive_tx_rx_failures: 5,
         }
     }
 }
@@ -853,6 +901,7 @@ pub fn init_ethercat(
     use std::sync::atomic::AtomicU8;
     let (tx, rx) = mpsc::channel();
     let (diagnostic_tx, diagnostic_rx) = mpsc::channel();
+    let (op_error_tx, op_error_rx) = mpsc::channel();
     let transition_log = TransitionLog::new();
     let mailbox = Arc::new(Mailbox {
         data: [0u8; ETHERCAT_TX_RX_SIZE].into(),
@@ -893,6 +942,7 @@ pub fn init_ethercat(
             all_op.clone(),
             inputs_ready.clone(),
             transition_log.clone(),
+            op_error_tx.clone(),
         ),
         None => EtherCATController::new(
             TripleBufProducer {
@@ -912,6 +962,7 @@ pub fn init_ethercat(
             all_op.clone(),
             inputs_ready.clone(),
             transition_log.clone(),
+            op_error_tx.clone(),
         ),
     };
 
@@ -928,6 +979,7 @@ pub fn init_ethercat(
         dc_sys_time,
         inputs_ready,
         transition_log,
+        op_error_rx,
     };
 
     let channel: EtherCATThreadChannel = EtherCATThreadChannel(tx, diagnostic_tx);

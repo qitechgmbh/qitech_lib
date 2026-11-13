@@ -1,4 +1,4 @@
-use bitvec::slice::BitSlice;
+use bitvec::{order::Lsb0, view::BitView};
 use qitech_lib::ethercat_hal::{
     EtherCATState, init_ethercat, io::multi_timestamp::MultiTimestampEvent,
 };
@@ -65,10 +65,8 @@ fn main() {
         if let Some(input) = eth_control.get_inputs() {
             for subdevice in &subdevices {
                 if EL1259::identity().matches(&subdevice) {
-                    let input = &input[subdevice.start_tx..subdevice.end_tx];
-                    el1259
-                        .input(BitSlice::from_slice(input))
-                        .expect("Failed to read input");
+                    let input = &input.view_bits::<Lsb0>()[subdevice.start_tx..subdevice.end_tx];
+                    el1259.input(input).expect("Failed to read input");
                     el1259
                         .input_post_process()
                         .expect("Failed to process input");
@@ -105,10 +103,9 @@ fn main() {
                     el1259
                         .output_pre_process()
                         .expect("Failed to prepare output");
-                    let output = &mut output[subdevice.start_rx..subdevice.end_rx];
-                    el1259
-                        .output(BitSlice::from_slice_mut(output))
-                        .expect("Failed to write output");
+                    let output =
+                        &mut output.view_bits_mut::<Lsb0>()[subdevice.start_rx..subdevice.end_rx];
+                    el1259.output(output).expect("Failed to write output");
                 }
             }
         }

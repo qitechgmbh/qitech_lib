@@ -1,4 +1,4 @@
-use bitvec::{order::Lsb0, slice::BitSlice};
+use bitvec::{order::Lsb0, view::BitView};
 use qitech_lib_ethercat_hal::{
     EtherCATState, init_ethercat, io::digital_output::DigitalOutputDevice,
 };
@@ -36,6 +36,19 @@ fn main() {
     // This variable "knows" how to format the Rx PDOs for the EL2004
     let mut el2004: EL2004 = EL2004::new();
     for iter in 0.. {
+        // The controller reports every failed cycle in OP. A tolerated failure only means
+        // that cycle exchanged no data, a fatal one means the controller has stopped.
+        while let Some(err) = eth_control.try_recv_op_error() {
+            eprintln!(
+                "cycle {} failed ({} in a row): {:?}",
+                err.cycle, err.consecutive_failures, err.failure
+            );
+            if err.fatal {
+                eprintln!("EtherCAT controller stopped");
+                return;
+            }
+        }
+
         // Tick our application.
         // Here, we just alternate which LED is on
         for i in 0..el2004.get_port_count() {
@@ -48,11 +61,12 @@ fn main() {
                 // Loop over the subdevices until the EL2004 is found
                 if EL2004::identity().matches(subdevice) {
                     // Get the part of the Rx PDO that is used by the EL2004
-                    let subdevice_outputs = &mut outputs[subdevice.start_rx..subdevice.end_rx];
+                    let subdevice_outputs =
+                        &mut outputs.view_bits_mut::<Lsb0>()[subdevice.start_rx..subdevice.end_rx];
 
                     // Create the actual Rx PDO and put it into the output
                     el2004
-                        .output(BitSlice::<u8, Lsb0>::from_slice_mut(subdevice_outputs))
+                        .output(subdevice_outputs)
                         .expect("Failed to write Rx PDO");
                 }
             }

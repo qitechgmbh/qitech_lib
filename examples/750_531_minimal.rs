@@ -1,4 +1,4 @@
-use bitvec::{order::Lsb0, slice::BitSlice};
+use bitvec::{order::Lsb0, view::BitView};
 use qitech_lib_ethercat_hal::{
     EtherCATState, convert_module_to_meta_ethercat_device, init_ethercat,
     io::digital_output::DigitalOutputDevice,
@@ -70,10 +70,10 @@ fn main() {
             wago750_531.set_output(i, iter % port_count == i);
         }
         if let Some(outputs) = eth_control.write_outputs() {
-            let subdevice_outputs =
-                &mut outputs[wago750_531_sdev.start_rx..wago750_531_sdev.end_rx];
+            let subdevice_outputs = &mut outputs.view_bits_mut::<Lsb0>()
+                [wago750_531_sdev.start_rx..wago750_531_sdev.end_rx];
             wago750_531
-                .output(BitSlice::<u8, Lsb0>::from_slice_mut(subdevice_outputs))
+                .output(subdevice_outputs)
                 .expect("Failed to write Rx PDO");
         }
         eth_control.send_outputs();
