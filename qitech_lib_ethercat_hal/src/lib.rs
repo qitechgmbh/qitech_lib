@@ -12,6 +12,7 @@ pub mod interface_discovery;
 pub mod io;
 pub mod pdo;
 pub mod sdo;
+pub mod sdo_log;
 pub mod shared_config;
 
 use al_diagnostics::{TransitionLog, TransitionReport};
