@@ -557,16 +557,19 @@ pub struct MetaSubdevice {
     pub product_id: u32,
     pub revision: u32,
     pub vendor: u32,
-    // Bit offset at which the TxPdo starts (end is exclusive). Slice the input image via
-    // `inputs.view_bits::<Lsb0>()[start_tx..end_tx]`, not the byte slice.
+    /// Bit offset at which the TxPdo starts (end is exclusive). Slice the input image via
+    /// `inputs.view_bits::<Lsb0>()[start_tx..end_tx]`, not the byte slice.
     pub start_tx: usize,
     pub end_tx: usize,
-    // Bit offset at which the RxPdo starts (end is exclusive). Slice the output image via
-    // `outputs.view_bits_mut::<Lsb0>()[start_rx..end_rx]`, not the byte slice.
+    /// Bit offset at which the RxPdo starts (end is exclusive). Slice the output image via
+    /// `outputs.view_bits_mut::<Lsb0>()[start_rx..end_rx]`, not the byte slice.
     pub start_rx: usize,
     pub end_rx: usize,
-    // Device address first one would be 0x1000, so 4096
+    /// Device address first one would be 0x1000, so 4096
     pub device_address: u16,
+    /// `None` for subdevices that can be spoken to directly.
+    /// `Some(_)` for devices that are actually modules of another subdevice (e.g. WAGO Terminals).
+    pub module_index: Option<u16>,
     pub initialized: bool,
 }
 
@@ -614,6 +617,7 @@ impl Default for MetaSubdevice {
             start_rx: Default::default(),
             end_rx: Default::default(),
             device_address: Default::default(),
+            module_index: None,
             initialized: Default::default(),
         }
     }
@@ -1017,7 +1021,8 @@ pub fn convert_module_to_meta_ethercat_device(
         end_tx: end_tx,
         start_rx: start_rx,
         end_rx: end_rx,
-        device_address: module.belongs_to_addr + module.slot,
+        device_address: module.belongs_to_addr,
+        module_index: Some(module.slot),
         initialized: true,
     };
     return device;
