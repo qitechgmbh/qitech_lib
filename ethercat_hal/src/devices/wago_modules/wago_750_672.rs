@@ -47,19 +47,16 @@ pub enum InitState {
     ResetQuit,
 }
 
-/*
-* Wago has two different kind of applications when it comes to
-* running the Stepper Controller.
-* - Positioning
-* - Frequency/Speed Control
-* !!!! IMPORTANT !!!!
-* It seems like this is only true for the 750 671.
-* The 750 672 has differnt commands inside of ControlByteC1
-* where w can choose the Speed control mode - just like that
-* we always want to use the latter one so the following
-* process images are for that usecase.
-*/
-
+/// Wago has two different kind of applications when it comes to
+/// running the Stepper Controller.
+/// - Positioning
+/// - Frequency/Speed Control
+/// !!!! IMPORTANT !!!!
+/// It seems like this is only true for the 750 671.
+/// The 750 672 has differnt commands inside of ControlByteC1
+/// where w can choose the Speed control mode - just like that
+/// we always want to use the latter one so the following
+/// process images are for that usecase.
 #[derive(Clone, Debug, Default)]
 pub struct Wago750_672RxPdo {
     pub control_byte: u8,  // C0
