@@ -1,4 +1,7 @@
-use qitech_lib_ethercat_hal::{EtherCATState, MetaSubdevice, StdEcatControl, convert_module_to_meta_ethercat_device, init_ethercat};
+use qitech_lib_ethercat_hal::{
+    EtherCATState, MetaSubdevice, StdEcatControl, convert_module_to_meta_ethercat_device,
+    init_ethercat,
+};
 use qitech_lib_ethercat_hal_devices::{IdentifiedDevice, wago_modules::wago_750_354::Wago750_354};
 use std::{env, time::Duration};
 
@@ -8,11 +11,10 @@ const MACHINE_ID_WORD: u16 = 0x0029;
 const MACHINE_SERIAL_WORD: u16 = 0x002a;
 const MACHINE_ROLE_WORD: u16 = 0x002b;
 
-
 /*
 Add Modules IF they exist
 */
-fn add_modules(subdevices : &mut Vec<MetaSubdevice>, ecat_control : &StdEcatControl){
+fn add_modules(subdevices: &mut Vec<MetaSubdevice>, ecat_control: &StdEcatControl) {
     let coupler_subdev = subdevices
         .iter()
         .find(|s| Wago750_354::identity().matches(s));
@@ -25,11 +27,10 @@ fn add_modules(subdevices : &mut Vec<MetaSubdevice>, ecat_control : &StdEcatCont
                 .get_modules(coupler.device_address, coupler.vendor, None)
                 .unwrap();
             for module in &modules {
-            let device =
-                convert_module_to_meta_ethercat_device(module, 0, 0);
-            subdevices.push(device);
+                let device = convert_module_to_meta_ethercat_device(module, 0, 0);
+                subdevices.push(device);
             }
-        },
+        }
         None => (),
     }
 }
@@ -42,10 +43,10 @@ fn main() {
     eth_control
         .change_state(EtherCATState::PreOp, Duration::from_secs(5))
         .expect("Failed to go into PreOp");
-    
+
     let mut subdevices = eth_control
         .try_get_subdevices_vec_sync()
-        .expect("Failed to read subdevices");    
+        .expect("Failed to read subdevices");
     add_modules(&mut subdevices, &eth_control);
 
     for (index, subdevice) in subdevices.iter().enumerate() {
@@ -87,6 +88,5 @@ fn main() {
                 Err(e) => println!("{}   └──Machine Identification: unavailable ({})", trunk, e),
             }
         }
-        
     }
 }

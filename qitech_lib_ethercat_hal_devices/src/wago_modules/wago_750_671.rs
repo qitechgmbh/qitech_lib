@@ -112,15 +112,12 @@ pub enum InitState {
     ResetQuit,
 }
 
-/*
-* Wago has two different kind of applications when it comes to
-* running the Stepper Controller.
-* - Positioning
-* - Frequency/Speed Control
-* we always want to use the latter one so the following
-* process images are for that usecase.
-*/
-
+/// Wago has two different kind of applications when it comes to
+/// running the Stepper Controller.
+/// - Positioning
+/// - Frequency/Speed Control
+/// we always want to use the latter one so the following
+/// process images are for that usecase.
 #[derive(Clone, Debug, Default)]
 pub struct Wago750_671RxPdo {
     pub control_byte0: u8,     // C0
