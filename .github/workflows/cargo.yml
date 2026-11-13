@@ -73,6 +73,11 @@ jobs:
       - &nix-install
         uses: nixbuild/nix-quick-install-action@v35
 
+      - name: Pin nixpkgs
+        run: |
+          nix registry add nixpkgs \
+            github:NixOS/nixpkgs/ac62194c3917d5f474c1a844b6fd6da2db95077d
+
       - name: Install cyclonedx
         run: nix profile add nixpkgs#rustc nixpkgs#cargo nixpkgs#cargo-cyclonedx nixpkgs#cyclonedx-cli
 
