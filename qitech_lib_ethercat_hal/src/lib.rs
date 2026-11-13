@@ -30,10 +30,9 @@ use tokio::sync::Mutex;
 use triple_buffer::{Input, Output};
 // Re-exported so crates defining their own devices only need this crate: the derive macros, and
 // `bitvec`, whose types appear in `EthercatDevice` and in the derive output.
+use crate::device::Module;
 pub use bitvec;
 pub use qitech_lib_ethercat_hal_derive::{EthercatDevice, PdoObject, RxPdo, TxPdo};
-
-use crate::device::Module;
 
 // A global, lazily-initialized Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -956,7 +955,7 @@ pub fn convert_module_to_meta_ethercat_device(
     let start_tx = coupler_start_tx + module.tx_offset;
     let end_tx = coupler_start_tx + module.tx_offset + module.tx_size;
     let start_rx = coupler_start_rx + module.rx_offset;
-    let end_rx = coupler_start_rx + module.rx_offset + module.rx_size;        
+    let end_rx = coupler_start_rx + module.rx_offset + module.rx_size;
     let device = MetaSubdevice {
         name,
         product_id: module.product_id,
