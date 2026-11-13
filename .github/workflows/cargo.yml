@@ -85,6 +85,13 @@ jobs:
       - &nix-install
         uses: nixbuild/nix-quick-install-action@v35
 
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-sbom-${{ runner.os }}-ac62194c
+          restore-prefixes-first-match: nix-sbom-${{ runner.os }}-
+          gc-max-store-size-linux: 2G
+
       - name: Pin nixpkgs
         run: |
           nix registry add nixpkgs \
