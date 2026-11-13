@@ -8,6 +8,7 @@ pub mod helpers;
 pub mod interface_discovery;
 pub mod io;
 pub mod pdo;
+pub mod sdo_log;
 pub mod shared_config;
 //#[cfg(feature = "legacy_code")]
 pub mod machine_ident_read;

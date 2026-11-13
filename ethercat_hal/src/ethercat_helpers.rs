@@ -5,7 +5,7 @@ use crate::{DiagnosticRequest, DiagnosticResponse};
 use crate::{
     EtherCATState, EtherCATThreadChannel, MAX_SUBDEVICES, PDI_LEN, SdoReadRequest, SdoRequest,
     SdoType, al_diagnostics::SubDeviceAlStatus, get_async_runtime,
-    machine_ident_read::MachineDeviceInfo,
+    machine_ident_read::MachineDeviceInfo, sdo_log::log_sdo_write,
 };
 use ethercrab::{
     DcSync, EtherCrabWireRead, EtherCrabWireSized, EtherCrabWireWrite, MainDevice, SubDeviceGroup,
@@ -605,36 +605,40 @@ pub fn sdo_write(
     for device in group.iter(maindevice) {
         if device.configured_address() == request.device_address {
             let runtime = get_async_runtime();
+            let index = request.index;
+            let sub_index = request.sub_index as u8;
+
+            // Write `value`, then log it together with the result.
+            macro_rules! write_logged {
+                ($value:expr, $logged:expr) => {{
+                    let res = runtime.block_on(device.sdo_write(index, sub_index, $value));
+                    log_sdo_write(request.device_address, index, sub_index, $logged, &res);
+                    res
+                }};
+            }
 
             let res = match request.type_flag {
-                SdoType::U8 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
-                    request.data[0],
-                )),
-                SdoType::U16 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
-                    u16::from_le_bytes([request.data[0], request.data[1]]),
-                )),
-                SdoType::U32 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
-                    u32::from_le_bytes(request.data),
-                )),
-                SdoType::I16 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
-                    i16::from_le_bytes([request.data[0], request.data[1]]),
-                )),
-                SdoType::I32 => runtime.block_on(device.sdo_write(
-                    request.index,
-                    request.sub_index as u8,
-                    i32::from_le_bytes(request.data),
-                )),
+                SdoType::U8 => write_logged!(request.data[0], request.data[0]),
+                SdoType::U16 => {
+                    let v = u16::from_le_bytes([request.data[0], request.data[1]]);
+                    write_logged!(v, v)
+                }
+                SdoType::U32 => {
+                    let v = u32::from_le_bytes(request.data);
+                    write_logged!(v, v)
+                }
+                SdoType::I16 => {
+                    let v = i16::from_le_bytes([request.data[0], request.data[1]]);
+                    write_logged!(v, v)
+                }
+                SdoType::I32 => {
+                    let v = i32::from_le_bytes(request.data);
+                    write_logged!(v, v)
+                }
+                // bool has no hex formatting, so it's logged as 0/1
                 SdoType::BOOL => {
-                    let b: bool = request.data[0] == 1;
-                    runtime.block_on(device.sdo_write(request.index, request.sub_index as u8, b))
+                    let b = request.data[0] == 1;
+                    write_logged!(b, b as u8)
                 }
             };
             return Ok(res?);
