@@ -23,6 +23,7 @@ use ethercat_hal::{
             el1804::{EL1804, EL1804_PRODUCT_ID},
             el1814::{EL1814, EL1814_PRODUCT_ID},
             el3202::EL3202Configuration,
+            el3062::{EL3062Configuration, EL3062_PRODUCT_ID},
             el2808::{EL2808, EL2808_PRODUCT_ID},
             el3202::{EL3202, EL3202_PRODUCT_ID},
         },
@@ -139,6 +140,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .write_config(eth_control.channel.clone(), meta.device_address)
                 .expect("PT1000-Konfiguration fehlgeschlagen");
             println!("EL3202 @0x{:x}: Sensortyp = PT1000", meta.device_address);
+        }
+        // EL3062 (Öltank): Default-Config ≈ Werkszustand schreiben — die
+        // gebrauchte Klemme hatte persistierte CoE-Settings des Vorbesitzers
+        // (AL 0x001E „Invalid Input Configuration" bei SafeOp, 2026-11-15).
+        if meta.product_id == EL3062_PRODUCT_ID {
+            EL3062Configuration::default()
+                .write_config(eth_control.channel.clone(), meta.device_address)
+                .expect("EL3062-Konfiguration fehlgeschlagen");
+            println!("EL3062 @0x{:x}: Default-Config (0..10 V)", meta.device_address);
         }
     }
 
