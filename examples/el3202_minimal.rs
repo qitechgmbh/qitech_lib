@@ -66,12 +66,27 @@ fn main() {
         .channel
         .request_state_change(EtherCATState::Op)
         .expect("Failed to go into OP");
+    // Fortschritt + Timeout statt stillem Spin: Bei Init-Strays (ethercrab#293)
+    // sehen wir so, ob wir überhaupt im PreOp→Op-Übergang hängen (2026-11-15).
+    let mut waited_ms = 0u32;
     loop {
-        if let EtherCATState::Op = eth_handle.get_state() {
+        let state = eth_handle.get_state();
+        if state == EtherCATState::Op {
             break;
         }
+        if waited_ms % 1000 == 0 {
+            println!("warte auf Op ... aktuell {:?} ({} ms)", state, waited_ms);
+        }
+        if waited_ms > 20_000 {
+            panic!(
+                "Op-Übergang nicht erreicht nach 20 s (letzter Zustand: {:?})",
+                state
+            );
+        }
         std::thread::sleep(Duration::from_millis(10));
+        waited_ms += 10;
     }
+    println!("Op erreicht — lese Temperaturen …");
 
     // Nach Op: PDO-Offsets sind vergeben → jetzt die verbindliche Liste holen
     let subdevices = eth_handle.try_get_subdevices_vec_sync().unwrap();
