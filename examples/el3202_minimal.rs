@@ -5,6 +5,7 @@ use ethercat_hal::{
     devices::{
         EthercatDevice, NewEthercatDevice,
         beckhoff_modules::el3202::{EL3202, EL3202Configuration, EL3202_PRODUCT_ID},
+        beckhoff_modules::el3062::{EL3062Configuration, EL3062_PRODUCT_ID},
     },
     init_ethercat,
     io::temperature_input::TemperatureInputDevice,
@@ -59,6 +60,21 @@ fn main() {
                 .write_config(eth_control.channel.clone(), meta.device_address)
                 .expect("PT1000-Konfiguration fehlgeschlagen");
             println!("EL3202 @0x{:x}: Sensortyp = PT1000", meta.device_address);
+        }
+        // EL3062 (Öltank): Default-Config schreiben ≈ Werkszustand.
+        // Hintergrund 2026-11-15: Die (gebraucht gekaufte) Klemme meldete bei
+        // PreOp→SafeOp AL-Fehler 0x001E "Invalid Input Configuration", obwohl
+        // SM/PDO/FMMU-Konfig ESI-konform war und wir nie auf sie geschrieben
+        // hatten — Verdacht: persistierte CoE-Settings des Vorbesitzers
+        // (Beckhoff Backup-Objekte). Defaults neu schreiben heilt das.
+        if meta.product_id == EL3062_PRODUCT_ID {
+            EL3062Configuration::default()
+                .write_config(eth_control.channel.clone(), meta.device_address)
+                .expect("EL3062-Konfiguration fehlgeschlagen");
+            println!(
+                "EL3062 @0x{:x}: Default-Config (0..10 V, Standard-PDOs)",
+                meta.device_address
+            );
         }
     }
 
