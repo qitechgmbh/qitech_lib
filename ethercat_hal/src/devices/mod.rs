@@ -38,6 +38,9 @@ use beckhoff_modules::el3062::{
     EL3062_IDENTITY_E, EL3062_IDENTITY_F,
 };
 use beckhoff_modules::el3062_0030::EL3062_0030_IDENTITY_A;
+use beckhoff_modules::el2634::{
+    EL2634, EL2634_IDENTITY_A, EL2634_IDENTITY_B,
+};
 use beckhoff_modules::el3202::{
     EL3202, EL3202_IDENTITY_A, EL3202_IDENTITY_B, EL3202_IDENTITY_C, EL3202_IDENTITY_D,
     EL3202_IDENTITY_E, EL3202_IDENTITY_F, EL3202_IDENTITY_G,
@@ -201,6 +204,7 @@ pub fn device_from_subdevice_identity(
         EL2808_IDENTITY_A | EL2808_IDENTITY_B | EL2808_IDENTITY_C => {
             Ok(Box::new(EL2808::new()))
         }
+        EL2634_IDENTITY_A | EL2634_IDENTITY_B => Ok(Box::new(EL2634::new())),
         EL3001_IDENTITY_A => Ok(Box::new(el3001::EL3001::new())),
         EL3021_IDENTITY_A => Ok(Box::new(el3021::EL3021::new())),
         EL3024_IDENTITY_A => Ok(Box::new(el3024::EL3024::new())),
@@ -270,6 +274,7 @@ pub fn device_from_subdevice_identity_rc(
         EL2808_IDENTITY_A | EL2808_IDENTITY_B | EL2808_IDENTITY_C => {
             Ok(Rc::new(RefCell::new(EL2808::new())))
         }
+        EL2634_IDENTITY_A | EL2634_IDENTITY_B => Ok(Rc::new(RefCell::new(EL2634::new()))),
         EL3001_IDENTITY_A => Ok(Rc::new(RefCell::new(el3001::EL3001::new()))),
         EL3021_IDENTITY_A => Ok(Rc::new(RefCell::new(el3021::EL3021::new()))),
         EL3024_IDENTITY_A => Ok(Rc::new(RefCell::new(el3024::EL3024::new()))),

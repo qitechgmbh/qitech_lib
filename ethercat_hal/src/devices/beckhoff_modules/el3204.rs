@@ -102,8 +102,49 @@ impl Default for EL3204TxPdo {
     }
 }
 
-pub const EL3204_VENDOR_ID: u32 = 0x2;
-pub const EL3204_PRODUCT_ID: u32 = 0xc843052;
+/// Runtime configuration of an EL3204 (written via CoE at PreOp).
+///
+/// Mirrors EL3202Configuration, but for four channels
+/// (CoE 0x8000/0x8010/0x8020/0x8030, sub-index 0x19 "RTD element").
+#[derive(Debug, Clone)]
+pub struct EL3204Configuration {
+    /// Element for channel 1 (CoE 0x8000:19)
+    pub element_ch1: super::el3202::RtdElement,
+    /// Element for channel 2 (CoE 0x8010:19)
+    pub element_ch2: super::el3202::RtdElement,
+    /// Element for channel 3 (CoE 0x8020:19)
+    pub element_ch3: super::el3202::RtdElement,
+    /// Element for channel 4 (CoE 0x8030:19)
+    pub element_ch4: super::el3202::RtdElement,
+}
+
+impl Default for EL3204Configuration {
+    fn default() -> Self {
+        // qi-heating: alle Fühler sind PT1000
+        Self {
+            element_ch1: super::el3202::RtdElement::Pt1000,
+            element_ch2: super::el3202::RtdElement::Pt1000,
+            element_ch3: super::el3202::RtdElement::Pt1000,
+            element_ch4: super::el3202::RtdElement::Pt1000,
+        }
+    }
+}
+
+impl crate::coe::Configuration for EL3204Configuration {
+    fn write_config(
+        &self,
+        channel: crate::EtherCATThreadChannel,
+        device_address: u16,
+    ) -> Result<(), anyhow::Error> {
+        channel.sdo_write(device_address, 0x8000, 0x19, self.element_ch1 as u16)?;
+        channel.sdo_write(device_address, 0x8010, 0x19, self.element_ch2 as u16)?;
+        channel.sdo_write(device_address, 0x8020, 0x19, self.element_ch3 as u16)?;
+        channel.sdo_write(device_address, 0x8030, 0x19, self.element_ch4 as u16)?;
+        Ok(())
+    }
+}
+
+pub const EL3204_VENDOR_ID: u32 = 0x2;pub const EL3204_PRODUCT_ID: u32 = 0xc843052;
 pub const EL3204_REVISION_A: u32 = 0x160000;
 pub const EL3204_REVISION_B: u32 = 0x150000;
 

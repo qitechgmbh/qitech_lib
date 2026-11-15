@@ -5,6 +5,7 @@ use ethercat_hal::{
     devices::{
         EthercatDevice, NewEthercatDevice,
         beckhoff_modules::el3202::{EL3202, EL3202Configuration, EL3202_PRODUCT_ID},
+        beckhoff_modules::el3204::{EL3204Configuration, EL3204_PRODUCT_ID},
         beckhoff_modules::el3062::{EL3062Configuration, EL3062_PRODUCT_ID},
     },
     init_ethercat,
@@ -60,6 +61,16 @@ fn main() {
                 .write_config(eth_control.channel.clone(), meta.device_address)
                 .expect("PT1000-Konfiguration fehlgeschlagen");
             println!("EL3202 @0x{:x}: Sensortyp = PT1000", meta.device_address);
+        }
+        // EL3204: gleiche PT1000-Umstellung, 4 Kanäle (0x8000..0x8030)
+        if meta.product_id == EL3204_PRODUCT_ID {
+            EL3204Configuration::default()
+                .write_config(eth_control.channel.clone(), meta.device_address)
+                .expect("EL3204 PT1000-Konfiguration fehlgeschlagen");
+            println!(
+                "EL3204 @0x{:x}: Sensortyp = PT1000 (4 Kanäle)",
+                meta.device_address
+            );
         }
         // EL3062 (Öltank): Default-Config schreiben ≈ Werkszustand.
         // Hintergrund 2026-11-15: Die (gebraucht gekaufte) Klemme meldete bei

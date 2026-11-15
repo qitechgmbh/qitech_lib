@@ -1,11 +1,13 @@
 //! qi-heating PoC — Terminal Edition (nach dem Vorbild der QiTech Control TUI)
 //!
-//! Bus-Scan + Live-View aller Bestandsklemmen:
-//! - EL3202:   Measurements — T1/T2 in °C inkl. Offen-/Kurzschluss-Erkennung
-//! - EL1814:   State — DI1..DI8
-//! - EL2808:   Commands — DO1..DO8 per Tasten 1-8 togglen
+//! Bus-Scan + Live-View aller Klemmen:
+//! - EL3202/EL3204: Measurements — T1..T4 in °C inkl. Offen-/Kurzschluss-Erkennung
+//! - EL1814/EL1804: State — DI1..DI4
+//! - EL2808/EL2634: Commands — Ausgänge per Tasten 1-8 togglen
+//! - EL3062:   Measurements — AI1/AI2 in V (0..10 V, Öltank-Füllstand)
+//! - EL2502:   Commands — PWM-Duty in % (Tasten -/= Kanal 1, ,/. Kanal 2, ±5 %)
 //!
-//! Tasten: ↑/↓ Maschine wählen · 1-8 Ausgang togglen (EL2808) · q/Esc beenden
+//! Tasten: ↑/↓ Maschine wählen · q/Esc beenden
 //! Start:  sudo -E ./heating_tui <iface>     (Linux: ETHERCAT_HAL_NO_IO_URING=1)
 
 use bitvec::{order::Lsb0, slice::BitSlice};
@@ -22,13 +24,16 @@ use ethercat_hal::{
         beckhoff_modules::{
             el1804::{EL1804, EL1804_PRODUCT_ID},
             el1814::{EL1814, EL1814_PRODUCT_ID},
-            el3202::EL3202Configuration,
-            el3062::{EL3062Configuration, EL3062_PRODUCT_ID},
+            el2502::{EL2502, EL2502_PRODUCT_ID},
+            el2634::{EL2634, EL2634_PRODUCT_ID},
             el2808::{EL2808, EL2808_PRODUCT_ID},
-            el3202::{EL3202, EL3202_PRODUCT_ID},
+            el3062::{EL3062, EL3062Configuration, EL3062_PRODUCT_ID},
+            el3202::{EL3202, EL3202Configuration, EL3202_PRODUCT_ID},
+            el3204::{EL3204, EL3204Configuration, EL3204_PRODUCT_ID},
         },
     },
     init_ethercat,
+    io::analog_input::AnalogInputDevice,
     io::digital_input::DigitalInputDevice,
     io::digital_output::DigitalOutputDevice,
     io::temperature_input::TemperatureInputDevice,
@@ -44,9 +49,82 @@ use ratatui::{
 use std::{env, io, time::Duration};
 
 enum DevKind {
-    Rtd(EL3202),
+    Rtd(RtdKind),
     Di(DiKind),
-    Do(EL2808),
+    Do(DoKind),
+    Ai(EL3062),
+    Pwm(EL2502),
+}
+
+enum RtdKind {
+    El3202(EL3202),
+    El3204(EL3204),
+}
+
+impl RtdKind {
+    fn get(&self, port: usize) -> Option<ethercat_hal::io::temperature_input::TemperatureInputInput> {
+        match self {
+            RtdKind::El3202(el) => el.get_input(port).ok(),
+            RtdKind::El3204(el) => el.get_input(port).ok(),
+        }
+    }
+
+    fn port_count(&self) -> usize {
+        match self {
+            RtdKind::El3202(el) => el.get_port_count(),
+            RtdKind::El3204(el) => el.get_port_count(),
+        }
+    }
+
+    fn input_from(&mut self, slice: &BitSlice<u8, Lsb0>) {
+        match self {
+            RtdKind::El3202(el) => {
+                el.input(slice).ok();
+            }
+            RtdKind::El3204(el) => {
+                el.input(slice).ok();
+            }
+        }
+    }
+}
+
+enum DoKind {
+    El2808(EL2808),
+    El2634(EL2634),
+}
+
+impl DoKind {
+    fn get(&self, port: usize) -> bool {
+        match self {
+            DoKind::El2808(el) => el.get_output_state(port),
+            DoKind::El2634(el) => el.get_output_state(port),
+        }
+    }
+
+    fn set(&mut self, port: usize, value: bool) {
+        match self {
+            DoKind::El2808(el) => el.set_output(port, value),
+            DoKind::El2634(el) => el.set_output(port, value),
+        }
+    }
+
+    fn port_count(&self) -> usize {
+        match self {
+            DoKind::El2808(el) => el.get_port_count(),
+            DoKind::El2634(el) => el.get_port_count(),
+        }
+    }
+
+    fn output_to(&mut self, slice: &mut BitSlice<u8, Lsb0>) {
+        match self {
+            DoKind::El2808(el) => {
+                el.output(slice).ok();
+            }
+            DoKind::El2634(el) => {
+                el.output(slice).ok();
+            }
+        }
+    }
 }
 
 enum DiKind {
@@ -100,9 +178,9 @@ impl App {
     /// ihren sinnvollen Inhalt zeigt.
     fn sync_tab_to_kind(&mut self) {
         self.tab = match self.devices.get(self.selected).map(|d| &d.kind) {
-            Some(DevKind::Rtd(_)) => Tab::Measurements,
+            Some(DevKind::Rtd(_)) | Some(DevKind::Ai(_)) => Tab::Measurements,
             Some(DevKind::Di(_)) => Tab::State,
-            Some(DevKind::Do(_)) => Tab::Commands,
+            Some(DevKind::Do(_)) | Some(DevKind::Pwm(_)) => Tab::Commands,
             None => self.tab,
         };
     }
@@ -141,6 +219,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .expect("PT1000-Konfiguration fehlgeschlagen");
             println!("EL3202 @0x{:x}: Sensortyp = PT1000", meta.device_address);
         }
+        // EL3204: gleiche PT1000-Umstellung, 4 Kanäle (0x8000..0x8030)
+        if meta.product_id == EL3204_PRODUCT_ID {
+            EL3204Configuration::default()
+                .write_config(eth_control.channel.clone(), meta.device_address)
+                .expect("EL3204 PT1000-Konfiguration fehlgeschlagen");
+            println!(
+                "EL3204 @0x{:x}: Sensortyp = PT1000 (4 Kanäle)",
+                meta.device_address
+            );
+        }
         // EL3062 (Öltank): Default-Config ≈ Werkszustand schreiben — die
         // gebrauchte Klemme hatte persistierte CoE-Settings des Vorbesitzers
         // (AL 0x001E „Invalid Input Configuration" bei SafeOp, 2026-11-15).
@@ -172,10 +260,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let name = meta.get_name().unwrap_or_else(|_| "?".to_string());
         let kind = match meta.product_id {
-            EL3202_PRODUCT_ID => Some(DevKind::Rtd(EL3202::new())),
+            EL3202_PRODUCT_ID => Some(DevKind::Rtd(RtdKind::El3202(EL3202::new()))),
+            EL3204_PRODUCT_ID => Some(DevKind::Rtd(RtdKind::El3204(EL3204::new()))),
             EL1804_PRODUCT_ID => Some(DevKind::Di(DiKind::El1804(EL1804::new()))),
             EL1814_PRODUCT_ID => Some(DevKind::Di(DiKind::El1814(EL1814::new()))),
-            EL2808_PRODUCT_ID => Some(DevKind::Do(EL2808::new())),
+            EL2808_PRODUCT_ID => Some(DevKind::Do(DoKind::El2808(EL2808::new()))),
+            EL2634_PRODUCT_ID => Some(DevKind::Do(DoKind::El2634(EL2634::new()))),
+            EL3062_PRODUCT_ID => Some(DevKind::Ai(EL3062::new())),
+            EL2502_PRODUCT_ID => Some(DevKind::Pwm(EL2502::new())),
             _ => None,
         };
         if let Some(kind) = kind {
@@ -226,9 +318,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     KeyCode::Char(c @ '1'..='8') => {
                         let n = c.to_digit(10).unwrap() as usize - 1;
                         if let Some(dev) = app.devices.get_mut(app.selected) {
-                            if let DevKind::Do(el) = &mut dev.kind {
-                                let cur = el.get_output_state(n);
-                                el.set_output(n, !cur);
+                            if let DevKind::Do(kind) = &mut dev.kind {
+                                if n < kind.port_count() {
+                                    let cur = kind.get(n);
+                                    kind.set(n, !cur);
+                                }
+                            }
+                        }
+                    }
+                    // EL2502 PWM-Duty: '-'/ '=' für Kanal 1, ','/'.' für Kanal 2 (±5 %)
+                    KeyCode::Char('-') | KeyCode::Char('=') | KeyCode::Char(',')
+                    | KeyCode::Char('.') => {
+                        if let Some(dev) = app.devices.get_mut(app.selected) {
+                            if let DevKind::Pwm(el) = &mut dev.kind {
+                                let (ch, delta) = match key.code {
+                                    KeyCode::Char('-') => (0, -5.0),
+                                    KeyCode::Char('=') => (0, 5.0),
+                                    KeyCode::Char(',') => (1, -5.0),
+                                    KeyCode::Char('.') => (1, 5.0),
+                                    _ => unreachable!(),
+                                };
+                                let cur = el.duty_raw(ch).unwrap_or(0) as f64 / 100.0;
+                                el.set_duty_percent(ch, (cur + delta).clamp(0.0, 100.0));
                             }
                         }
                     }
@@ -254,13 +365,16 @@ fn app_tick(app: &mut App, eth_handle: &mut ethercat_hal::StdEcatHandle) {
             let (s, e) = (dev.meta.start_tx, dev.meta.end_tx);
             if e > s {
                 match &mut dev.kind {
-                    DevKind::Rtd(el) => {
-                        el.input(BitSlice::<u8, Lsb0>::from_slice(&inputs[s..e])).ok();
+                    DevKind::Rtd(kind) => {
+                        kind.input_from(BitSlice::<u8, Lsb0>::from_slice(&inputs[s..e]));
                     }
                     DevKind::Di(el) => {
                         el.input_from(BitSlice::<u8, Lsb0>::from_slice(&inputs[s..e]));
                     }
-                    DevKind::Do(_) => (),
+                    DevKind::Ai(el) => {
+                        el.input(BitSlice::<u8, Lsb0>::from_slice(&inputs[s..e])).ok();
+                    }
+                    DevKind::Do(_) | DevKind::Pwm(_) => (),
                 }
             }
         }
@@ -270,9 +384,15 @@ fn app_tick(app: &mut App, eth_handle: &mut ethercat_hal::StdEcatHandle) {
         for dev in app.devices.iter_mut() {
             let (s, e) = (dev.meta.start_rx, dev.meta.end_rx);
             if e > s {
-                if let DevKind::Do(el) = &mut dev.kind {
-                    el.output(BitSlice::<u8, Lsb0>::from_slice_mut(&mut outputs[s..e]))
-                        .ok();
+                match &mut dev.kind {
+                    DevKind::Do(kind) => {
+                        kind.output_to(BitSlice::<u8, Lsb0>::from_slice_mut(&mut outputs[s..e]));
+                    }
+                    DevKind::Pwm(el) => {
+                        el.output(BitSlice::<u8, Lsb0>::from_slice_mut(&mut outputs[s..e]))
+                            .ok();
+                    }
+                    _ => (),
                 }
             }
         }
@@ -358,18 +478,18 @@ fn draw(f: &mut Frame, app: &mut App) {
     );
 }
 
-fn detail_content(dev: &mut BusDevice, tab: Tab) -> Vec<Line<'static>> {
+fn detail_content(dev: &mut BusDevice, _tab: Tab) -> Vec<Line<'static>> {
     // Wir zeigen je Gerätetyp das passende Panel — auch wenn ein „fremder" Tab
     // angewählt ist (vor der Umstellung wirkten DI/DO wie „kaputt").
     let tab = match dev.kind {
-        DevKind::Rtd(_) => Tab::Measurements,
+        DevKind::Rtd(_) | DevKind::Ai(_) => Tab::Measurements,
         DevKind::Di(_) => Tab::State,
-        DevKind::Do(_) => Tab::Commands,
+        DevKind::Do(_) | DevKind::Pwm(_) => Tab::Commands,
     };
     match (&mut dev.kind, tab) {
-        (DevKind::Rtd(el), Tab::Measurements) => (0..el.get_port_count())
-            .map(|port| match el.get_input(port) {
-                Ok(input) => {
+        (DevKind::Rtd(kind), Tab::Measurements) => (0..kind.port_count())
+            .map(|port| match kind.get(port) {
+                Some(input) => {
                     if input.error || input.overvoltage {
                         Line::from(vec![
                             Span::raw(format!("T{}:      ", port + 1)),
@@ -390,10 +510,27 @@ fn detail_content(dev: &mut BusDevice, tab: Tab) -> Vec<Line<'static>> {
                         ])
                     }
                 }
-                Err(e) => Line::from(format!("T{}: {:?}", port + 1, e)),
+                None => Line::from(format!("T{}: <Lesefehler>", port + 1)),
             })
             .collect(),
         (DevKind::Rtd(_), _) => vec![Line::from("(s. Measurements)")],
+        (DevKind::Ai(el), Tab::Measurements) => (0..el.get_port_count())
+            .map(|port| match el.get_input(port) {
+                Ok(input) => {
+                    // EL3062: Messbereich 0..10 V (Öltank-Füllstand)
+                    let volts = f64::from(input.normalized) * 10.0;
+                    Line::from(vec![
+                        Span::raw(format!("AI{}:     ", port + 1)),
+                        Span::styled(
+                            format!("{:.2} V ({:.0} %)", volts, input.normalized * 100.0),
+                            Style::default().fg(Color::Green),
+                        ),
+                    ])
+                }
+                Err(e) => Line::from(format!("AI{}: {:?}", port + 1, e)),
+            })
+            .collect(),
+        (DevKind::Ai(_), _) => vec![Line::from("(s. Measurements)")],
         (DevKind::Di(el), Tab::State) => (0..4)
             .map(|port| {
                 let on = el.get(port);
@@ -401,11 +538,11 @@ fn detail_content(dev: &mut BusDevice, tab: Tab) -> Vec<Line<'static>> {
             })
             .collect(),
         (DevKind::Di(_), _) => vec![Line::from("(s. State)")],
-        (DevKind::Do(el), Tab::Commands) => (0..el.get_port_count())
+        (DevKind::Do(kind), Tab::Commands) => (0..kind.port_count())
             .map(|port| {
-                let on = el.get_output_state(port);
+                let on = kind.get(port);
                 Line::from(format!(
-                    "leds_on{}:  {}   [Taste {} toggelt]",
+                    "out{}:  {}   [Taste {} toggelt]",
                     port + 1,
                     if on { "true" } else { "false" },
                     port + 1
@@ -413,5 +550,25 @@ fn detail_content(dev: &mut BusDevice, tab: Tab) -> Vec<Line<'static>> {
             })
             .collect(),
         (DevKind::Do(_), _) => vec![Line::from("(s. Commands)")],
+        (DevKind::Pwm(el), Tab::Commands) => {
+            let mut lines: Vec<Line> = (0..el.get_port_count())
+                .map(|port| {
+                    let percent = el.duty_raw(port).unwrap_or(0) as f64 / 100.0;
+                    let keys = if port == 0 { "-/=" } else { ",/." };
+                    Line::from(format!(
+                        "PWM{}:  {:5.1} %   [{} ±5 %]",
+                        port + 1,
+                        percent,
+                        keys
+                    ))
+                })
+                .collect();
+            lines.push(Line::from(Span::styled(
+                "Duty wirkt sofort im nächsten Zyklus. Pumpen-Test: 30 % ≈ Mindestlauf.",
+                Style::default().fg(Color::DarkGray),
+            )));
+            lines
+        }
+        (DevKind::Pwm(_), _) => vec![Line::from("(s. Commands)")],
     }
 }

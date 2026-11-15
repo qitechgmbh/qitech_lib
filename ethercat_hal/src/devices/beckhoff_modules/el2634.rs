@@ -1,4 +1,4 @@
-use super::{EthercatDeviceProcessing, NewEthercatDevice};
+use super::{EthercatDeviceProcessing, NewEthercatDevice, SubDeviceIdentityTuple};
 use crate::io::digital_output::DigitalOutputDevice;
 use crate::pdo::{RxPdo, basic::BoolPdoObject};
 use ethercat_hal_derive::{EthercatDevice, RxPdo};
@@ -46,6 +46,20 @@ impl DigitalOutputDevice for EL2634 {
     }
 }
 
+impl EL2634 {
+    /// Currently set output state of a channel (the value to be sent in the next cycle).
+    pub fn get_output_state(&self, port: usize) -> bool {
+        let ch = match port {
+            0 => &self.rxpdo.channel1,
+            1 => &self.rxpdo.channel2,
+            2 => &self.rxpdo.channel3,
+            3 => &self.rxpdo.channel4,
+            _ => return false,
+        };
+        ch.as_ref().map(|c| c.value).unwrap_or(false)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum EL2634Port {
     R1,
@@ -53,6 +67,16 @@ pub enum EL2634Port {
     R3,
     R4,
 }
+
+pub const EL2634_VENDOR_ID: u32 = 0x2;
+pub const EL2634_PRODUCT_ID: u32 = 0x0A4A3052;
+pub const EL2634_REVISION_A: u32 = 0x00100000;
+pub const EL2634_REVISION_B: u32 = 0x00110000;
+
+pub const EL2634_IDENTITY_A: SubDeviceIdentityTuple =
+    (EL2634_VENDOR_ID, EL2634_PRODUCT_ID, EL2634_REVISION_A);
+pub const EL2634_IDENTITY_B: SubDeviceIdentityTuple =
+    (EL2634_VENDOR_ID, EL2634_PRODUCT_ID, EL2634_REVISION_B);
 
 #[derive(Debug, Clone, RxPdo)]
 pub struct EL2634RxPdo {

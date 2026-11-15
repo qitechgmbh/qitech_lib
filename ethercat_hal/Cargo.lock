@@ -483,7 +483,7 @@ dependencies = [
 [[package]]
 name = "ethercrab"
 version = "0.7.1"
-source = "git+https://github.com/qitechgmbh/ethercrab-dc?rev=e84f794db7f7ebe321a6608c7cd1808ca54a6eb0#e84f794db7f7ebe321a6608c7cd1808ca54a6eb0"
+source = "git+https://github.com/zaubererty/ethercrab-dc?rev=e846e27#e846e27b473b7a23d9608bb4a5c668416dc89132"
 dependencies = [
  "async-io",
  "atomic-waker",
@@ -513,7 +513,7 @@ dependencies = [
 [[package]]
 name = "ethercrab-wire"
 version = "0.3.0"
-source = "git+https://github.com/qitechgmbh/ethercrab-dc?rev=e84f794db7f7ebe321a6608c7cd1808ca54a6eb0#e84f794db7f7ebe321a6608c7cd1808ca54a6eb0"
+source = "git+https://github.com/zaubererty/ethercrab-dc?rev=e846e27#e846e27b473b7a23d9608bb4a5c668416dc89132"
 dependencies = [
  "ethercrab-wire-derive",
  "heapless",
@@ -522,7 +522,7 @@ dependencies = [
 [[package]]
 name = "ethercrab-wire-derive"
 version = "0.3.0"
-source = "git+https://github.com/qitechgmbh/ethercrab-dc?rev=e84f794db7f7ebe321a6608c7cd1808ca54a6eb0#e84f794db7f7ebe321a6608c7cd1808ca54a6eb0"
+source = "git+https://github.com/zaubererty/ethercrab-dc?rev=e846e27#e846e27b473b7a23d9608bb4a5c668416dc89132"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1335,6 +1335,7 @@ version = "0.1.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63e71662fa4b2a2c3a26f570f037eb95bb1f85397f3cd8076caed2f026a6d100"
 dependencies = [
+ "log",
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
