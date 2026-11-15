@@ -77,9 +77,11 @@ fn main() {
         if waited_ms % 1000 == 0 {
             println!("warte auf Op ... aktuell {:?} ({} ms)", state, waited_ms);
         }
-        if waited_ms > 20_000 {
+        // 30 s: länger als das HAL-eigene state_transition-Timeout (20 s), damit der
+        // HAL erst seine AL-Status-Fehlerdiagnose ausgeben kann, bevor wir aufgeben.
+        if waited_ms > 30_000 {
             panic!(
-                "Op-Übergang nicht erreicht nach 20 s (letzter Zustand: {:?})",
+                "Op-Übergang nicht erreicht nach 30 s (letzter Zustand: {:?})",
                 state
             );
         }
