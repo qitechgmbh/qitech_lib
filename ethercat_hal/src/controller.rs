@@ -123,7 +123,12 @@ fn setup_tx_rx_thread(
             mailbox_response: Duration::from_millis(1000),
         },
         MainDeviceConfig {
-            retry_behaviour: RetryBehaviour::Count(0),
+            // NOTE (qi-heating fork): allow a few retries. Upstream ethercrab has a
+            // race in the PDU frame lifecycle (ethercrab#293): after a spurious
+            // timeout the Drop impls clean the frame state and a late reply then
+            // kills the TX/RX task with Pdu(InvalidIndex). Retries are the
+            // maintainer-recommended bandaid (see also control#500). Was: Count(0).
+            retry_behaviour: RetryBehaviour::Count(5),
             dc_static_sync_iterations: 10_000,
         },
     ));
