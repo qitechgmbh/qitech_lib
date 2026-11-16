@@ -1,14 +1,14 @@
-//! qi-heating PoC — Terminal Edition (nach dem Vorbild der QiTech Control TUI)
+//! qi-heating PoC — Terminal Edition (modelled after the QiTech Control TUI)
 //!
-//! Bus-Scan + Live-View aller Klemmen:
-//! - EL3202/EL3204: Measurements — T1..T4 in °C inkl. Offen-/Kurzschluss-Erkennung
+//! Bus scan + live view of all terminals:
+//! - EL3202/EL3204: Measurements — T1..T4 in °C incl. open/short detection
 //! - EL1814/EL1804: State — DI1..DI4
-//! - EL2808/EL2634: Commands — Ausgänge per Tasten 1-8 togglen
-//! - EL3062:   Measurements — AI1/AI2 in V (0..10 V, Öltank-Füllstand)
-//! - EL2502:   Commands — PWM-Duty in % (Tasten -/= Kanal 1, ,/. Kanal 2, ±5 %)
+//! - EL2808/EL2634: Commands — toggle outputs with keys 1-8
+//! - EL3062:   Measurements — AI1/AI2 in V (0..10 V, oil tank level)
+//! - EL2502:   Commands — PWM duty in % (keys -/= channel 1, ,/. channel 2, ±5 %)
 //!
-//! Tasten: ↑/↓ Maschine wählen · q/Esc beenden
-//! Start:  sudo -E ./heating_tui <iface>     (Linux: ETHERCAT_HAL_NO_IO_URING=1)
+//! Keys: ↑/↓ select machine · q/Esc quit
+//! Start: sudo -E ./heating_tui <iface>     (Linux: ETHERCAT_HAL_NO_IO_URING=1)
 
 use bitvec::{order::Lsb0, slice::BitSlice};
 use crossterm::{
@@ -173,9 +173,9 @@ struct App {
 }
 
 impl App {
-    /// Wählt den zum Gerätetyp passenden Tab automatisch
-    /// (RTD→Measurements, DI→State, DO→Commands), damit jede Maschine sofort
-    /// ihren sinnvollen Inhalt zeigt.
+    /// Automatically selects the tab matching the device type
+    /// (RTD→Measurements, DI→State, DO→Commands) so every machine shows
+    /// its meaningful content right away.
     fn sync_tab_to_kind(&mut self) {
         self.tab = match self.devices.get(self.selected).map(|d| &d.kind) {
             Some(DevKind::Rtd(_)) | Some(DevKind::Ai(_)) => Tab::Measurements,
@@ -201,42 +201,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::thread::sleep(Duration::from_millis(10));
     }
 
-    // WICHTIG: SDO/CoE-Requests werden vom HAL nur im PreOp bedient
-    // (preop_group) — Konfiguration muss VOR dem Op-Übergang geschehen.
-    // ACHTUNG: In PreOp haben die Subdevices noch keine PDO-Offsets
-    // (start_tx==end_tx) — die verbindliche Liste wird nach Op erneut geholt.
+    // IMPORTANT: the HAL only serves SDO/CoE requests in PreOp
+    // (preop_group) — configuration must happen BEFORE the Op transition.
+    // NOTE: In PreOp the subdevices have no PDO offsets yet
+    // (start_tx==end_tx) — the authoritative list is fetched again after Op.
     let subdevices_preop = eth_handle
         .try_get_subdevices_vec_sync()
         .expect("could not list subdevices");
 
-    // EL3202-Sensortyp auf PT1000 stellen (Anlage ist durchgehend PT1000;
-    // Beckhoff-Auslieferungszustand ist PT100 → 1-kΩ-Fühler würde sonst als
-    // „offen/Overrange" angezeigt)
+    // Switch EL3202 sensor type to PT1000 (the plant is PT1000 throughout;
+    // Beckhoff factory default is PT100 → a 1 kΩ sensor would otherwise show
+    // as "open/overrange")
     for meta in &subdevices_preop {
         if meta.product_id == EL3202_PRODUCT_ID {
             EL3202Configuration::default()
                 .write_config(eth_control.channel.clone(), meta.device_address)
-                .expect("PT1000-Konfiguration fehlgeschlagen");
-            println!("EL3202 @0x{:x}: Sensortyp = PT1000", meta.device_address);
+                .expect("PT1000 configuration failed");
+            println!("EL3202 @0x{:x}: sensor type = PT1000", meta.device_address);
         }
-        // EL3204: gleiche PT1000-Umstellung, 4 Kanäle (0x8000..0x8030)
+        // EL3204: same PT1000 switch, 4 channels (0x8000..0x8030)
         if meta.product_id == EL3204_PRODUCT_ID {
             EL3204Configuration::default()
                 .write_config(eth_control.channel.clone(), meta.device_address)
-                .expect("EL3204 PT1000-Konfiguration fehlgeschlagen");
+                .expect("EL3204 PT1000 configuration failed");
             println!(
-                "EL3204 @0x{:x}: Sensortyp = PT1000 (4 Kanäle)",
+                "EL3204 @0x{:x}: sensor type = PT1000 (4 channels)",
                 meta.device_address
             );
         }
-        // EL3062 (Öltank): Default-Config ≈ Werkszustand schreiben — die
-        // gebrauchte Klemme hatte persistierte CoE-Settings des Vorbesitzers
-        // (AL 0x001E „Invalid Input Configuration" bei SafeOp, 2026-11-15).
+        // EL3062 (oil tank): write default config ≈ factory state — the
+        // second-hand terminal had CoE settings persisted by its previous
+        // owner (AL 0x001E "Invalid Input Configuration" at SafeOp, 2026-11-15).
         if meta.product_id == EL3062_PRODUCT_ID {
             EL3062Configuration::default()
                 .write_config(eth_control.channel.clone(), meta.device_address)
-                .expect("EL3062-Konfiguration fehlgeschlagen");
-            println!("EL3062 @0x{:x}: Default-Config (0..10 V)", meta.device_address);
+                .expect("EL3062 configuration failed");
+            println!("EL3062 @0x{:x}: default config (0..10 V)", meta.device_address);
         }
     }
 
@@ -248,7 +248,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::thread::sleep(Duration::from_millis(10));
     }
 
-    // Nach Op: PDO-Offsets vergeben → verbindliche Geräteliste
+    // After Op: PDO offsets assigned → authoritative device list
     let subdevices = eth_handle
         .try_get_subdevices_vec_sync()
         .expect("could not list subdevices");
@@ -326,7 +326,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                     }
-                    // EL2502 PWM-Duty: '-'/ '=' für Kanal 1, ','/'.' für Kanal 2 (±5 %)
+                    // EL2502 PWM duty: '-'/ '=' channel 1, ','/'.' channel 2 (±5 %)
                     KeyCode::Char('-') | KeyCode::Char('=') | KeyCode::Char(',')
                     | KeyCode::Char('.') => {
                         if let Some(dev) = app.devices.get_mut(app.selected) {
@@ -356,7 +356,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Ein Zyklus: PDOs einlesen/schreiben
+/// One cycle: read/write PDOs
 fn app_tick(app: &mut App, eth_handle: &mut ethercat_hal::StdEcatHandle) {
     app.ecat_state = eth_handle.get_state();
 
@@ -468,9 +468,9 @@ fn draw(f: &mut Frame, app: &mut App) {
     f.render_widget(tabs, detail_chunks[0]);
 
     let body = match app.devices.get_mut(app.selected) {
-        // Inhalt folgt immer dem Gerätetyp; der Tab ist zur Info mitgeschaltet
+        // Content always follows the device type; the tab is switched along for info
         Some(dev) => detail_content(dev, app.tab),
-        None => vec![Line::from("(keine Maschine)")],
+        None => vec![Line::from("(no machine)")],
     };
     f.render_widget(
         Paragraph::new(body).block(Block::default().borders(Borders::ALL)),
@@ -479,8 +479,8 @@ fn draw(f: &mut Frame, app: &mut App) {
 }
 
 fn detail_content(dev: &mut BusDevice, _tab: Tab) -> Vec<Line<'static>> {
-    // Wir zeigen je Gerätetyp das passende Panel — auch wenn ein „fremder" Tab
-    // angewählt ist (vor der Umstellung wirkten DI/DO wie „kaputt").
+    // We show the panel matching the device type — even if a "foreign" tab
+    // is selected (before this change, DI/DO looked "broken").
     let tab = match dev.kind {
         DevKind::Rtd(_) | DevKind::Ai(_) => Tab::Measurements,
         DevKind::Di(_) => Tab::State,
@@ -493,12 +493,12 @@ fn detail_content(dev: &mut BusDevice, _tab: Tab) -> Vec<Line<'static>> {
                     if input.error || input.overvoltage {
                         Line::from(vec![
                             Span::raw(format!("T{}:      ", port + 1)),
-                            Span::styled("< offen / kein Fühler >", Style::default().fg(Color::Red)),
+                            Span::styled("< open / no sensor >", Style::default().fg(Color::Red)),
                         ])
                     } else if input.undervoltage {
                         Line::from(vec![
                             Span::raw(format!("T{}:      ", port + 1)),
-                            Span::styled("< Kurzschluss >", Style::default().fg(Color::Magenta)),
+                            Span::styled("< short circuit >", Style::default().fg(Color::Magenta)),
                         ])
                     } else {
                         Line::from(vec![
@@ -510,14 +510,14 @@ fn detail_content(dev: &mut BusDevice, _tab: Tab) -> Vec<Line<'static>> {
                         ])
                     }
                 }
-                None => Line::from(format!("T{}: <Lesefehler>", port + 1)),
+                None => Line::from(format!("T{}: <read error>", port + 1)),
             })
             .collect(),
-        (DevKind::Rtd(_), _) => vec![Line::from("(s. Measurements)")],
+        (DevKind::Rtd(_), _) => vec![Line::from("(see Measurements)")],
         (DevKind::Ai(el), Tab::Measurements) => (0..el.get_port_count())
             .map(|port| match el.get_input(port) {
                 Ok(input) => {
-                    // EL3062: Messbereich 0..10 V (Öltank-Füllstand)
+                    // EL3062: measurement range 0..10 V (oil tank level)
                     let volts = f64::from(input.normalized) * 10.0;
                     Line::from(vec![
                         Span::raw(format!("AI{}:     ", port + 1)),
@@ -530,26 +530,26 @@ fn detail_content(dev: &mut BusDevice, _tab: Tab) -> Vec<Line<'static>> {
                 Err(e) => Line::from(format!("AI{}: {:?}", port + 1, e)),
             })
             .collect(),
-        (DevKind::Ai(_), _) => vec![Line::from("(s. Measurements)")],
+        (DevKind::Ai(_), _) => vec![Line::from("(see Measurements)")],
         (DevKind::Di(el), Tab::State) => (0..4)
             .map(|port| {
                 let on = el.get(port);
                 Line::from(format!("DI{}:  {}", port + 1, if on { "■" } else { "□" }))
             })
             .collect(),
-        (DevKind::Di(_), _) => vec![Line::from("(s. State)")],
+        (DevKind::Di(_), _) => vec![Line::from("(see State)")],
         (DevKind::Do(kind), Tab::Commands) => (0..kind.port_count())
             .map(|port| {
                 let on = kind.get(port);
                 Line::from(format!(
-                    "out{}:  {}   [Taste {} toggelt]",
+                    "out{}:  {}   [key {} toggles]",
                     port + 1,
                     if on { "true" } else { "false" },
                     port + 1
                 ))
             })
             .collect(),
-        (DevKind::Do(_), _) => vec![Line::from("(s. Commands)")],
+        (DevKind::Do(_), _) => vec![Line::from("(see Commands)")],
         (DevKind::Pwm(el), Tab::Commands) => {
             let mut lines: Vec<Line> = (0..el.get_port_count())
                 .map(|port| {
@@ -564,11 +564,11 @@ fn detail_content(dev: &mut BusDevice, _tab: Tab) -> Vec<Line<'static>> {
                 })
                 .collect();
             lines.push(Line::from(Span::styled(
-                "Duty wirkt sofort im nächsten Zyklus. Pumpen-Test: 30 % ≈ Mindestlauf.",
+                "Duty applies in the next cycle. Pump test: 30 % ≈ minimum run.",
                 Style::default().fg(Color::DarkGray),
             )));
             lines
         }
-        (DevKind::Pwm(_), _) => vec![Line::from("(s. Commands)")],
+        (DevKind::Pwm(_), _) => vec![Line::from("(see Commands)")],
     }
 }

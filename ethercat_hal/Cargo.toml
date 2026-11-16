@@ -14,9 +14,9 @@ units = { path = "../units" }
 bitvec = { version = "1.0.1", features = ["alloc"] }
 smol = "2.0.2"
 rand = "0.9.2"
-# "log"-Feature: tracing-Events (z. B. die AL-Status-Diagnostik bei fehlgeschlagenen
-# Transitions) werden zusätzlich über die log-Fassade ausgegeben — sichtbar mit
-# env_logger in Beispielen, ohne dass ein tracing-subscriber gesetzt werden muss.
+# "log" feature: emit tracing events (e.g. the AL status diagnostics on failed
+# transitions) through the log facade as well — visible via env_logger in the
+# examples without setting up a tracing subscriber.
 tracing = { version = "0.1.44", features = ["log"] }
 tokio = { version = "1.50.0", features = ["rt", "rt-multi-thread", "macros", "time"] }
 common = {path = "../common"}

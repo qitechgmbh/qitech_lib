@@ -117,7 +117,7 @@ pub struct EL3202Configuration {
 
 impl Default for EL3202Configuration {
     fn default() -> Self {
-        // qi-heating: alle Fühler sind PT1000
+        // qi-heating: all sensors in the plant are PT1000
         Self {
             element_ch1: RtdElement::Pt1000,
             element_ch2: RtdElement::Pt1000,
