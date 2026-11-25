@@ -10,8 +10,8 @@ pub trait AnalogCurrentInputDevice {
     fn get_maximum_current(&self) -> ElectricCurrent;
 
     /// Get a specific input relative to the minimum and maximum value.
-    /// If the retured `Option` is `None´, a wireing error occured or
-    /// actual current present at the physical input is out of range.
+    /// If the returned `Result` is `Err(_)`, a wireing error occured or
+    /// the actual current present at the physical input is out of range.
     ///
     /// The given `value` will be in the interval `[-1, 1]` for devices that support negative
     /// input values and in the interval `[0, 1]` for devices with only positive input values.
@@ -19,8 +19,8 @@ pub trait AnalogCurrentInputDevice {
     fn get_current_relative(&self, port: usize) -> Result<f64, DeviceError>;
 
     /// Get the current of a specific input.
-    /// If the retured `Option` is `None´, a wireing error occured or
-    /// actual current present at the physical input is out of range.
+    /// If the returned `Result` is `Err(_)`, a wireing error occured or
+    /// the actual current present at the physical input is out of range.
     ///
     /// The current will be inside the interval `[get_minimum_current(), get_maximum_current()]`.
     fn get_current(&self, port: usize) -> Result<ElectricCurrent, DeviceError> {
