@@ -28,7 +28,7 @@ approx = "0.5.1"
 bitvec = "1.0.1"
 core_affinity = "0.8.3"
 deluxe = "0.5.0"
-ethercrab = { git = "https://github.com/qitechgmbh/ethercrab-dc", rev = "e84f794db7f7ebe321a6608c7cd1808ca54a6eb0" }
+ethercrab = {git = "https://github.com/qitechgmbh/qitech_lib" , rev = "6d30f35f6171a89e32bec9d6eea4215bc13cec2e" }
 futures = "0.3.32"
 libc = "0.2.186"
 postcard = "1.0"
