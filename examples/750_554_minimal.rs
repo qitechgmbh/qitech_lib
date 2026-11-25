@@ -1,4 +1,4 @@
-use bitvec::{order::Lsb0, view::BitView};
+use bitvec::{view::BitView};
 use qitech_lib_ethercat_hal::{
     EtherCATState, convert_module_to_meta_ethercat_device, init_ethercat,
     io::analog_output::AnalogCurrentOutputDevice,
@@ -13,6 +13,7 @@ const STATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
+
     // Initialize the Bus State: Init
     let mut eth_control = init_ethercat(&interface, None);
 
@@ -33,32 +34,23 @@ fn main() {
     let modules = eth_control
         .get_channel()
         .get_modules(coupler_subdev.device_address, coupler_subdev.vendor, None)
-        .unwrap();
+        .expect("Failed to read modules from coupler");
 
     eth_control
         .change_state(EtherCATState::Op, STATE_CHANGE_TIMEOUT)
         .expect("Failed to go into OP");
 
-    // Find devices Again, Now they will have their tx and rx offsets
-    let mut subdevices = eth_control.try_get_subdevices_vec_sync().unwrap();
-    // Find the Wago 750-354 couplers offsets
-    let (coupler_start_tx, coupler_start_rx) = {
-        let coupler_subdev = subdevices
-            .iter()
-            .find(|s| Wago750_354::identity().matches(s))
-            .expect("No Wago 750-354 coupler found on the bus");
-        (coupler_subdev.start_tx, coupler_subdev.start_rx)
-    };
-
     // Since modules are part of the couplers PDI we need to convert the "modules" into a
     // meta ethercat device first, so they can be handled like any other terminal
-    for module in &modules {
-        let device =
-            convert_module_to_meta_ethercat_device(module, coupler_start_tx, coupler_start_rx);
-        subdevices.push(device);
-    }
+    let modules_as_subs: Vec<_> = modules.iter().map(|module| {
+            let coupler_start_tx = coupler_subdev.start_tx;
+            let coupler_start_rx = coupler_subdev.start_rx;
 
-    let wago750_554_sdev = subdevices
+            convert_module_to_meta_ethercat_device(module, coupler_start_tx, coupler_start_rx)
+        })
+        .collect();
+
+    let wago750_554_sdev = modules_as_subs
         .iter()
         .find(|s| Wago750_554::identity().matches(s))
         .expect("No WAGO_750_554 found on the bus");
@@ -67,27 +59,33 @@ fn main() {
     let step_count: u32 = 32;
     let mut wago750_554 = Wago750_554::new();
     for step in 0..=u32::MAX {
+
         let min = wago750_554.get_minimum_current();
         let max = wago750_554.get_maximum_current();
+
         let step_size = (max - min) / step_count as f64;
         let delta = step_size * (step % step_count) as f64;
+
         let current = min + delta;
         let current_inv = max - delta;
+
         println!(
             "AO-0: {:.02}mA AO-1: {:.02}mA",
             current.get::<milliampere>(),
             current_inv.get::<milliampere>()
         );
+
         wago750_554.set_current(0, current);
         wago750_554.set_current(1, current_inv);
 
         if let Some(outputs) = eth_control.write_outputs() {
-            let subdevice_outputs = &mut outputs.view_bits_mut::<Lsb0>()
-                [wago750_554_sdev.start_rx..wago750_554_sdev.end_rx];
+            let subdevice_outputs = &mut outputs.view_bits_mut()[wago750_554_sdev.start_rx..wago750_554_sdev.end_rx];
+
             wago750_554
                 .output(subdevice_outputs)
                 .expect("Failed to write Rx PDO");
         }
+
         eth_control.send_outputs();
         std::thread::sleep(Duration::from_millis(250));
     }

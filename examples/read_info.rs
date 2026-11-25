@@ -19,19 +19,16 @@ fn add_modules(subdevices: &mut Vec<MetaSubdevice>, ecat_control: &StdEcatContro
         .iter()
         .find(|s| Wago750_354::identity().matches(s));
 
-    match coupler_subdev {
-        Some(coupler) => {
-            // Devices connected to 750-354 are not actual ethercat terminals and are commonly called "modules"
-            let modules = ecat_control
-                .get_channel()
-                .get_modules(coupler.device_address, coupler.vendor, None)
-                .unwrap();
-            for module in &modules {
-                let device = convert_module_to_meta_ethercat_device(module, 0, 0);
-                subdevices.push(device);
-            }
+    if let Some(coupler) = coupler_subdev {
+        // Devices connected to 750-354 are not actual ethercat terminals and are commonly called "modules"
+        let modules = ecat_control
+            .get_channel()
+            .get_modules(coupler.device_address, coupler.vendor, None)
+            .unwrap();
+        for module in &modules {
+            let device = convert_module_to_meta_ethercat_device(module, 0, 0);
+            subdevices.push(device);
         }
-        None => (),
     }
 }
 
