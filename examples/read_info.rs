@@ -40,25 +40,22 @@ fn main() {
     let interface = env::args().nth(1).expect("No Interface-name given");
     let machine_ident = env::args().nth(2);
     let eth_control = init_ethercat(&interface, None);
+
     eth_control
         .change_state(EtherCATState::PreOp, Duration::from_secs(5))
+        .expect("Failed to go into PreOp");
+
+    eth_control
+        .change_state(EtherCATState::Op, Duration::from_secs(5))
         .expect("Failed to go into PreOp");
 
     let mut subdevices = eth_control
         .try_get_subdevices_vec_sync()
         .expect("Failed to read subdevices");
+
     add_modules(&mut subdevices, &eth_control);
 
     for (index, subdevice) in subdevices.iter().enumerate() {
-        let read_word = |word| eth_control.eeprom_read(subdevice.device_address, word);
-        let ident = (|| {
-            Ok::<_, qitech_lib_ethercat_hal::ChannelError>((
-                read_word(MACHINE_VENDOR_WORD)?,
-                read_word(MACHINE_ID_WORD)?,
-                read_word(MACHINE_SERIAL_WORD)?,
-                read_word(MACHINE_ROLE_WORD)?,
-            ))
-        })();
         let name = subdevice.get_name().expect("Failed to read name!");
         let (trunk, branch) = if index == subdevices.len() - 1 {
             (" ", "└")
@@ -80,6 +77,16 @@ fn main() {
             subdevice.end_rx
         );
         if machine_ident.is_some() {
+            let read_word = |word| eth_control.eeprom_read(subdevice.device_address, word);
+            let ident = (|| {
+                Ok::<_, qitech_lib_ethercat_hal::ChannelError>((
+                    read_word(MACHINE_VENDOR_WORD)?,
+                    read_word(MACHINE_ID_WORD)?,
+                    read_word(MACHINE_SERIAL_WORD)?,
+                    read_word(MACHINE_ROLE_WORD)?,
+                ))
+            })();
+
             match ident {
                 Ok((machine_vendor, machine_id, machine_serial, role)) => println!(
                     "{}   └──Machine Identification: machine_vendor: {}, machine_id: {}, machine_serial: {}, role: {}",
